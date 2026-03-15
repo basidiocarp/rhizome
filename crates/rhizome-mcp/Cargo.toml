@@ -1,0 +1,9 @@
+[package]
+name = "rhizome-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rhizome-core = { path = "../rhizome-core" }
+rhizome-treesitter = { path = "../rhizome-treesitter" }
+rhizome-lsp = { path = "../rhizome-lsp" }
