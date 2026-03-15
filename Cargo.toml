@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "crates/rhizome-core",
+    "crates/rhizome-treesitter",
+    "crates/rhizome-lsp",
+    "crates/rhizome-mcp",
+    "crates/rhizome-cli",
+]
+resolver = "2"
