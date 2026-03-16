@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **32 language support**: Elixir, Zig, C#, F#, Swift, PHP, Haskell, Bash, Terraform, Kotlin, Dart, Lua, Clojure, OCaml, Julia, Nix, Gleam, Vue, Svelte, Astro, Prisma, Typst, YAML — each with LSP server config, file extension mapping, root markers, and graph metadata.
+- **Auto-install LSP servers**: `LspInstaller` auto-downloads missing servers via native package managers (rustup, pipx/pip, npm, go install, gem, dotnet tool, ghcup, brew, opam, nix-env, cargo). Installs to `~/.rhizome/bin/`. Controlled by `RHIZOME_DISABLE_LSP_DOWNLOAD=1` env var or `lsp.disable_download` config.
+- **Binary-name-based install recipes**: 20+ install recipes keyed by server binary name, not language. Users who configure alternative servers (e.g. `ruff` instead of `pyright`, `ruby-lsp` instead of `solargraph`) get auto-install support automatically.
+- **Backend auto-selection**: `BackendSelector` maps each tool to a backend requirement (tree-sitter, prefers-lsp, requires-lsp) and resolves per call. Tree-sitter for most tools, automatic LSP upgrade for `find_references`, `get_diagnostics`, `rename_symbol`, `get_hover_info`.
+- **Smart root detection**: Per-language workspace root detection — Rust walks up for `[workspace]` in `Cargo.toml`, Go prefers `go.work`, JS/TS skips Deno dirs, Python finds `pyproject.toml`. Falls back to `.git`.
+- **Multi-client LSP management**: `LanguageServerManager` keyed by `(Language, PathBuf)` supports multiple LSP clients for different workspace roots in monorepos.
+- **`rhizome status` CLI command**: Shows per-language backend availability, detected LSP server paths, auto-install state, and managed bin directory.
+- **`LspConfig`**: New config section with `disable_download` and `bin_dir` fields.
+
+### Changed
+
+- PHP default server changed from `intelephense` to `phpactor`.
+- Ruby default server changed from `solargraph` to `ruby-lsp`.
+- `ToolDispatcher` uses `RefCell` for lazy LSP initialization with `BackendSelector` integration.
+- `LspBackend` exposes root-aware methods (`*_with_root`) alongside `CodeIntelligence` trait.
+- Install hints now derive from the recipe registry, showing correct commands for whatever server is configured.
+
+### Fixed
+
+- TypeScript tree-sitter query: use `type_identifier` for `class_declaration` name field (was `identifier`, causing query compilation failure on `.ts` files).
+- Export integration tests handle environments where Hyphae is installed.
+- Hyphae export uses spore for tool discovery and line-delimited JSON-RPC.
+- Flattened `export_graph` params to match Hyphae's expected format.
+
 ## [0.3.0] - 2026-03-16
 
 ### Added
