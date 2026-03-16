@@ -120,6 +120,23 @@ impl BackendSelector {
             Language::FSharp,
             Language::Swift,
             Language::Php,
+            Language::Haskell,
+            Language::Bash,
+            Language::Terraform,
+            Language::Kotlin,
+            Language::Dart,
+            Language::Lua,
+            Language::Clojure,
+            Language::OCaml,
+            Language::Julia,
+            Language::Nix,
+            Language::Gleam,
+            Language::Vue,
+            Language::Svelte,
+            Language::Astro,
+            Language::Prisma,
+            Language::Typst,
+            Language::Yaml,
         ];
 
         languages
@@ -231,6 +248,23 @@ impl std::fmt::Display for Language {
             Language::FSharp => write!(f, "F#"),
             Language::Swift => write!(f, "Swift"),
             Language::Php => write!(f, "PHP"),
+            Language::Haskell => write!(f, "Haskell"),
+            Language::Bash => write!(f, "Bash"),
+            Language::Terraform => write!(f, "Terraform"),
+            Language::Kotlin => write!(f, "Kotlin"),
+            Language::Dart => write!(f, "Dart"),
+            Language::Lua => write!(f, "Lua"),
+            Language::Clojure => write!(f, "Clojure"),
+            Language::OCaml => write!(f, "OCaml"),
+            Language::Julia => write!(f, "Julia"),
+            Language::Nix => write!(f, "Nix"),
+            Language::Gleam => write!(f, "Gleam"),
+            Language::Vue => write!(f, "Vue"),
+            Language::Svelte => write!(f, "Svelte"),
+            Language::Astro => write!(f, "Astro"),
+            Language::Prisma => write!(f, "Prisma"),
+            Language::Typst => write!(f, "Typst"),
+            Language::Yaml => write!(f, "YAML"),
             Language::Other(name) => write!(f, "{name}"),
         }
     }
@@ -313,7 +347,7 @@ mod tests {
         let config = RhizomeConfig::default();
         let mut selector = BackendSelector::new(config);
         let statuses = selector.status();
-        assert_eq!(statuses.len(), 15);
+        assert_eq!(statuses.len(), 32);
 
         let names: Vec<String> = statuses.iter().map(|s| s.language.to_string()).collect();
         assert!(names.contains(&"Rust".to_string()));

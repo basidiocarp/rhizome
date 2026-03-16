@@ -17,6 +17,23 @@ pub enum Language {
     FSharp,
     Swift,
     Php,
+    Haskell,
+    Bash,
+    Terraform,
+    Kotlin,
+    Dart,
+    Lua,
+    Clojure,
+    OCaml,
+    Julia,
+    Nix,
+    Gleam,
+    Vue,
+    Svelte,
+    Astro,
+    Prisma,
+    Typst,
+    Yaml,
     Other(String),
 }
 
@@ -30,87 +47,77 @@ impl Language {
             "go" => Some(Language::Go),
             "java" => Some(Language::Java),
             "c" | "h" => Some(Language::C),
-            "cpp" | "cxx" | "cc" | "hpp" => Some(Language::Cpp),
-            "rb" | "rake" | "gemspec" => Some(Language::Ruby),
+            "cpp" | "cxx" | "cc" | "hpp" | "hxx" | "hh" => Some(Language::Cpp),
+            "rb" | "rake" | "gemspec" | "ru" => Some(Language::Ruby),
             "ex" | "exs" => Some(Language::Elixir),
             "zig" | "zon" => Some(Language::Zig),
             "cs" => Some(Language::CSharp),
             "fs" | "fsi" | "fsx" | "fsscript" => Some(Language::FSharp),
             "swift" => Some(Language::Swift),
             "php" => Some(Language::Php),
+            "hs" | "lhs" => Some(Language::Haskell),
+            "sh" | "bash" | "zsh" | "ksh" => Some(Language::Bash),
+            "tf" | "tfvars" => Some(Language::Terraform),
+            "kt" | "kts" => Some(Language::Kotlin),
+            "dart" => Some(Language::Dart),
+            "lua" => Some(Language::Lua),
+            "clj" | "cljs" | "cljc" | "edn" => Some(Language::Clojure),
+            "ml" | "mli" => Some(Language::OCaml),
+            "jl" => Some(Language::Julia),
+            "nix" => Some(Language::Nix),
+            "gleam" => Some(Language::Gleam),
+            "vue" => Some(Language::Vue),
+            "svelte" => Some(Language::Svelte),
+            "astro" => Some(Language::Astro),
+            "prisma" => Some(Language::Prisma),
+            "typ" | "typc" => Some(Language::Typst),
+            "yaml" | "yml" => Some(Language::Yaml),
             _ => None,
         }
     }
 
     pub fn default_server_config(&self) -> Option<LanguageServerConfig> {
-        match self {
-            Language::Rust => Some(LanguageServerConfig {
-                binary: "rust-analyzer".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::Python => Some(LanguageServerConfig {
-                binary: "pyright-langserver".to_string(),
-                args: vec!["--stdio".to_string()],
-                initialization_options: None,
-            }),
-            Language::JavaScript | Language::TypeScript => Some(LanguageServerConfig {
-                binary: "typescript-language-server".to_string(),
-                args: vec!["--stdio".to_string()],
-                initialization_options: None,
-            }),
-            Language::Go => Some(LanguageServerConfig {
-                binary: "gopls".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::Java => Some(LanguageServerConfig {
-                binary: "jdtls".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::C | Language::Cpp => Some(LanguageServerConfig {
-                binary: "clangd".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::Ruby => Some(LanguageServerConfig {
-                binary: "solargraph".to_string(),
-                args: vec!["stdio".to_string()],
-                initialization_options: None,
-            }),
-            Language::Elixir => Some(LanguageServerConfig {
-                binary: "elixir-ls".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::Zig => Some(LanguageServerConfig {
-                binary: "zls".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::CSharp => Some(LanguageServerConfig {
-                binary: "csharp-ls".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::FSharp => Some(LanguageServerConfig {
-                binary: "fsautocomplete".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::Swift => Some(LanguageServerConfig {
-                binary: "sourcekit-lsp".to_string(),
-                args: vec![],
-                initialization_options: None,
-            }),
-            Language::Php => Some(LanguageServerConfig {
-                binary: "intelephense".to_string(),
-                args: vec!["--stdio".to_string()],
-                initialization_options: None,
-            }),
-            Language::Other(_) => None,
-        }
+        let (binary, args) = match self {
+            Language::Rust => ("rust-analyzer", vec![]),
+            Language::Python => ("pyright-langserver", vec!["--stdio".into()]),
+            Language::JavaScript | Language::TypeScript => {
+                ("typescript-language-server", vec!["--stdio".into()])
+            }
+            Language::Go => ("gopls", vec![]),
+            Language::Java => ("jdtls", vec![]),
+            Language::C | Language::Cpp => ("clangd", vec![]),
+            Language::Ruby => ("ruby-lsp", vec![]),
+            Language::Elixir => ("elixir-ls", vec![]),
+            Language::Zig => ("zls", vec![]),
+            Language::CSharp => ("csharp-ls", vec![]),
+            Language::FSharp => ("fsautocomplete", vec![]),
+            Language::Swift => ("sourcekit-lsp", vec![]),
+            Language::Php => ("phpactor", vec!["language-server".into()]),
+            Language::Haskell => ("haskell-language-server-wrapper", vec!["--lsp".into()]),
+            Language::Bash => ("bash-language-server", vec!["start".into()]),
+            Language::Terraform => ("terraform-ls", vec!["serve".into()]),
+            Language::Kotlin => ("kotlin-language-server", vec![]),
+            Language::Dart => ("dart", vec!["language-server".into(), "--protocol=lsp".into()]),
+            Language::Lua => ("lua-language-server", vec![]),
+            Language::Clojure => ("clojure-lsp", vec![]),
+            Language::OCaml => ("ocamllsp", vec![]),
+            Language::Julia => ("julia", vec!["--startup-file=no".into(), "-e".into(), "using LanguageServer; runserver()".into()]),
+            Language::Nix => ("nixd", vec![]),
+            Language::Gleam => ("gleam", vec!["lsp".into()]),
+            Language::Vue => ("vue-language-server", vec!["--stdio".into()]),
+            Language::Svelte => ("svelteserver", vec!["--stdio".into()]),
+            Language::Astro => ("astro-ls", vec!["--stdio".into()]),
+            Language::Prisma => ("prisma-language-server", vec!["--stdio".into()]),
+            Language::Typst => ("tinymist", vec![]),
+            Language::Yaml => ("yaml-language-server", vec!["--stdio".into()]),
+            Language::Other(_) => return None,
+        };
+
+        Some(LanguageServerConfig {
+            binary: binary.to_string(),
+            args,
+            initialization_options: None,
+        })
     }
 }
 

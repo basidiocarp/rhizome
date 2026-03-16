@@ -38,6 +38,23 @@ impl Language {
             Language::FSharp => &[".sln", ".slnx", ".fsproj", "global.json"],
             Language::Swift => &["Package.swift"],
             Language::Php => &["composer.json", "composer.lock"],
+            Language::Haskell => &["cabal.project", "stack.yaml", "*.cabal"],
+            Language::Bash => &[],
+            Language::Terraform => &["main.tf", "terraform.tfvars"],
+            Language::Kotlin => &["build.gradle.kts", "build.gradle", "pom.xml"],
+            Language::Dart => &["pubspec.yaml", "pubspec.lock"],
+            Language::Lua => &[".luarc.json", ".luacheckrc"],
+            Language::Clojure => &["deps.edn", "project.clj", "build.clj"],
+            Language::OCaml => &["dune-project", "dune", "*.opam"],
+            Language::Julia => &["Project.toml", "Manifest.toml"],
+            Language::Nix => &["flake.nix", "default.nix", "shell.nix"],
+            Language::Gleam => &["gleam.toml"],
+            Language::Vue | Language::Svelte | Language::Astro | Language::Prisma => &[
+                "package.json",
+                "tsconfig.json",
+            ],
+            Language::Typst => &["typst.toml"],
+            Language::Yaml => &[],
             Language::Other(_) => &[],
         }
     }

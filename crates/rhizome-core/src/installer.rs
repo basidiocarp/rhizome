@@ -168,6 +168,110 @@ pub fn install_recipe(binary_name: &str) -> Option<InstallRecipe> {
         // ── Swift ─────────────────────────────────────────────────────
         // sourcekit-lsp ships with Xcode/Swift toolchain — no auto-install
 
+        // ── Haskell ───────────────────────────────────────────────────
+        "haskell-language-server-wrapper" => Some(InstallRecipe {
+            manager: "ghcup",
+            args: &["install", "hls"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── Bash ──────────────────────────────────────────────────────
+        "bash-language-server" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "bash-language-server"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+
+        // ── Terraform ─────────────────────────────────────────────────
+        "terraform-ls" => Some(InstallRecipe {
+            manager: "brew",
+            args: &["install", "hashicorp/tap/terraform-ls"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── Kotlin ────────────────────────────────────────────────────
+        // kotlin-language-server requires manual install from GitHub releases
+
+        // ── Dart ──────────────────────────────────────────────────────
+        // dart language server ships with the Dart/Flutter SDK
+
+        // ── Lua ───────────────────────────────────────────────────────
+        "lua-language-server" => Some(InstallRecipe {
+            manager: "brew",
+            args: &["install", "lua-language-server"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── Clojure ──────────────────────────────────────────────────
+        "clojure-lsp" => Some(InstallRecipe {
+            manager: "brew",
+            args: &["install", "clojure-lsp/brew/clojure-lsp-native"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── OCaml ────────────────────────────────────────────────────
+        "ocamllsp" => Some(InstallRecipe {
+            manager: "opam",
+            args: &["install", "ocaml-lsp-server"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── Nix ──────────────────────────────────────────────────────
+        "nixd" => Some(InstallRecipe {
+            manager: "nix-env",
+            args: &["-iA", "nixpkgs.nixd"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── Vue / Svelte / Astro / Prisma ────────────────────────────
+        "vue-language-server" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "@vue/language-server"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+        "svelteserver" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "svelte-language-server"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+        "astro-ls" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "@astrojs/language-server"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+        "prisma-language-server" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "@prisma/language-server"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+
+        // ── Typst ────────────────────────────────────────────────────
+        "tinymist" => Some(InstallRecipe {
+            manager: "cargo",
+            args: &["install", "tinymist"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── YAML ─────────────────────────────────────────────────────
+        "yaml-language-server" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "yaml-language-server"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+
         _ => None,
     }
 }
