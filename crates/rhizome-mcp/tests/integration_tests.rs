@@ -997,19 +997,28 @@ fn test_unified_mode_call_via_rhizome_tool() {
 // ── Hyphae export integration tests ──
 
 #[test]
-fn test_export_to_hyphae_unavailable() {
+fn test_export_to_hyphae() {
     let dispatcher = make_dispatcher();
     let result = dispatcher.call_tool("export_to_hyphae", json!({})).unwrap();
-    let is_error = result
-        .get("isError")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    assert!(is_error, "Should return error when Hyphae not available");
     let text = extract_text(&result);
-    assert!(
-        text.contains("Hyphae not available"),
-        "Error should mention Hyphae: {text}"
-    );
+    if rhizome_core::hyphae::is_available() {
+        // Hyphae installed: should succeed or report cached files
+        assert!(
+            text.contains("concepts") || text.contains("up to date"),
+            "Should report export result: {text}"
+        );
+    } else {
+        // Hyphae not installed: should return an error
+        let is_error = result
+            .get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        assert!(is_error, "Should return error when Hyphae not available");
+        assert!(
+            text.contains("Hyphae not available"),
+            "Error should mention Hyphae: {text}"
+        );
+    }
 }
 
 #[test]
@@ -1045,11 +1054,25 @@ fn test_export_unified_mode() {
 
     let response = server.handle_request_for_test(&request);
     let result = response.get("result").expect("Should have result");
-    let is_error = result
-        .get("isError")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    assert!(is_error, "Should return error in unified mode too");
+    let text = result
+        .get("content")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|o| o.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    if rhizome_core::hyphae::is_available() {
+        assert!(
+            text.contains("concepts") || text.contains("up to date"),
+            "Should report export result in unified mode: {text}"
+        );
+    } else {
+        let is_error = result
+            .get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        assert!(is_error, "Should return error in unified mode too");
+    }
 }
 
 #[test]

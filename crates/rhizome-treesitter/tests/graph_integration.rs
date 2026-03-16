@@ -65,3 +65,33 @@ fn test_build_graph_from_python_fixture() {
         );
     }
 }
+
+#[test]
+fn test_build_graph_from_typescript_fixture() {
+    let backend = TreeSitterBackend::new();
+    let path = fixture_path("sample.ts");
+    let symbols = backend.get_symbols(&path).expect("Should extract TypeScript symbols");
+    assert!(!symbols.is_empty(), "Should extract at least one symbol");
+
+    let graph = build_graph("test-project", &symbols, &path);
+
+    let names: Vec<&str> = graph.nodes.iter().map(|n| n.name.as_str()).collect();
+    assert!(
+        names.contains(&"HttpClient"),
+        "Should contain HttpClient class: {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"createClient"),
+        "Should contain createClient function: {:?}",
+        names
+    );
+
+    for node in &graph.nodes {
+        assert_eq!(
+            node.metadata.get("language").map(String::as_str),
+            Some("typescript"),
+            "TypeScript fixture nodes should have language=typescript"
+        );
+    }
+}

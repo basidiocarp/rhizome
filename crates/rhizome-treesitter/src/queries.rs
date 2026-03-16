@@ -44,7 +44,7 @@ pub const JAVASCRIPT_QUERY: &str = r#"
 pub const TYPESCRIPT_QUERY: &str = r#"
 (function_declaration name: (identifier) @name) @function
 
-(class_declaration name: (identifier) @name) @class_def
+(class_declaration name: (type_identifier) @name) @class_def
 
 (import_statement) @import
 
