@@ -25,7 +25,7 @@ fn make_dispatcher() -> ToolDispatcher {
 fn test_list_tools_returns_25_tools() {
     let dispatcher = make_dispatcher();
     let tools = dispatcher.list_tools();
-    assert_eq!(tools.len(), 25, "Expected 25 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 26, "Expected 26 tools, got {}", tools.len());
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"get_symbols"));
@@ -945,8 +945,8 @@ fn test_expanded_mode_tools_list_returns_25_tools() {
         .expect("Should have tools array");
     assert_eq!(
         tools.len(),
-        25,
-        "Expanded mode should return 25 tools, got {}",
+        26,
+        "Expanded mode should return 26 tools, got {}",
         tools.len()
     );
 }
@@ -991,5 +991,81 @@ fn test_unified_mode_call_via_rhizome_tool() {
     assert!(
         text.contains("Config"),
         "Should find Config symbol via unified mode: {text}"
+    );
+}
+
+// ── Hyphae export integration tests ──
+
+#[test]
+fn test_export_to_hyphae_unavailable() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher.call_tool("export_to_hyphae", json!({})).unwrap();
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(is_error, "Should return error when Hyphae not available");
+    let text = extract_text(&result);
+    assert!(
+        text.contains("Hyphae not available"),
+        "Error should mention Hyphae: {text}"
+    );
+}
+
+#[test]
+fn test_export_tool_in_list() {
+    let dispatcher = make_dispatcher();
+    let tools = dispatcher.list_tools();
+    let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+    assert!(
+        names.contains(&"export_to_hyphae"),
+        "export_to_hyphae should be in tool list: {:?}",
+        names
+    );
+}
+
+#[test]
+fn test_export_unified_mode() {
+    use rhizome_mcp::McpServer;
+
+    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let server = McpServer::new(project_root, true);
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "rhizome",
+            "arguments": {
+                "command": "export_to_hyphae"
+            }
+        }
+    });
+
+    let response = server.handle_request_for_test(&request);
+    let result = response.get("result").expect("Should have result");
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(is_error, "Should return error in unified mode too");
+}
+
+#[test]
+#[ignore]
+fn test_export_to_hyphae_e2e() {
+    // This test requires `hyphae` to be installed and available in PATH
+    let dispatcher = make_dispatcher();
+    let result = dispatcher.call_tool("export_to_hyphae", json!({})).unwrap();
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(!is_error, "Should succeed when Hyphae is available");
+    let text = extract_text(&result);
+    assert!(
+        text.contains("concepts"),
+        "Should report concept count: {text}"
     );
 }

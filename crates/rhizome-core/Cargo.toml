@@ -1,6 +1,6 @@
 [package]
 name = "rhizome-core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -9,3 +9,6 @@ serde_json = "1"
 anyhow = "1"
 toml = "1.0"
 dirs = "6"
+
+[dev-dependencies]
+tempfile = "3"

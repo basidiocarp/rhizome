@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use serde_json::{json, Value};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::tools::ToolDispatcher;
 
@@ -24,6 +24,8 @@ impl McpServer {
 
     /// Run the server loop reading from stdin, writing to stdout.
     pub async fn run(&mut self) -> Result<()> {
+        self.spawn_auto_export();
+
         let stdin = io::stdin();
         let stdout = io::stdout();
 
@@ -76,6 +78,42 @@ impl McpServer {
         Ok(())
     }
 
+    fn spawn_auto_export(&self) {
+        let project_root = self.dispatcher.project_root().to_path_buf();
+        tokio::spawn(async move {
+            if !rhizome_core::hyphae::is_available() {
+                debug!("Hyphae not available, skipping auto-export");
+                return;
+            }
+
+            let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
+            if !config.auto_export() {
+                debug!("Auto-export disabled in config");
+                return;
+            }
+
+            info!("rhizome: starting auto-export to hyphae");
+            let backend = rhizome_treesitter::TreeSitterBackend::new();
+            let args = serde_json::json!({});
+            match crate::tools::export_tools::export_to_hyphae(&backend, &args, &project_root) {
+                Ok(result) => {
+                    if let Some(text) = result
+                        .get("content")
+                        .and_then(|c| c.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|o| o.get("text"))
+                        .and_then(|t| t.as_str())
+                    {
+                        info!("rhizome: hyphae auto-export complete: {text}");
+                    }
+                }
+                Err(e) => {
+                    debug!("rhizome: hyphae auto-export failed: {e}");
+                }
+            }
+        });
+    }
+
     fn handle_method(&self, method: &str, request: &Value, id: Option<Value>) -> Option<Value> {
         let result = match method {
             "initialize" => self.handle_initialize(),
@@ -121,7 +159,7 @@ impl McpServer {
         if self.unified {
             let tool_schema = json!([{
                 "name": "rhizome",
-                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_changed_files, rename_symbol, get_diagnostics, get_hover_info",
+                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_changed_files, rename_symbol, get_diagnostics, get_hover_info, export_to_hyphae",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -139,7 +177,8 @@ impl McpServer {
                         "new_name": { "type": "string", "description": "New name for rename" },
                         "ref1": { "type": "string", "description": "Git ref for diff start" },
                         "ref2": { "type": "string", "description": "Git ref for diff end" },
-                        "tags": { "type": "array", "items": { "type": "string" }, "description": "Annotation tags to search for" }
+                        "tags": { "type": "array", "items": { "type": "string" }, "description": "Annotation tags to search for" },
+                        "memoir": { "type": "string", "description": "Override memoir name for export" }
                     },
                     "required": ["command"]
                 }

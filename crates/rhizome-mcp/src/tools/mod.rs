@@ -1,7 +1,8 @@
+pub mod export_tools;
 pub mod file_tools;
 pub mod symbol_tools;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use rhizome_treesitter::TreeSitterBackend;
@@ -75,13 +76,23 @@ impl ToolDispatcher {
             }
             "get_hover_info" => file_tools::get_hover_info(self.lsp.as_ref(), &args),
 
+            // Export tools
+            "export_to_hyphae" => {
+                export_tools::export_to_hyphae(&self.treesitter, &args, &self.project_root)
+            }
+
             _ => Err(anyhow!("Unknown tool: {name}")),
         }
+    }
+
+    pub fn project_root(&self) -> &Path {
+        &self.project_root
     }
 
     pub fn list_tools(&self) -> Vec<ToolSchema> {
         let mut tools = symbol_tools::tool_schemas();
         tools.extend(file_tools::tool_schemas());
+        tools.extend(export_tools::tool_schemas());
         tools
     }
 }

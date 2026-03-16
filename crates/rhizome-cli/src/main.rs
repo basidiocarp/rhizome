@@ -42,6 +42,12 @@ enum Commands {
         #[arg(long)]
         config: bool,
     },
+    /// Export code symbols to Hyphae as a knowledge graph
+    Export {
+        /// Workspace/project root path
+        #[arg(long, short)]
+        project: Option<PathBuf>,
+    },
 }
 
 fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
@@ -170,6 +176,38 @@ fn cmd_init(config_mode: bool) {
     }
 }
 
+fn cmd_export(project: Option<PathBuf>) -> Result<()> {
+    let project_root = detect_project_root(project);
+    let backend = TreeSitterBackend::new();
+    let args = serde_json::json!({});
+
+    match rhizome_mcp::tools::export_tools::export_to_hyphae(&backend, &args, &project_root) {
+        Ok(result) => {
+            if let Some(text) = result
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|o| o.get("text"))
+                .and_then(|t| t.as_str())
+            {
+                println!("{text}");
+            }
+            if result
+                .get("isError")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Export failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
     let project_root = detect_project_root(project);
     info!(
@@ -208,5 +246,6 @@ async fn main() -> Result<()> {
             cmd_init(config);
             Ok(())
         }
+        Commands::Export { project } => cmd_export(project),
     }
 }

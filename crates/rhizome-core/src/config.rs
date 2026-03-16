@@ -22,12 +22,29 @@ fn default_true() -> bool {
     true
 }
 
+/// Export configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportConfig {
+    /// Whether to automatically export to Hyphae on MCP server startup
+    #[serde(default = "default_true")]
+    pub auto_export: bool,
+}
+
+impl Default for ExportConfig {
+    fn default() -> Self {
+        Self { auto_export: true }
+    }
+}
+
 /// Top-level configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RhizomeConfig {
     /// Per-language settings
     #[serde(default)]
     pub languages: HashMap<String, LanguageConfig>,
+    /// Export settings
+    #[serde(default)]
+    pub export: ExportConfig,
 }
 
 impl RhizomeConfig {
@@ -69,7 +86,15 @@ impl RhizomeConfig {
         for (lang, config) in project.languages {
             languages.insert(lang, config);
         }
-        Self { languages }
+        Self {
+            languages,
+            export: project.export,
+        }
+    }
+
+    /// Check if auto-export is enabled
+    pub fn auto_export(&self) -> bool {
+        self.export.auto_export
     }
 
     /// Get the effective LanguageServerConfig for a language,
@@ -232,6 +257,7 @@ mod tests {
                     },
                 ),
             ]),
+            ..Default::default()
         };
 
         let project = RhizomeConfig {
@@ -244,6 +270,7 @@ mod tests {
                     initialization_options: None,
                 },
             )]),
+            ..Default::default()
         };
 
         let merged = RhizomeConfig::merge(global, project);
@@ -274,6 +301,7 @@ mod tests {
                     initialization_options: None,
                 },
             )]),
+            ..Default::default()
         };
 
         assert!(!config.is_language_enabled(&Language::Java));
@@ -292,6 +320,7 @@ mod tests {
                     initialization_options: None,
                 },
             )]),
+            ..Default::default()
         };
 
         let server_config = config.get_server_config(&Language::Rust).unwrap();
@@ -348,6 +377,7 @@ mod tests {
                     initialization_options: Some(init_opts.clone()),
                 },
             )]),
+            ..Default::default()
         };
 
         let server_config = config.get_server_config(&Language::Rust).unwrap();
