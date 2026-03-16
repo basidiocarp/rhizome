@@ -470,6 +470,53 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_large_file_under_5ms() {
+        let path = fixture_path("large_sample.rs");
+        let source = std::fs::read(&path).expect("Failed to read fixture");
+        let language = Language::Rust;
+
+        // Benchmark just the parse + extract step (excluding parser allocation)
+        let mut pool = crate::parser::ParserPool::new();
+        let parser = pool.get_parser(&language).expect("Failed to get parser");
+
+        // Warm up
+        let _ = parser.parse(&source, None);
+
+        let iterations = 20;
+        let start = std::time::Instant::now();
+        for _ in 0..iterations {
+            let tree = parser.parse(&source, None).expect("Parse failed");
+            let file_path = path.to_string_lossy().to_string();
+            let symbols = crate::symbols::extract_symbols(&tree, &source, &file_path, &language)
+                .expect("Extract failed");
+            assert!(!symbols.is_empty());
+        }
+        let elapsed = start.elapsed();
+        let avg_ms = elapsed.as_secs_f64() * 1000.0 / iterations as f64;
+
+        // 5ms in release, 20ms tolerance in debug mode
+        let threshold = if cfg!(debug_assertions) { 20.0 } else { 5.0 };
+        assert!(
+            avg_ms < threshold,
+            "Parsing ~1000-line Rust file should take <{threshold}ms, took {avg_ms:.2}ms average",
+        );
+    }
+
+    #[test]
+    fn test_large_file_symbol_count() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("large_sample.rs");
+        let symbols = backend.get_symbols(&path).expect("Failed");
+
+        // The large fixture has ~20 structs, ~10 enums, ~10 traits, ~15 functions, etc.
+        assert!(
+            symbols.len() >= 30,
+            "Large file should have at least 30 top-level symbols, found {}",
+            symbols.len()
+        );
+    }
+
+    #[test]
     fn test_diagnostics_empty() {
         let backend = TreeSitterBackend::new();
         let path = fixture_path("sample.rs");

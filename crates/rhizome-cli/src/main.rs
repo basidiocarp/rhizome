@@ -37,7 +37,11 @@ enum Commands {
         file: PathBuf,
     },
     /// Print MCP configuration for editors
-    Init,
+    Init {
+        /// Print an example rhizome config.toml instead of MCP config
+        #[arg(long)]
+        config: bool,
+    },
 }
 
 fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
@@ -149,17 +153,21 @@ fn cmd_structure(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_init() {
-    let config = serde_json::json!({
-        "mcpServers": {
-            "rhizome": {
-                "command": "rhizome",
-                "args": ["serve"],
-                "env": {}
+fn cmd_init(config_mode: bool) {
+    if config_mode {
+        print!("{}", rhizome_core::RhizomeConfig::example_config());
+    } else {
+        let config = serde_json::json!({
+            "mcpServers": {
+                "rhizome": {
+                    "command": "rhizome",
+                    "args": ["serve"],
+                    "env": {}
+                }
             }
-        }
-    });
-    println!("{}", serde_json::to_string_pretty(&config).unwrap());
+        });
+        println!("{}", serde_json::to_string_pretty(&config).unwrap());
+    }
 }
 
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
@@ -196,8 +204,8 @@ async fn main() -> Result<()> {
         Commands::Serve { project, expanded } => cmd_serve(project, expanded).await,
         Commands::Symbols { file } => cmd_symbols(&file),
         Commands::Structure { file } => cmd_structure(&file),
-        Commands::Init => {
-            cmd_init();
+        Commands::Init { config } => {
+            cmd_init(config);
             Ok(())
         }
     }
