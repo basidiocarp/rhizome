@@ -75,7 +75,7 @@ jobs:
         shell: bash
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rhizome-${{ matrix.target }}
           path: rhizome-${{ matrix.target }}.${{ matrix.archive }}
@@ -111,7 +111,7 @@ jobs:
           path: target/debian/*.deb
 
       - name: Upload RPM
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rhizome-rpm
           path: target/generate-rpm/*.rpm
