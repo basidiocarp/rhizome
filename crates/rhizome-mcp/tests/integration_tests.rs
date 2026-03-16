@@ -22,10 +22,10 @@ fn make_dispatcher() -> ToolDispatcher {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_list_tools_returns_12_tools() {
+fn test_list_tools_returns_25_tools() {
     let dispatcher = make_dispatcher();
     let tools = dispatcher.list_tools();
-    assert_eq!(tools.len(), 12, "Expected 12 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 25, "Expected 25 tools, got {}", tools.len());
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"get_symbols"));
@@ -40,6 +40,21 @@ fn test_list_tools_returns_12_tools() {
     assert!(names.contains(&"rename_symbol"));
     assert!(names.contains(&"get_diagnostics"));
     assert!(names.contains(&"get_hover_info"));
+    // Batch 1 tools
+    assert!(names.contains(&"get_scope"));
+    assert!(names.contains(&"get_exports"));
+    assert!(names.contains(&"summarize_file"));
+    assert!(names.contains(&"get_tests"));
+    assert!(names.contains(&"get_diff_symbols"));
+    assert!(names.contains(&"get_annotations"));
+    assert!(names.contains(&"get_complexity"));
+    assert!(names.contains(&"get_type_definitions"));
+    // Batch 2 tools
+    assert!(names.contains(&"get_dependencies"));
+    assert!(names.contains(&"get_parameters"));
+    assert!(names.contains(&"get_enclosing_class"));
+    assert!(names.contains(&"get_symbol_body"));
+    assert!(names.contains(&"get_changed_files"));
 }
 
 #[test]
@@ -417,4 +432,564 @@ fn extract_text(result: &Value) -> String {
         .and_then(|t| t.as_str())
         .unwrap_or("")
         .to_string()
+}
+
+// ---------------------------------------------------------------------------
+// get_scope
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_scope_inside_function() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_scope",
+            json!({ "file": fixture_path("sample.rs"), "line": 21 }),
+        )
+        .expect("get_scope should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("process"),
+        "Should find process function as scope: {text}"
+    );
+}
+
+#[test]
+fn test_get_scope_top_level() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_scope",
+            json!({ "file": fixture_path("sample.rs"), "line": 24 }),
+        )
+        .expect("get_scope should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("Top-level") || text.contains("MAX_SIZE"),
+        "Should return top-level or constant scope: {text}"
+    );
+}
+
+#[test]
+fn test_get_scope_inside_impl() {
+    let dispatcher = make_dispatcher();
+    // Line 10 is inside Config::new method
+    let result = dispatcher
+        .call_tool(
+            "get_scope",
+            json!({ "file": fixture_path("sample.rs"), "line": 10 }),
+        )
+        .expect("get_scope should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("new"),
+        "Should find the new method as innermost scope: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_exports
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_exports_rust() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool("get_exports", json!({ "file": fixture_path("sample.rs") }))
+        .expect("get_exports should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("Config"),
+        "Should find pub struct Config: {text}"
+    );
+    assert!(
+        text.contains("process"),
+        "Should find pub fn process: {text}"
+    );
+    assert!(
+        text.contains("Status"),
+        "Should find pub enum Status: {text}"
+    );
+    // internal_helper is not pub, should not appear
+    assert!(
+        !text.contains("internal_helper"),
+        "Should not include private internal_helper: {text}"
+    );
+}
+
+#[test]
+fn test_get_exports_python() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool("get_exports", json!({ "file": fixture_path("sample.py") }))
+        .expect("get_exports should succeed for Python");
+
+    let text = extract_text(&result);
+    assert!(text.contains("Config"), "Should find Config class: {text}");
+    assert!(
+        text.contains("process"),
+        "Should find process function: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// summarize_file
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_summarize_file() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "summarize_file",
+            json!({ "file": fixture_path("sample.rs") }),
+        )
+        .expect("summarize_file should succeed");
+
+    let text = extract_text(&result);
+    assert!(text.contains("Config"), "Should include Config: {text}");
+    assert!(text.contains("process"), "Should include process: {text}");
+    // Should be compact - no function bodies
+    assert!(
+        !text.contains("format!"),
+        "Should not include function body details: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_tests_finds_rust_tests() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool("get_tests", json!({ "file": fixture_path("sample.rs") }))
+        .expect("get_tests should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("test_config_new"),
+        "Should find test_config_new: {text}"
+    );
+    assert!(
+        text.contains("test_process"),
+        "Should find test_process: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_annotations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_annotations_finds_todos() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_annotations",
+            json!({ "file": fixture_path("sample.rs") }),
+        )
+        .expect("get_annotations should succeed");
+
+    let text = extract_text(&result);
+    assert!(text.contains("TODO"), "Should find TODO comment: {text}");
+    assert!(text.contains("FIXME"), "Should find FIXME comment: {text}");
+}
+
+#[test]
+fn test_get_annotations_custom_tags() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_annotations",
+            json!({ "file": fixture_path("sample.rs"), "tags": ["FIXME"] }),
+        )
+        .expect("get_annotations should succeed");
+
+    let text = extract_text(&result);
+    assert!(text.contains("FIXME"), "Should find FIXME: {text}");
+    // TODO should not appear when only filtering for FIXME
+    assert!(
+        !text.contains("TODO"),
+        "Should not find TODO when filtering for FIXME only: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_complexity
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_complexity() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_complexity",
+            json!({ "file": fixture_path("sample.rs") }),
+        )
+        .expect("get_complexity should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("complex_logic"),
+        "Should analyze complex_logic: {text}"
+    );
+    assert!(
+        text.contains("complexity"),
+        "Should include complexity scores: {text}"
+    );
+}
+
+#[test]
+fn test_get_complexity_single_function() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_complexity",
+            json!({ "file": fixture_path("sample.rs"), "function": "complex_logic" }),
+        )
+        .expect("get_complexity should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("complex_logic"),
+        "Should find complex_logic: {text}"
+    );
+
+    // complex_logic has multiple if/else/match/for/|| branches, should be > 1
+    let parsed: Vec<Value> = serde_json::from_str(&text).unwrap_or_default();
+    assert!(!parsed.is_empty(), "Should return at least one result");
+    if let Some(complexity) = parsed[0].get("complexity").and_then(|v| v.as_u64()) {
+        assert!(
+            complexity > 1,
+            "complex_logic should have complexity > 1, got {complexity}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// get_type_definitions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_type_definitions() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_type_definitions",
+            json!({ "file": fixture_path("sample.rs") }),
+        )
+        .expect("get_type_definitions should succeed");
+
+    let text = extract_text(&result);
+    assert!(text.contains("Config"), "Should find Config struct: {text}");
+    assert!(text.contains("Status"), "Should find Status enum: {text}");
+    assert!(
+        text.contains("Processor"),
+        "Should find Processor trait: {text}"
+    );
+}
+
+#[test]
+fn test_get_type_definitions_excludes_functions() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_type_definitions",
+            json!({ "file": fixture_path("sample.rs") }),
+        )
+        .expect("get_type_definitions should succeed");
+
+    let text = extract_text(&result);
+    // Functions should not appear in type definitions
+    assert!(
+        !text.contains("\"process\""),
+        "Should not include process function: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_diff_symbols
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_diff_symbols_runs() {
+    let dispatcher = make_dispatcher();
+    // Just verify it doesn't error - actual diff depends on git state
+    let result = dispatcher
+        .call_tool("get_diff_symbols", json!({}))
+        .expect("get_diff_symbols should succeed");
+
+    let text = extract_text(&result);
+    // Should return some output (either changes or "No changes found")
+    assert!(!text.is_empty(), "Should return some output: {text}");
+}
+
+// ---------------------------------------------------------------------------
+// get_dependencies
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_dependencies() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_dependencies",
+            json!({ "file": fixture_path("sample.rs") }),
+        )
+        .expect("get_dependencies should succeed");
+
+    let text = extract_text(&result);
+    // Should return a JSON map with function names as keys
+    let parsed: Value = serde_json::from_str(&text).unwrap();
+    assert!(parsed.is_object(), "Should return a JSON object: {text}");
+    // complex_logic is a function in the file
+    assert!(
+        parsed.get("complex_logic").is_some() || parsed.get("process").is_some(),
+        "Should include known functions: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_parameters
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_parameters_all() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_parameters",
+            json!({ "file": fixture_path("sample.rs") }),
+        )
+        .expect("get_parameters should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("process") || text.contains("complex_logic"),
+        "Should include function names: {text}"
+    );
+}
+
+#[test]
+fn test_get_parameters_single_function() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_parameters",
+            json!({ "file": fixture_path("sample.rs"), "function": "complex_logic" }),
+        )
+        .expect("get_parameters should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("complex_logic"),
+        "Should include complex_logic: {text}"
+    );
+    // complex_logic has params x: i32, y: i32
+    assert!(text.contains("x"), "Should find param x: {text}");
+    assert!(text.contains("y"), "Should find param y: {text}");
+}
+
+// ---------------------------------------------------------------------------
+// get_enclosing_class
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_enclosing_class_found() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_enclosing_class",
+            json!({ "file": fixture_path("sample.rs"), "method": "new" }),
+        )
+        .expect("get_enclosing_class should succeed");
+
+    let text = extract_text(&result);
+    // "new" is inside impl Config
+    assert!(
+        text.contains("Config"),
+        "Should find Config as parent: {text}"
+    );
+    assert!(
+        text.contains("value"),
+        "Should include sibling method 'value': {text}"
+    );
+}
+
+#[test]
+fn test_get_enclosing_class_not_found() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_enclosing_class",
+            json!({ "file": fixture_path("sample.rs"), "method": "nonexistent_method" }),
+        )
+        .expect("get_enclosing_class should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("No enclosing"),
+        "Should report not found: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_symbol_body
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_symbol_body() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_symbol_body",
+            json!({ "file": fixture_path("sample.rs"), "symbol": "process" }),
+        )
+        .expect("get_symbol_body should succeed");
+
+    let text = extract_text(&result);
+    assert!(text.contains("process"), "Should find process: {text}");
+    assert!(text.contains("body"), "Should include body field: {text}");
+    // The body should contain the actual source code
+    assert!(
+        text.contains("format!") || text.contains("config"),
+        "Should include actual source code: {text}"
+    );
+}
+
+#[test]
+fn test_get_symbol_body_not_found() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_symbol_body",
+            json!({ "file": fixture_path("sample.rs"), "symbol": "nonexistent" }),
+        )
+        .expect("get_symbol_body should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("not found"),
+        "Should report not found: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_changed_files
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_changed_files_runs() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool("get_changed_files", json!({}))
+        .expect("get_changed_files should succeed");
+
+    let text = extract_text(&result);
+    assert!(!text.is_empty(), "Should return some output: {text}");
+}
+
+// ---------------------------------------------------------------------------
+// Unified mode (McpServer)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_unified_mode_tools_list_returns_one_tool() {
+    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let server = rhizome_mcp::McpServer::new(project_root, true);
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    });
+
+    let response = server.handle_request_for_test(&request);
+    let tools = response
+        .get("result")
+        .and_then(|r| r.get("tools"))
+        .and_then(|t| t.as_array())
+        .expect("Should have tools array");
+    assert_eq!(tools.len(), 1, "Unified mode should return exactly 1 tool");
+    assert_eq!(
+        tools[0].get("name").and_then(|n| n.as_str()),
+        Some("rhizome"),
+        "The single tool should be named 'rhizome'"
+    );
+}
+
+#[test]
+fn test_expanded_mode_tools_list_returns_25_tools() {
+    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let server = rhizome_mcp::McpServer::new(project_root, false);
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    });
+
+    let response = server.handle_request_for_test(&request);
+    let tools = response
+        .get("result")
+        .and_then(|r| r.get("tools"))
+        .and_then(|t| t.as_array())
+        .expect("Should have tools array");
+    assert_eq!(
+        tools.len(),
+        25,
+        "Expanded mode should return 25 tools, got {}",
+        tools.len()
+    );
+}
+
+#[test]
+fn test_unified_mode_call_via_rhizome_tool() {
+    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let server = rhizome_mcp::McpServer::new(project_root, true);
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "rhizome",
+            "arguments": {
+                "command": "get_symbols",
+                "file": fixture_path("sample.rs")
+            }
+        }
+    });
+
+    let response = server.handle_request_for_test(&request);
+    let result = response.get("result").expect("Should have result");
+    // Should not be an error
+    assert!(
+        result.get("isError").is_none()
+            || !result
+                .get("isError")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        "Should not be an error: {:?}",
+        result
+    );
+    let text = result
+        .get("content")
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|item| item.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    assert!(
+        text.contains("Config"),
+        "Should find Config symbol via unified mode: {text}"
+    );
 }
