@@ -7,3 +7,8 @@ edition = "2021"
 rhizome-core = { path = "../rhizome-core" }
 rhizome-treesitter = { path = "../rhizome-treesitter" }
 rhizome-lsp = { path = "../rhizome-lsp" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
