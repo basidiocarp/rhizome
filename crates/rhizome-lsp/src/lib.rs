@@ -20,27 +20,103 @@ use crate::manager::LanguageServerManager;
 /// LSP-backed code intelligence. Wraps async LSP calls behind the sync
 /// `CodeIntelligence` trait using `Handle::block_on`.
 ///
+/// Manages multiple LSP clients keyed by (language, workspace_root) for
+/// monorepo support. The workspace root is either passed explicitly via
+/// root-aware methods or derived from the file path.
+///
 /// **Important**: `CodeIntelligence` methods use `block_on` internally, so they
 /// must NOT be called from within a tokio async context. Use `spawn_blocking`
 /// from async code, or call the async methods on `LspClient` directly.
 pub struct LspBackend {
     manager: Arc<tokio::sync::Mutex<LanguageServerManager>>,
     handle: tokio::runtime::Handle,
+    /// Default workspace root, used when no per-call root is specified.
+    default_root: PathBuf,
 }
 
 impl LspBackend {
     pub fn new(workspace_root: PathBuf, handle: tokio::runtime::Handle) -> Self {
         Self {
-            manager: Arc::new(tokio::sync::Mutex::new(LanguageServerManager::new(
-                workspace_root,
-            ))),
+            manager: Arc::new(tokio::sync::Mutex::new(LanguageServerManager::new())),
             handle,
+            default_root: workspace_root,
         }
     }
 
     /// Shut down all managed language servers.
     pub async fn shutdown(&self) -> Result<()> {
         self.manager.lock().await.shutdown_all().await
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Root-aware methods for the ToolDispatcher
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Get symbols using a specific workspace root.
+    pub fn get_symbols_with_root(&self, file: &Path, workspace_root: &Path) -> Result<Vec<Symbol>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        self.handle.block_on(async {
+            let lang = detect_language(&file)?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr.get_client(&lang, &root).await?;
+            let response = client.document_symbols(&file).await?;
+            let file_str = file.to_string_lossy().to_string();
+
+            Ok(match response {
+                Some(lsp_types::DocumentSymbolResponse::Nested(syms)) => syms
+                    .iter()
+                    .map(|s| lsp_symbol_to_symbol(s, &file_str))
+                    .collect(),
+                Some(lsp_types::DocumentSymbolResponse::Flat(infos)) => {
+                    infos.iter().map(lsp_symbol_info_to_symbol).collect()
+                }
+                None => vec![],
+            })
+        })
+    }
+
+    /// Find references using a specific workspace root.
+    pub fn find_references_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        workspace_root: &Path,
+    ) -> Result<Vec<Location>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let lsp_pos = lsp_types::Position {
+            line: position.line.saturating_sub(1),
+            character: position.column.saturating_sub(1),
+        };
+        self.handle.block_on(async {
+            let lang = detect_language(&file)?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr.get_client(&lang, &root).await?;
+            let refs = client.find_references(&file, lsp_pos).await?;
+            Ok(refs.iter().map(lsp_location_to_location).collect())
+        })
+    }
+
+    /// Get diagnostics using a specific workspace root.
+    pub fn get_diagnostics_with_root(
+        &self,
+        file: &Path,
+        workspace_root: &Path,
+    ) -> Result<Vec<Diagnostic>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        self.handle.block_on(async {
+            let lang = detect_language(&file)?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr.get_client(&lang, &root).await?;
+            let file_str = file.to_string_lossy().to_string();
+            let diags = client.cached_diagnostics(&file);
+            Ok(diags
+                .iter()
+                .map(|d| lsp_diagnostic_to_diagnostic(d, &file_str))
+                .collect())
+        })
     }
 }
 
@@ -68,34 +144,17 @@ fn find_symbol_by_name(symbols: &[Symbol], name: &str) -> Option<Symbol> {
 
 impl CodeIntelligence for LspBackend {
     fn get_symbols(&self, file: &Path) -> Result<Vec<Symbol>> {
-        let file = file.to_path_buf();
-        self.handle.block_on(async {
-            let lang = detect_language(&file)?;
-            let mut mgr = self.manager.lock().await;
-            let client = mgr.get_client(&lang).await?;
-            let response = client.document_symbols(&file).await?;
-            let file_str = file.to_string_lossy().to_string();
-
-            Ok(match response {
-                Some(lsp_types::DocumentSymbolResponse::Nested(syms)) => syms
-                    .iter()
-                    .map(|s| lsp_symbol_to_symbol(s, &file_str))
-                    .collect(),
-                Some(lsp_types::DocumentSymbolResponse::Flat(infos)) => {
-                    infos.iter().map(lsp_symbol_info_to_symbol).collect()
-                }
-                None => vec![],
-            })
-        })
+        self.get_symbols_with_root(file, &self.default_root)
     }
 
     fn get_definition(&self, file: &Path, name: &str) -> Result<Option<Symbol>> {
         let file = file.to_path_buf();
         let name = name.to_string();
+        let root = self.default_root.clone();
         self.handle.block_on(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
-            let client = mgr.get_client(&lang).await?;
+            let client = mgr.get_client(&lang, &root).await?;
             let response = client.document_symbols(&file).await?;
             let file_str = file.to_string_lossy().to_string();
 
@@ -115,25 +174,14 @@ impl CodeIntelligence for LspBackend {
     }
 
     fn find_references(&self, file: &Path, position: &Position) -> Result<Vec<Location>> {
-        let file = file.to_path_buf();
-        let lsp_pos = lsp_types::Position {
-            line: position.line.saturating_sub(1),
-            character: position.column.saturating_sub(1),
-        };
-        self.handle.block_on(async {
-            let lang = detect_language(&file)?;
-            let mut mgr = self.manager.lock().await;
-            let client = mgr.get_client(&lang).await?;
-            let refs = client.find_references(&file, lsp_pos).await?;
-            Ok(refs.iter().map(lsp_location_to_location).collect())
-        })
+        self.find_references_with_root(file, position, &self.default_root)
     }
 
     fn search_symbols(&self, pattern: &str, _project_root: &Path) -> Result<Vec<Symbol>> {
         let pattern = pattern.to_string();
+        let root = self.default_root.clone();
         self.handle.block_on(async {
             let mut mgr = self.manager.lock().await;
-            // Try each active language's client for workspace symbols
             let languages: Vec<Language> = [
                 Language::Rust,
                 Language::TypeScript,
@@ -143,7 +191,7 @@ impl CodeIntelligence for LspBackend {
             .into();
 
             for lang in &languages {
-                if let Ok(client) = mgr.get_client(lang).await {
+                if let Ok(client) = mgr.get_client(lang, &root).await {
                     if let Ok(Some(response)) = client.workspace_symbols(&pattern).await {
                         let symbols: Vec<Symbol> = match response {
                             lsp_types::WorkspaceSymbolResponse::Flat(infos) => {
@@ -192,8 +240,6 @@ impl CodeIntelligence for LspBackend {
     }
 
     fn get_imports(&self, file: &Path) -> Result<Vec<Symbol>> {
-        // LSP document symbols don't typically include imports as a distinct kind.
-        // Filter document symbols for Import kind (rarely populated by LSP servers).
         let symbols = self.get_symbols(file)?;
         Ok(symbols
             .into_iter()
@@ -202,18 +248,7 @@ impl CodeIntelligence for LspBackend {
     }
 
     fn get_diagnostics(&self, file: &Path) -> Result<Vec<Diagnostic>> {
-        let file = file.to_path_buf();
-        self.handle.block_on(async {
-            let lang = detect_language(&file)?;
-            let mut mgr = self.manager.lock().await;
-            let client = mgr.get_client(&lang).await?;
-            let file_str = file.to_string_lossy().to_string();
-            let diags = client.cached_diagnostics(&file);
-            Ok(diags
-                .iter()
-                .map(|d| lsp_diagnostic_to_diagnostic(d, &file_str))
-                .collect())
-        })
+        self.get_diagnostics_with_root(file, &self.default_root)
     }
 
     fn capabilities(&self) -> BackendCapabilities {

@@ -250,9 +250,19 @@ fn cmd_status(project: Option<PathBuf>) -> Result<()> {
         );
     }
 
+    let installer = selector.installer();
     println!("\nBackend selection: tree-sitter (default) -> auto-upgrade to LSP when needed");
     println!("LSP-required tools: rename_symbol, get_hover_info");
     println!("LSP-preferred tools: find_references, get_diagnostics");
+    println!(
+        "\nAuto-install: {}",
+        if installer.is_disabled() {
+            "disabled"
+        } else {
+            "enabled (set RHIZOME_DISABLE_LSP_DOWNLOAD=1 to disable)"
+        }
+    );
+    println!("Managed bin dir: {}", installer.bin_dir().display());
 
     Ok(())
 }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::config::RhizomeConfig;
+use crate::installer::LspInstaller;
 use crate::language::Language;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,15 +56,22 @@ struct ServerProbe {
 
 pub struct BackendSelector {
     config: RhizomeConfig,
+    installer: LspInstaller,
     cache: HashMap<Language, ServerProbe>,
 }
 
 impl BackendSelector {
     pub fn new(config: RhizomeConfig) -> Self {
+        let installer = LspInstaller::from_env(config.lsp.disable_download, config.lsp.bin_dir.clone());
         Self {
             config,
+            installer,
             cache: HashMap::new(),
         }
+    }
+
+    pub fn installer(&self) -> &LspInstaller {
+        &self.installer
     }
 
     /// Determine which backend to use for a given tool and language.
@@ -125,7 +133,7 @@ impl BackendSelector {
 
     fn probe_language(&mut self, language: &Language) -> &ServerProbe {
         if !self.cache.contains_key(language) {
-            let probe = probe_server(language, &self.config);
+            let probe = probe_server(language, &self.config, &self.installer);
             self.cache.insert(language.clone(), probe);
         }
         &self.cache[language]
@@ -148,7 +156,7 @@ pub fn tool_requirement(tool_name: &str) -> BackendRequirement {
 // Server binary detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn probe_server(language: &Language, config: &RhizomeConfig) -> ServerProbe {
+fn probe_server(language: &Language, config: &RhizomeConfig, installer: &LspInstaller) -> ServerProbe {
     let server_config = config
         .get_server_config(language)
         .or_else(|| language.default_server_config());
@@ -164,13 +172,14 @@ fn probe_server(language: &Language, config: &RhizomeConfig) -> ServerProbe {
         }
     };
 
-    match which::which(&binary) {
-        Ok(path) => ServerProbe {
+    // Try to find or auto-install the server
+    match installer.ensure_server(language, &binary) {
+        Ok(Some(path)) => ServerProbe {
             binary,
             available: true,
             path: Some(path),
         },
-        Err(_) => ServerProbe {
+        _ => ServerProbe {
             binary,
             available: false,
             path: None,
@@ -179,19 +188,26 @@ fn probe_server(language: &Language, config: &RhizomeConfig) -> ServerProbe {
 }
 
 fn install_hint(language: &Language, binary: &str) -> String {
-    let hint = match language {
-        Language::Rust => "Install via: rustup component add rust-analyzer",
-        Language::Python => "Install via: pip install pyright",
+    let manual = match language {
+        Language::Rust => "rustup component add rust-analyzer",
+        Language::Python => "pip install pyright",
         Language::JavaScript | Language::TypeScript => {
-            "Install via: npm install -g typescript-language-server typescript"
+            "npm install -g typescript-language-server typescript"
         }
-        Language::Go => "Install via: go install golang.org/x/tools/gopls@latest",
-        Language::Java => "Install via: https://github.com/eclipse-jdtls/eclipse.jdt.ls",
-        Language::C | Language::Cpp => "Install via: brew install llvm (macOS) or apt install clangd",
-        Language::Ruby => "Install via: gem install solargraph",
+        Language::Go => "go install golang.org/x/tools/gopls@latest",
+        Language::Java => "See https://github.com/eclipse-jdtls/eclipse.jdt.ls",
+        Language::C | Language::Cpp => "brew install llvm (macOS) or apt install clangd",
+        Language::Ruby => "gem install solargraph",
         Language::Other(_) => "Install the appropriate language server",
     };
-    format!("{binary} not found in PATH. {hint}")
+
+    let auto_note = if language.install_command().is_some() {
+        " Auto-install may have failed — check RHIZOME_DISABLE_LSP_DOWNLOAD and package manager availability."
+    } else {
+        ""
+    };
+
+    format!("{binary} not found. Manual install: {manual}.{auto_note}")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

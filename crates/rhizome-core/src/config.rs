@@ -36,6 +36,16 @@ impl Default for ExportConfig {
     }
 }
 
+/// LSP configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LspConfig {
+    /// Disable automatic LSP server installation (default: false)
+    #[serde(default)]
+    pub disable_download: bool,
+    /// Custom directory for managed LSP binaries (default: ~/.rhizome/bin/)
+    pub bin_dir: Option<std::path::PathBuf>,
+}
+
 /// Top-level configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RhizomeConfig {
@@ -45,6 +55,9 @@ pub struct RhizomeConfig {
     /// Export settings
     #[serde(default)]
     pub export: ExportConfig,
+    /// LSP settings
+    #[serde(default)]
+    pub lsp: LspConfig,
 }
 
 impl RhizomeConfig {
@@ -86,9 +99,16 @@ impl RhizomeConfig {
         for (lang, config) in project.languages {
             languages.insert(lang, config);
         }
+        // Project LSP config overrides global, field by field
+        let lsp = LspConfig {
+            disable_download: project.lsp.disable_download || global.lsp.disable_download,
+            bin_dir: project.lsp.bin_dir.or(global.lsp.bin_dir),
+        };
+
         Self {
             languages,
             export: project.export,
+            lsp,
         }
     }
 
