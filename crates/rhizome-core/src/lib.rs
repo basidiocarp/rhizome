@@ -17,7 +17,7 @@ pub use config::RhizomeConfig;
 pub use export_cache::ExportCache;
 pub use graph::{CodeGraph, ConceptEdge, ConceptNode};
 pub use hyphae::ExportResult;
-pub use installer::LspInstaller;
+pub use installer::{install_recipe, LspInstaller};
 pub use language::{Language, LanguageServerConfig};
 pub use root_detector::detect_workspace_root;
 pub use symbol::{Location, Symbol, SymbolKind};

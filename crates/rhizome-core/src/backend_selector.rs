@@ -87,7 +87,7 @@ impl BackendSelector {
                 } else {
                     ResolvedBackend::LspUnavailable {
                         binary: probe.binary.clone(),
-                        install_hint: install_hint(language, &probe.binary),
+                        install_hint: install_hint(&probe.binary),
                     }
                 }
             }
@@ -187,27 +187,20 @@ fn probe_server(language: &Language, config: &RhizomeConfig, installer: &LspInst
     }
 }
 
-fn install_hint(language: &Language, binary: &str) -> String {
-    let manual = match language {
-        Language::Rust => "rustup component add rust-analyzer",
-        Language::Python => "pip install pyright",
-        Language::JavaScript | Language::TypeScript => {
-            "npm install -g typescript-language-server typescript"
+fn install_hint(binary: &str) -> String {
+    match crate::installer::install_recipe(binary) {
+        Some(recipe) => {
+            let cmd = format!("{} {}", recipe.manager, recipe.args.join(" "));
+            format!(
+                "{binary} not found. Manual install: {cmd}. \
+                 Auto-install may have failed — check RHIZOME_DISABLE_LSP_DOWNLOAD \
+                 and package manager availability."
+            )
         }
-        Language::Go => "go install golang.org/x/tools/gopls@latest",
-        Language::Java => "See https://github.com/eclipse-jdtls/eclipse.jdt.ls",
-        Language::C | Language::Cpp => "brew install llvm (macOS) or apt install clangd",
-        Language::Ruby => "gem install solargraph",
-        Language::Other(_) => "Install the appropriate language server",
-    };
-
-    let auto_note = if language.install_command().is_some() {
-        " Auto-install may have failed — check RHIZOME_DISABLE_LSP_DOWNLOAD and package manager availability."
-    } else {
-        ""
-    };
-
-    format!("{binary} not found. Manual install: {manual}.{auto_note}")
+        None => format!(
+            "{binary} not found. No auto-install recipe available — install manually."
+        ),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

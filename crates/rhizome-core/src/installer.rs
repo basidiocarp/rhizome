@@ -7,57 +7,140 @@ use tracing::{debug, info, warn};
 use crate::Language;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Install commands per language
+// Install recipes keyed by binary name
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub struct InstallCommand {
+/// How to install a specific LSP server binary.
+#[derive(Debug, Clone)]
+pub struct InstallRecipe {
     /// The package manager binary (e.g. "rustup", "npm").
     pub manager: &'static str,
     /// Arguments to the package manager.
     pub args: &'static [&'static str],
-    /// Environment variables to set during install.
-    pub env: &'static [(&'static str, &'static str)],
-    /// Whether to use the managed bin dir via env var (e.g. GOBIN).
+    /// Environment variable to set to the managed bin dir (e.g. "GOBIN").
     pub bin_env: Option<&'static str>,
+    /// Install strategy for bin dir placement.
+    pub strategy: InstallStrategy,
+}
+
+/// How to place binaries in the managed bin dir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallStrategy {
+    /// Package manager handles its own PATH (e.g. rustup).
+    ManagerOwned,
+    /// Use --prefix <bin_dir> (npm style).
+    NpmPrefix,
+    /// Use --bindir <bin_dir> (gem style).
+    GemBinDir,
+    /// Set a bin env var (e.g. GOBIN, CARGO_INSTALL_ROOT).
+    BinEnv,
+    /// Use pipx or fall back to pip.
+    PipxOrPip,
+}
+
+/// Look up the install recipe for a given server binary name.
+/// Returns `None` for binaries we don't know how to install.
+pub fn install_recipe(binary_name: &str) -> Option<InstallRecipe> {
+    match binary_name {
+        // ── Rust ────────────────────────────────────────────────────────
+        "rust-analyzer" => Some(InstallRecipe {
+            manager: "rustup",
+            args: &["component", "add", "rust-analyzer"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── Python ─────────────────────────────────────────────────────
+        "pyright-langserver" | "pyright" => Some(InstallRecipe {
+            manager: "pipx",
+            args: &["install", "pyright"],
+            bin_env: None,
+            strategy: InstallStrategy::PipxOrPip,
+        }),
+        "pylsp" => Some(InstallRecipe {
+            manager: "pipx",
+            args: &["install", "python-lsp-server"],
+            bin_env: None,
+            strategy: InstallStrategy::PipxOrPip,
+        }),
+        "ruff" => Some(InstallRecipe {
+            manager: "pipx",
+            args: &["install", "ruff"],
+            bin_env: None,
+            strategy: InstallStrategy::PipxOrPip,
+        }),
+        "jedi-language-server" => Some(InstallRecipe {
+            manager: "pipx",
+            args: &["install", "jedi-language-server"],
+            bin_env: None,
+            strategy: InstallStrategy::PipxOrPip,
+        }),
+
+        // ── JavaScript / TypeScript ────────────────────────────────────
+        "typescript-language-server" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "typescript-language-server", "typescript"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+        "biome" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "@biomejs/biome"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+
+        // ── Go ─────────────────────────────────────────────────────────
+        "gopls" => Some(InstallRecipe {
+            manager: "go",
+            args: &["install", "golang.org/x/tools/gopls@latest"],
+            bin_env: Some("GOBIN"),
+            strategy: InstallStrategy::BinEnv,
+        }),
+
+        // ── Ruby ───────────────────────────────────────────────────────
+        "solargraph" => Some(InstallRecipe {
+            manager: "gem",
+            args: &["install", "solargraph"],
+            bin_env: None,
+            strategy: InstallStrategy::GemBinDir,
+        }),
+        "ruby-lsp" => Some(InstallRecipe {
+            manager: "gem",
+            args: &["install", "ruby-lsp"],
+            bin_env: None,
+            strategy: InstallStrategy::GemBinDir,
+        }),
+
+        // ── C / C++ ───────────────────────────────────────────────────
+        // clangd and ccls require system package managers — skip auto-install
+
+        // ── Elixir ─────────────────────────────────────────────────────
+        "elixir-ls" | "elixir_ls" => Some(InstallRecipe {
+            manager: "mix",
+            args: &["archive.install", "hex", "elixir_ls"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        // ── Zig ────────────────────────────────────────────────────────
+        "zls" => Some(InstallRecipe {
+            manager: "zig",
+            args: &["fetch", "--save=zls"],
+            bin_env: None,
+            strategy: InstallStrategy::ManagerOwned,
+        }),
+
+        _ => None,
+    }
 }
 
 impl Language {
-    /// Returns the install command for this language's LSP server, or `None`
-    /// if auto-install isn't supported (e.g. Java, C/C++).
-    pub fn install_command(&self) -> Option<InstallCommand> {
-        match self {
-            Language::Rust => Some(InstallCommand {
-                manager: "rustup",
-                args: &["component", "add", "rust-analyzer"],
-                env: &[],
-                bin_env: None, // rustup manages its own bin path
-            }),
-            Language::Python => Some(InstallCommand {
-                manager: "pipx", // will fall back to pip
-                args: &["install", "pyright"],
-                env: &[],
-                bin_env: None,
-            }),
-            Language::JavaScript | Language::TypeScript => Some(InstallCommand {
-                manager: "npm",
-                args: &["install", "typescript-language-server", "typescript"],
-                env: &[],
-                bin_env: None, // uses --prefix
-            }),
-            Language::Go => Some(InstallCommand {
-                manager: "go",
-                args: &["install", "golang.org/x/tools/gopls@latest"],
-                env: &[],
-                bin_env: Some("GOBIN"),
-            }),
-            Language::Ruby => Some(InstallCommand {
-                manager: "gem",
-                args: &["install", "solargraph"],
-                env: &[],
-                bin_env: None, // uses --bindir
-            }),
-            Language::Java | Language::C | Language::Cpp | Language::Other(_) => None,
-        }
+    /// Returns the install recipe for this language's *default* LSP server.
+    /// Prefer `install_recipe(binary_name)` for config-driven lookups.
+    pub fn install_command(&self) -> Option<InstallRecipe> {
+        let binary = self.default_server_config()?.binary;
+        install_recipe(&binary)
     }
 }
 
@@ -104,9 +187,10 @@ impl LspInstaller {
         which::which_in(name, Some(self.augmented_path()), ".").ok()
     }
 
-    /// Ensure the LSP server for a language is installed.
+    /// Ensure the LSP server binary is installed.
+    /// Looks up the install recipe by binary name, not by language.
     /// Returns the binary path if found or successfully installed, None if skipped.
-    pub fn ensure_server(&self, language: &Language, binary_name: &str) -> Result<Option<PathBuf>> {
+    pub fn ensure_server(&self, _language: &Language, binary_name: &str) -> Result<Option<PathBuf>> {
         // Check if already available
         if let Some(path) = self.find_binary(binary_name) {
             return Ok(Some(path));
@@ -117,76 +201,67 @@ impl LspInstaller {
             return Ok(None);
         }
 
-        let install_cmd = match language.install_command() {
-            Some(cmd) => cmd,
+        let recipe = match install_recipe(binary_name) {
+            Some(r) => r,
             None => {
-                debug!("No auto-install available for {}", language);
+                debug!("No auto-install recipe for {binary_name}");
                 return Ok(None);
             }
         };
 
         // Check if the package manager is available
-        if which::which(install_cmd.manager).is_err() {
-            // For Python, fall back from pipx to pip
-            if *language == Language::Python {
-                return self.install_python_fallback(binary_name);
+        if which::which(recipe.manager).is_err() {
+            if recipe.strategy == InstallStrategy::PipxOrPip {
+                return self.install_python_fallback(binary_name, &recipe);
             }
             warn!(
                 "Cannot auto-install {binary_name}: {} not found in PATH",
-                install_cmd.manager
+                recipe.manager
             );
             return Ok(None);
         }
 
-        self.run_install(language, &install_cmd, binary_name)
+        self.run_install(&recipe, binary_name)
     }
 
-    fn run_install(
-        &self,
-        language: &Language,
-        cmd: &InstallCommand,
-        binary_name: &str,
-    ) -> Result<Option<PathBuf>> {
+    fn run_install(&self, recipe: &InstallRecipe, binary_name: &str) -> Result<Option<PathBuf>> {
         std::fs::create_dir_all(&self.bin_dir)
             .context("Failed to create rhizome bin directory")?;
 
-        info!("Installing LSP server: {binary_name} via {}", cmd.manager);
+        info!("Installing LSP server: {binary_name} via {}", recipe.manager);
 
-        let mut command = Command::new(cmd.manager);
+        let mut command = Command::new(recipe.manager);
 
-        // Language-specific argument customization
-        match language {
-            Language::JavaScript | Language::TypeScript => {
-                // npm install --prefix ~/.rhizome typescript-language-server typescript
+        match recipe.strategy {
+            InstallStrategy::NpmPrefix => {
+                // npm install --prefix ~/.rhizome <packages>
                 command.arg("install");
                 command.arg("--prefix");
                 command.arg(&self.bin_dir);
-                command.args(&cmd.args[1..]); // skip "install"
+                command.args(&recipe.args[1..]); // skip "install"
             }
-            Language::Ruby => {
-                // gem install solargraph --bindir ~/.rhizome/bin
-                command.args(cmd.args);
+            InstallStrategy::GemBinDir => {
+                // gem install <gem> --bindir ~/.rhizome/bin
+                command.args(recipe.args);
                 command.arg("--bindir");
                 command.arg(&self.bin_dir);
             }
-            _ => {
-                command.args(cmd.args);
+            InstallStrategy::BinEnv => {
+                command.args(recipe.args);
+                if let Some(env_key) = recipe.bin_env {
+                    command.env(env_key, &self.bin_dir);
+                }
             }
-        }
-
-        // Set environment variables
-        for (key, val) in cmd.env {
-            command.env(key, val);
-        }
-        if let Some(bin_env) = cmd.bin_env {
-            command.env(bin_env, &self.bin_dir);
+            InstallStrategy::PipxOrPip | InstallStrategy::ManagerOwned => {
+                command.args(recipe.args);
+            }
         }
 
         let output = command
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output()
-            .with_context(|| format!("Failed to run {} for {binary_name}", cmd.manager))?;
+            .with_context(|| format!("Failed to run {} for {binary_name}", recipe.manager))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -195,13 +270,15 @@ impl LspInstaller {
         }
 
         info!("Successfully installed {binary_name}");
-
-        // Check if the binary is now available
         Ok(self.find_binary(binary_name))
     }
 
     /// Python fallback: try pip if pipx is not available.
-    fn install_python_fallback(&self, binary_name: &str) -> Result<Option<PathBuf>> {
+    fn install_python_fallback(
+        &self,
+        binary_name: &str,
+        recipe: &InstallRecipe,
+    ) -> Result<Option<PathBuf>> {
         if which::which("pip").is_err() && which::which("pip3").is_err() {
             warn!("Cannot auto-install {binary_name}: neither pipx nor pip found");
             return Ok(None);
@@ -213,13 +290,16 @@ impl LspInstaller {
             "pip"
         };
 
+        // Extract the package name from the pipx args (e.g. ["install", "pyright"] → "pyright")
+        let package = recipe.args.last().unwrap_or(&binary_name);
+
         std::fs::create_dir_all(&self.bin_dir)
             .context("Failed to create rhizome bin directory")?;
 
         info!("Installing LSP server: {binary_name} via {pip}");
 
         let output = Command::new(pip)
-            .args(["install", "--break-system-packages", "pyright"])
+            .args(["install", "--break-system-packages", package])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output()
@@ -260,9 +340,6 @@ mod tests {
         let result = installer
             .ensure_server(&Language::Rust, "rust-analyzer")
             .unwrap();
-        // When disabled, should still find existing binaries
-        // (rust-analyzer may or may not be installed)
-        // But it should NOT attempt to install
         if which::which("rust-analyzer").is_ok() {
             assert!(result.is_some());
         }
@@ -271,12 +348,11 @@ mod tests {
     #[test]
     fn installer_finds_existing_binary() {
         let installer = LspInstaller::new(None, true);
-        // "sh" should exist on any Unix system
         assert!(installer.find_binary("sh").is_some());
     }
 
     #[test]
-    fn install_commands_are_defined() {
+    fn recipes_for_default_servers() {
         assert!(Language::Rust.install_command().is_some());
         assert!(Language::Python.install_command().is_some());
         assert!(Language::TypeScript.install_command().is_some());
@@ -285,6 +361,42 @@ mod tests {
         assert!(Language::Java.install_command().is_none());
         assert!(Language::C.install_command().is_none());
         assert!(Language::Cpp.install_command().is_none());
+    }
+
+    #[test]
+    fn recipes_for_alternative_servers() {
+        // Python alternatives
+        assert!(install_recipe("pylsp").is_some());
+        assert!(install_recipe("ruff").is_some());
+        assert!(install_recipe("jedi-language-server").is_some());
+
+        // Ruby alternative
+        assert!(install_recipe("ruby-lsp").is_some());
+
+        // JS/TS alternative
+        assert!(install_recipe("biome").is_some());
+
+        // Unknown binary
+        assert!(install_recipe("nonexistent-lsp-xyz").is_none());
+    }
+
+    #[test]
+    fn recipe_strategy_matches_manager() {
+        let r = install_recipe("gopls").unwrap();
+        assert_eq!(r.strategy, InstallStrategy::BinEnv);
+        assert_eq!(r.bin_env, Some("GOBIN"));
+
+        let r = install_recipe("typescript-language-server").unwrap();
+        assert_eq!(r.strategy, InstallStrategy::NpmPrefix);
+
+        let r = install_recipe("solargraph").unwrap();
+        assert_eq!(r.strategy, InstallStrategy::GemBinDir);
+
+        let r = install_recipe("pyright-langserver").unwrap();
+        assert_eq!(r.strategy, InstallStrategy::PipxOrPip);
+
+        let r = install_recipe("rust-analyzer").unwrap();
+        assert_eq!(r.strategy, InstallStrategy::ManagerOwned);
     }
 
     #[test]
