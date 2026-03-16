@@ -27,13 +27,26 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
         bail!("Hyphae binary not found in PATH");
     }
 
+    let project = graph_json
+        .get("project")
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::Value::String(
+                memoir_name
+                    .strip_prefix("code:")
+                    .unwrap_or(memoir_name)
+                    .to_string(),
+            )
+        });
+
     let request = spore::jsonrpc::Request::new(
         "tools/call",
         serde_json::json!({
             "name": "hyphae_import_code_graph",
             "arguments": {
-                "memoir_name": memoir_name,
-                "graph": graph_json
+                "project": project,
+                "nodes": graph_json["nodes"],
+                "edges": graph_json["edges"]
             }
         }),
     );
@@ -124,14 +137,15 @@ mod tests {
 
     #[test]
     fn jsonrpc_request_format() {
-        let graph = serde_json::json!({"nodes": [], "edges": []});
+        let graph = serde_json::json!({"project": "myapp", "nodes": [{"id": "1"}], "edges": [{"from": "1", "to": "2"}]});
         let request = spore::jsonrpc::Request::new(
             "tools/call",
             serde_json::json!({
                 "name": "hyphae_import_code_graph",
                 "arguments": {
-                    "memoir_name": "test-memoir",
-                    "graph": graph
+                    "project": graph["project"],
+                    "nodes": graph["nodes"],
+                    "edges": graph["edges"]
                 }
             }),
         );
@@ -139,11 +153,36 @@ mod tests {
         assert_eq!(request.jsonrpc, "2.0");
         assert_eq!(request.method, "tools/call");
         assert_eq!(request.params["name"], "hyphae_import_code_graph");
-        assert_eq!(request.params["arguments"]["memoir_name"], "test-memoir");
+        assert_eq!(request.params["arguments"]["project"], "myapp");
         assert_eq!(
-            request.params["arguments"]["graph"],
-            serde_json::json!({"nodes": [], "edges": []})
+            request.params["arguments"]["nodes"],
+            serde_json::json!([{"id": "1"}])
         );
+        assert_eq!(
+            request.params["arguments"]["edges"],
+            serde_json::json!([{"from": "1", "to": "2"}])
+        );
+        // Verify old nested format is gone
+        assert!(request.params["arguments"].get("memoir_name").is_none());
+        assert!(request.params["arguments"].get("graph").is_none());
+    }
+
+    #[test]
+    fn jsonrpc_request_extracts_project_from_memoir_name() {
+        let graph = serde_json::json!({"nodes": [], "edges": []});
+        let project = graph
+            .get("project")
+            .cloned()
+            .unwrap_or_else(|| {
+                serde_json::Value::String(
+                    "code:fallback-app"
+                        .strip_prefix("code:")
+                        .unwrap_or("code:fallback-app")
+                        .to_string(),
+                )
+            });
+
+        assert_eq!(project, "fallback-app");
     }
 
     #[test]
