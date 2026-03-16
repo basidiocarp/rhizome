@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: coverage-${{ github.ref }}
@@ -78,4 +79,4 @@ jobs:
         with:
           name: lcov-report
           path: lcov.info
-          retention-days: 7
+          retention-days: 30
