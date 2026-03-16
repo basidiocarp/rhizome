@@ -216,6 +216,12 @@ fn language_to_config_key(language: &crate::Language) -> String {
         crate::Language::C => "c".to_string(),
         crate::Language::Cpp => "cpp".to_string(),
         crate::Language::Ruby => "ruby".to_string(),
+        crate::Language::Elixir => "elixir".to_string(),
+        crate::Language::Zig => "zig".to_string(),
+        crate::Language::CSharp => "csharp".to_string(),
+        crate::Language::FSharp => "fsharp".to_string(),
+        crate::Language::Swift => "swift".to_string(),
+        crate::Language::Php => "php".to_string(),
         crate::Language::Other(name) => name.to_lowercase(),
     }
 }

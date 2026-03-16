@@ -32,6 +32,12 @@ impl Language {
                 "Makefile",
             ],
             Language::Ruby => &["Gemfile"],
+            Language::Elixir => &["mix.exs", "mix.lock"],
+            Language::Zig => &["build.zig", "build.zig.zon"],
+            Language::CSharp => &[".sln", ".slnx", ".csproj", "global.json"],
+            Language::FSharp => &[".sln", ".slnx", ".fsproj", "global.json"],
+            Language::Swift => &["Package.swift"],
+            Language::Php => &["composer.json", "composer.lock"],
             Language::Other(_) => &[],
         }
     }

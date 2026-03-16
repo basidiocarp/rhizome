@@ -36,6 +36,8 @@ pub enum InstallStrategy {
     BinEnv,
     /// Use pipx or fall back to pip.
     PipxOrPip,
+    /// Use dotnet tool install --tool-path <bin_dir> (C#/F# tools).
+    DotnetToolPath,
 }
 
 /// Look up the install recipe for a given server binary name.
@@ -124,12 +126,47 @@ pub fn install_recipe(binary_name: &str) -> Option<InstallRecipe> {
         }),
 
         // ── Zig ────────────────────────────────────────────────────────
-        "zls" => Some(InstallRecipe {
-            manager: "zig",
-            args: &["fetch", "--save=zls"],
+        // zls requires downloading from GitHub releases — skip auto-install
+        // (too platform-specific, like OpenCode does with binary downloads)
+
+        // ── C# ────────────────────────────────────────────────────────
+        "csharp-ls" => Some(InstallRecipe {
+            manager: "dotnet",
+            args: &["tool", "install", "csharp-ls", "--tool-path"],
+            bin_env: None,
+            strategy: InstallStrategy::DotnetToolPath,
+        }),
+        "omnisharp" => Some(InstallRecipe {
+            manager: "dotnet",
+            args: &["tool", "install", "omnisharp", "--tool-path"],
+            bin_env: None,
+            strategy: InstallStrategy::DotnetToolPath,
+        }),
+
+        // ── F# ────────────────────────────────────────────────────────
+        "fsautocomplete" => Some(InstallRecipe {
+            manager: "dotnet",
+            args: &["tool", "install", "fsautocomplete", "--tool-path"],
+            bin_env: None,
+            strategy: InstallStrategy::DotnetToolPath,
+        }),
+
+        // ── PHP ───────────────────────────────────────────────────────
+        "intelephense" => Some(InstallRecipe {
+            manager: "npm",
+            args: &["install", "intelephense"],
+            bin_env: None,
+            strategy: InstallStrategy::NpmPrefix,
+        }),
+        "phpactor" => Some(InstallRecipe {
+            manager: "composer",
+            args: &["global", "require", "phpactor/phpactor"],
             bin_env: None,
             strategy: InstallStrategy::ManagerOwned,
         }),
+
+        // ── Swift ─────────────────────────────────────────────────────
+        // sourcekit-lsp ships with Xcode/Swift toolchain — no auto-install
 
         _ => None,
     }
@@ -251,6 +288,11 @@ impl LspInstaller {
                 if let Some(env_key) = recipe.bin_env {
                     command.env(env_key, &self.bin_dir);
                 }
+            }
+            InstallStrategy::DotnetToolPath => {
+                // dotnet tool install <tool> --tool-path ~/.rhizome/bin
+                command.args(recipe.args);
+                command.arg(&self.bin_dir);
             }
             InstallStrategy::PipxOrPip | InstallStrategy::ManagerOwned => {
                 command.args(recipe.args);

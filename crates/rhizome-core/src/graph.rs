@@ -36,14 +36,20 @@ pub struct CodeGraph {
 fn language_from_extension(path: &Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()) {
         Some("rs") => "rust",
-        Some("py") => "python",
-        Some("js") => "javascript",
-        Some("ts") => "typescript",
+        Some("py" | "pyi") => "python",
+        Some("js" | "jsx" | "mjs" | "cjs") => "javascript",
+        Some("ts" | "tsx" | "mts" | "cts") => "typescript",
         Some("go") => "go",
         Some("java") => "java",
-        Some("c") => "c",
-        Some("cpp" | "cc" | "cxx") => "cpp",
-        Some("rb") => "ruby",
+        Some("c" | "h") => "c",
+        Some("cpp" | "cc" | "cxx" | "hpp") => "cpp",
+        Some("rb" | "rake" | "gemspec") => "ruby",
+        Some("ex" | "exs") => "elixir",
+        Some("zig" | "zon") => "zig",
+        Some("cs") => "csharp",
+        Some("fs" | "fsi" | "fsx") => "fsharp",
+        Some("swift") => "swift",
+        Some("php") => "php",
         _ => "unknown",
     }
 }

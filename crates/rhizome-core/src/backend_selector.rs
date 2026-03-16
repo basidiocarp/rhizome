@@ -114,6 +114,12 @@ impl BackendSelector {
             Language::C,
             Language::Cpp,
             Language::Ruby,
+            Language::Elixir,
+            Language::Zig,
+            Language::CSharp,
+            Language::FSharp,
+            Language::Swift,
+            Language::Php,
         ];
 
         languages
@@ -219,6 +225,12 @@ impl std::fmt::Display for Language {
             Language::C => write!(f, "C"),
             Language::Cpp => write!(f, "C++"),
             Language::Ruby => write!(f, "Ruby"),
+            Language::Elixir => write!(f, "Elixir"),
+            Language::Zig => write!(f, "Zig"),
+            Language::CSharp => write!(f, "C#"),
+            Language::FSharp => write!(f, "F#"),
+            Language::Swift => write!(f, "Swift"),
+            Language::Php => write!(f, "PHP"),
             Language::Other(name) => write!(f, "{name}"),
         }
     }
@@ -301,12 +313,15 @@ mod tests {
         let config = RhizomeConfig::default();
         let mut selector = BackendSelector::new(config);
         let statuses = selector.status();
-        assert_eq!(statuses.len(), 9);
+        assert_eq!(statuses.len(), 15);
 
         let names: Vec<String> = statuses.iter().map(|s| s.language.to_string()).collect();
         assert!(names.contains(&"Rust".to_string()));
         assert!(names.contains(&"Python".to_string()));
         assert!(names.contains(&"C++".to_string()));
+        assert!(names.contains(&"Elixir".to_string()));
+        assert!(names.contains(&"PHP".to_string()));
+        assert!(names.contains(&"C#".to_string()));
     }
 
     #[test]
