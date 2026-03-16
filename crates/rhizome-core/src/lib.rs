@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod backend_selector;
 pub mod config;
 pub mod export_cache;
 pub mod graph;
@@ -9,6 +10,7 @@ pub mod symbol;
 pub use backend::{
     BackendCapabilities, CodeIntelligence, Diagnostic, DiagnosticSeverity, Position,
 };
+pub use backend_selector::{BackendRequirement, BackendSelector, LanguageStatus, ResolvedBackend};
 pub use config::RhizomeConfig;
 pub use export_cache::ExportCache;
 pub use graph::{CodeGraph, ConceptEdge, ConceptNode};

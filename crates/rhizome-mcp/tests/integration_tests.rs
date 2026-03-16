@@ -290,7 +290,7 @@ fn test_rename_symbol_no_lsp() {
     );
     let text = extract_text(&result);
     assert!(
-        text.contains("LSP required") || text.contains("LSP rename"),
+        text.contains("LSP") && text.contains("require"),
         "Should indicate LSP is required: {text}"
     );
 }
@@ -314,7 +314,7 @@ fn test_get_hover_info_no_lsp() {
     );
     let text = extract_text(&result);
     assert!(
-        text.contains("LSP required") || text.contains("LSP hover"),
+        text.contains("LSP") && text.contains("require"),
         "Should indicate LSP is required: {text}"
     );
 }

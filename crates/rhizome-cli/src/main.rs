@@ -48,6 +48,12 @@ enum Commands {
         #[arg(long, short)]
         project: Option<PathBuf>,
     },
+    /// Show backend status per language
+    Status {
+        /// Workspace/project root path
+        #[arg(long, short)]
+        project: Option<PathBuf>,
+    },
 }
 
 fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
@@ -208,6 +214,49 @@ fn cmd_export(project: Option<PathBuf>) -> Result<()> {
     }
 }
 
+fn cmd_status(project: Option<PathBuf>) -> Result<()> {
+    let project_root = detect_project_root(project);
+    let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
+    let mut selector = rhizome_core::BackendSelector::new(config);
+    let statuses = selector.status();
+
+    println!("Rhizome Backend Status");
+    println!("======================\n");
+    println!(
+        "{:<14} {:<14} {:<30} Status",
+        "Language", "Tree-Sitter", "LSP Server"
+    );
+    println!(
+        "{:<14} {:<14} {:<30} ------",
+        "--------", "-----------", "----------"
+    );
+
+    for s in &statuses {
+        let status = if s.lsp_available {
+            match &s.lsp_path {
+                Some(p) => format!("available ({})", p.display()),
+                None => "available".into(),
+            }
+        } else {
+            "not found".into()
+        };
+
+        println!(
+            "{:<14} {:<14} {:<30} {}",
+            s.language.to_string(),
+            "active",
+            s.lsp_binary,
+            status,
+        );
+    }
+
+    println!("\nBackend selection: tree-sitter (default) -> auto-upgrade to LSP when needed");
+    println!("LSP-required tools: rename_symbol, get_hover_info");
+    println!("LSP-preferred tools: find_references, get_diagnostics");
+
+    Ok(())
+}
+
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
     let project_root = detect_project_root(project);
     info!(
@@ -247,5 +296,6 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Commands::Export { project } => cmd_export(project),
+        Commands::Status { project } => cmd_status(project),
     }
 }

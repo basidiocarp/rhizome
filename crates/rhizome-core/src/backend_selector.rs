@@ -1,0 +1,324 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use crate::config::RhizomeConfig;
+use crate::language::Language;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// What a tool needs from a backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendRequirement {
+    /// Tree-sitter is sufficient.
+    TreeSitter,
+    /// LSP is required — error if unavailable.
+    RequiresLsp,
+    /// LSP is preferred — fall back to tree-sitter if unavailable.
+    PrefersLsp,
+}
+
+/// The resolved decision for a specific tool call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedBackend {
+    TreeSitter,
+    Lsp,
+    /// LSP was required but the server binary wasn't found.
+    LspUnavailable {
+        binary: String,
+        install_hint: String,
+    },
+}
+
+/// Per-language availability info for `rhizome status`.
+#[derive(Debug, Clone)]
+pub struct LanguageStatus {
+    pub language: Language,
+    pub tree_sitter: bool,
+    pub lsp_binary: String,
+    pub lsp_available: bool,
+    pub lsp_path: Option<PathBuf>,
+}
+
+/// Cached result of a binary lookup.
+#[derive(Debug, Clone)]
+struct ServerProbe {
+    binary: String,
+    available: bool,
+    path: Option<PathBuf>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BackendSelector
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub struct BackendSelector {
+    config: RhizomeConfig,
+    cache: HashMap<Language, ServerProbe>,
+}
+
+impl BackendSelector {
+    pub fn new(config: RhizomeConfig) -> Self {
+        Self {
+            config,
+            cache: HashMap::new(),
+        }
+    }
+
+    /// Determine which backend to use for a given tool and language.
+    pub fn select(&mut self, tool_name: &str, language: &Language) -> ResolvedBackend {
+        let requirement = tool_requirement(tool_name);
+
+        match requirement {
+            BackendRequirement::TreeSitter => ResolvedBackend::TreeSitter,
+            BackendRequirement::RequiresLsp => {
+                let probe = self.probe_language(language);
+                if probe.available {
+                    ResolvedBackend::Lsp
+                } else {
+                    ResolvedBackend::LspUnavailable {
+                        binary: probe.binary.clone(),
+                        install_hint: install_hint(language, &probe.binary),
+                    }
+                }
+            }
+            BackendRequirement::PrefersLsp => {
+                let probe = self.probe_language(language);
+                if probe.available {
+                    ResolvedBackend::Lsp
+                } else {
+                    ResolvedBackend::TreeSitter
+                }
+            }
+        }
+    }
+
+    /// Get status for all known languages.
+    pub fn status(&mut self) -> Vec<LanguageStatus> {
+        let languages = [
+            Language::Rust,
+            Language::Python,
+            Language::JavaScript,
+            Language::TypeScript,
+            Language::Go,
+            Language::Java,
+            Language::C,
+            Language::Cpp,
+            Language::Ruby,
+        ];
+
+        languages
+            .iter()
+            .map(|lang| {
+                let probe = self.probe_language(lang);
+                LanguageStatus {
+                    language: lang.clone(),
+                    tree_sitter: true,
+                    lsp_binary: probe.binary.clone(),
+                    lsp_available: probe.available,
+                    lsp_path: probe.path.clone(),
+                }
+            })
+            .collect()
+    }
+
+    fn probe_language(&mut self, language: &Language) -> &ServerProbe {
+        if !self.cache.contains_key(language) {
+            let probe = probe_server(language, &self.config);
+            self.cache.insert(language.clone(), probe);
+        }
+        &self.cache[language]
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool → requirement mapping
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub fn tool_requirement(tool_name: &str) -> BackendRequirement {
+    match tool_name {
+        "rename_symbol" | "get_hover_info" => BackendRequirement::RequiresLsp,
+        "get_diagnostics" | "find_references" => BackendRequirement::PrefersLsp,
+        _ => BackendRequirement::TreeSitter,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Server binary detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn probe_server(language: &Language, config: &RhizomeConfig) -> ServerProbe {
+    let server_config = config
+        .get_server_config(language)
+        .or_else(|| language.default_server_config());
+
+    let binary = match &server_config {
+        Some(cfg) => cfg.binary.clone(),
+        None => {
+            return ServerProbe {
+                binary: "(none)".into(),
+                available: false,
+                path: None,
+            }
+        }
+    };
+
+    match which::which(&binary) {
+        Ok(path) => ServerProbe {
+            binary,
+            available: true,
+            path: Some(path),
+        },
+        Err(_) => ServerProbe {
+            binary,
+            available: false,
+            path: None,
+        },
+    }
+}
+
+fn install_hint(language: &Language, binary: &str) -> String {
+    let hint = match language {
+        Language::Rust => "Install via: rustup component add rust-analyzer",
+        Language::Python => "Install via: pip install pyright",
+        Language::JavaScript | Language::TypeScript => {
+            "Install via: npm install -g typescript-language-server typescript"
+        }
+        Language::Go => "Install via: go install golang.org/x/tools/gopls@latest",
+        Language::Java => "Install via: https://github.com/eclipse-jdtls/eclipse.jdt.ls",
+        Language::C | Language::Cpp => "Install via: brew install llvm (macOS) or apt install clangd",
+        Language::Ruby => "Install via: gem install solargraph",
+        Language::Other(_) => "Install the appropriate language server",
+    };
+    format!("{binary} not found in PATH. {hint}")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Display for Language
+// ─────────────────────────────────────────────────────────────────────────────
+
+impl std::fmt::Display for Language {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Language::Rust => write!(f, "Rust"),
+            Language::Python => write!(f, "Python"),
+            Language::JavaScript => write!(f, "JavaScript"),
+            Language::TypeScript => write!(f, "TypeScript"),
+            Language::Go => write!(f, "Go"),
+            Language::Java => write!(f, "Java"),
+            Language::C => write!(f, "C"),
+            Language::Cpp => write!(f, "C++"),
+            Language::Ruby => write!(f, "Ruby"),
+            Language::Other(name) => write!(f, "{name}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_requirements_are_correct() {
+        assert_eq!(
+            tool_requirement("get_symbols"),
+            BackendRequirement::TreeSitter
+        );
+        assert_eq!(
+            tool_requirement("get_structure"),
+            BackendRequirement::TreeSitter
+        );
+        assert_eq!(
+            tool_requirement("rename_symbol"),
+            BackendRequirement::RequiresLsp
+        );
+        assert_eq!(
+            tool_requirement("get_hover_info"),
+            BackendRequirement::RequiresLsp
+        );
+        assert_eq!(
+            tool_requirement("get_diagnostics"),
+            BackendRequirement::PrefersLsp
+        );
+        assert_eq!(
+            tool_requirement("find_references"),
+            BackendRequirement::PrefersLsp
+        );
+    }
+
+    #[test]
+    fn select_tree_sitter_for_basic_tools() {
+        let config = RhizomeConfig::default();
+        let mut selector = BackendSelector::new(config);
+        let result = selector.select("get_symbols", &Language::Rust);
+        assert_eq!(result, ResolvedBackend::TreeSitter);
+    }
+
+    #[test]
+    fn select_lsp_unavailable_for_missing_server() {
+        let config = RhizomeConfig::default();
+        let mut selector = BackendSelector::new(config);
+        // Use a language unlikely to have a server in test env
+        let result = selector.select("rename_symbol", &Language::Java);
+        match result {
+            ResolvedBackend::LspUnavailable { binary, .. } => {
+                assert_eq!(binary, "jdtls");
+            }
+            ResolvedBackend::Lsp => {
+                // jdtls happens to be installed — that's fine
+            }
+            ResolvedBackend::TreeSitter => {
+                panic!("rename_symbol should not resolve to tree-sitter");
+            }
+        }
+    }
+
+    #[test]
+    fn prefers_lsp_falls_back_to_tree_sitter() {
+        let config = RhizomeConfig::default();
+        let mut selector = BackendSelector::new(config);
+        // Java unlikely to have LSP in test env
+        let result = selector.select("get_diagnostics", &Language::Java);
+        match result {
+            ResolvedBackend::TreeSitter => {} // expected fallback
+            ResolvedBackend::Lsp => {}        // jdtls installed — also ok
+            _ => panic!("PrefersLsp should not produce LspUnavailable"),
+        }
+    }
+
+    #[test]
+    fn status_returns_all_languages() {
+        let config = RhizomeConfig::default();
+        let mut selector = BackendSelector::new(config);
+        let statuses = selector.status();
+        assert_eq!(statuses.len(), 9);
+
+        let names: Vec<String> = statuses.iter().map(|s| s.language.to_string()).collect();
+        assert!(names.contains(&"Rust".to_string()));
+        assert!(names.contains(&"Python".to_string()));
+        assert!(names.contains(&"C++".to_string()));
+    }
+
+    #[test]
+    fn cache_is_populated_after_probe() {
+        let config = RhizomeConfig::default();
+        let mut selector = BackendSelector::new(config);
+        assert!(selector.cache.is_empty());
+
+        selector.select("get_symbols", &Language::Rust);
+        // TreeSitter tools don't probe — cache stays empty
+        assert!(selector.cache.is_empty());
+
+        selector.select("rename_symbol", &Language::Rust);
+        // RequiresLsp probes the server
+        assert!(selector.cache.contains_key(&Language::Rust));
+    }
+
+    #[test]
+    fn language_display() {
+        assert_eq!(Language::Rust.to_string(), "Rust");
+        assert_eq!(Language::Cpp.to_string(), "C++");
+        assert_eq!(Language::Other("Zig".into()).to_string(), "Zig");
+    }
+}
