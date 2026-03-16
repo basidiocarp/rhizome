@@ -494,8 +494,8 @@ mod tests {
         let elapsed = start.elapsed();
         let avg_ms = elapsed.as_secs_f64() * 1000.0 / iterations as f64;
 
-        // 5ms in release, 20ms tolerance in debug mode
-        let threshold = if cfg!(debug_assertions) { 20.0 } else { 5.0 };
+        // 5ms in release, 50ms tolerance in debug mode (CI shared runners are slow)
+        let threshold = if cfg!(debug_assertions) { 50.0 } else { 5.0 };
         assert!(
             avg_ms < threshold,
             "Parsing ~1000-line Rust file should take <{threshold}ms, took {avg_ms:.2}ms average",

@@ -40,9 +40,8 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
 
     // Hyphae's MCP server reads line-delimited JSON (one JSON object per line),
     // so we serialize without Content-Length framing.
-    let message = serde_json::to_string(&request)
-        .context("Failed to serialize JSON-RPC request")?
-        + "\n";
+    let message =
+        serde_json::to_string(&request).context("Failed to serialize JSON-RPC request")? + "\n";
 
     let mut child = Command::new("hyphae")
         .arg("serve")
