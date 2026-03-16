@@ -9,6 +9,7 @@ serde_json = "1"
 anyhow = "1"
 toml = "1.0"
 dirs = "6"
+spore = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

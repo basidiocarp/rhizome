@@ -1,11 +1,11 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use spore::{discover, Tool};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportResult {
@@ -14,20 +14,10 @@ pub struct ExportResult {
     pub links_created: usize,
 }
 
-static HYPHAE_AVAILABLE: OnceLock<bool> = OnceLock::new();
-
 /// Check whether the `hyphae` binary is available in PATH.
-/// The result is cached after the first call.
+/// The result is cached after the first call via spore's discovery cache.
 pub fn is_available() -> bool {
-    *HYPHAE_AVAILABLE.get_or_init(|| {
-        Command::new("which")
-            .arg("hyphae")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    })
+    discover(Tool::Hyphae).is_some()
 }
 
 /// Export a code graph to Hyphae by spawning `hyphae serve` and sending a
@@ -37,21 +27,22 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
         bail!("Hyphae binary not found in PATH");
     }
 
-    let request = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {
+    let request = spore::jsonrpc::Request::new(
+        "tools/call",
+        serde_json::json!({
             "name": "hyphae_import_code_graph",
             "arguments": {
                 "memoir_name": memoir_name,
                 "graph": graph_json
             }
-        }
-    });
+        }),
+    );
 
-    let request_bytes = serde_json::to_vec(&request)?;
-    let message = format_jsonrpc_message(&request_bytes);
+    // Hyphae's MCP server reads line-delimited JSON (one JSON object per line),
+    // so we serialize without Content-Length framing.
+    let message = serde_json::to_string(&request)
+        .context("Failed to serialize JSON-RPC request")?
+        + "\n";
 
     let mut child = Command::new("hyphae")
         .arg("serve")
@@ -63,7 +54,7 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
 
     let mut stdin = child.stdin.take().context("Failed to open hyphae stdin")?;
     stdin
-        .write_all(&message)
+        .write_all(message.as_bytes())
         .context("Failed to write to hyphae stdin")?;
     drop(stdin);
 
@@ -74,8 +65,8 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
 
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut reader = BufReader::new(stdout);
-        let result = parse_jsonrpc_response(&mut reader);
+        let reader = BufReader::new(stdout);
+        let result = read_line_delimited_response(reader);
         let _ = tx.send(result);
     });
 
@@ -108,39 +99,17 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
     })
 }
 
-fn format_jsonrpc_message(body: &[u8]) -> Vec<u8> {
-    let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    let mut message = header.into_bytes();
-    message.extend_from_slice(body);
-    message
-}
-
-fn parse_jsonrpc_response(reader: &mut impl Read) -> Result<serde_json::Value> {
-    let mut buf_reader = BufReader::new(reader);
-    let mut header_line = String::new();
-    buf_reader
-        .read_line(&mut header_line)
-        .context("Failed to read Content-Length header")?;
-
-    let content_length: usize = header_line
-        .trim()
-        .strip_prefix("Content-Length: ")
-        .context("Invalid header: expected Content-Length")?
-        .parse()
-        .context("Invalid Content-Length value")?;
-
-    // Consume the blank line separating header from body
-    let mut blank = String::new();
-    buf_reader
-        .read_line(&mut blank)
-        .context("Failed to read header separator")?;
-
-    let mut body = vec![0u8; content_length];
-    buf_reader
-        .read_exact(&mut body)
-        .context("Failed to read response body")?;
-
-    serde_json::from_slice(&body).context("Failed to parse response JSON")
+/// Read a single line-delimited JSON response, skipping empty lines.
+fn read_line_delimited_response(reader: impl BufRead) -> Result<serde_json::Value> {
+    for line in reader.lines() {
+        let line = line.context("Failed to read line from hyphae stdout")?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        return serde_json::from_str(trimmed).context("Failed to parse response JSON");
+    }
+    bail!("No response received from hyphae")
 }
 
 #[cfg(test)]
@@ -157,54 +126,55 @@ mod tests {
     #[test]
     fn jsonrpc_request_format() {
         let graph = serde_json::json!({"nodes": [], "edges": []});
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
+        let request = spore::jsonrpc::Request::new(
+            "tools/call",
+            serde_json::json!({
                 "name": "hyphae_import_code_graph",
                 "arguments": {
                     "memoir_name": "test-memoir",
                     "graph": graph
                 }
-            }
-        });
+            }),
+        );
 
-        assert_eq!(request["jsonrpc"], "2.0");
-        assert_eq!(request["id"], 1);
-        assert_eq!(request["method"], "tools/call");
-        assert_eq!(request["params"]["name"], "hyphae_import_code_graph");
-        assert_eq!(request["params"]["arguments"]["memoir_name"], "test-memoir");
+        assert_eq!(request.jsonrpc, "2.0");
+        assert_eq!(request.method, "tools/call");
+        assert_eq!(request.params["name"], "hyphae_import_code_graph");
+        assert_eq!(request.params["arguments"]["memoir_name"], "test-memoir");
         assert_eq!(
-            request["params"]["arguments"]["graph"],
+            request.params["arguments"]["graph"],
             serde_json::json!({"nodes": [], "edges": []})
         );
     }
 
     #[test]
-    fn content_length_header_format() {
-        let body = b"hello";
-        let message = format_jsonrpc_message(body);
-        let expected = b"Content-Length: 5\r\n\r\nhello";
-        assert_eq!(message, expected);
-    }
-
-    #[test]
-    fn content_length_header_empty_body() {
-        let body = b"";
-        let message = format_jsonrpc_message(body);
-        assert_eq!(message, b"Content-Length: 0\r\n\r\n");
-    }
-
-    #[test]
-    fn parse_jsonrpc_response_roundtrip() {
+    fn line_delimited_response_parsing() {
         let payload = serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": {"ok": true}});
-        let body = serde_json::to_vec(&payload).unwrap();
-        let message = format_jsonrpc_message(&body);
+        let line = serde_json::to_string(&payload).unwrap() + "\n";
 
-        let mut cursor = std::io::Cursor::new(message);
-        let parsed = parse_jsonrpc_response(&mut cursor).unwrap();
+        let cursor = std::io::Cursor::new(line);
+        let reader = BufReader::new(cursor);
+        let parsed = read_line_delimited_response(reader).unwrap();
         assert_eq!(parsed, payload);
+    }
+
+    #[test]
+    fn line_delimited_response_skips_empty_lines() {
+        let payload = serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": null});
+        let input = format!("\n\n{}\n", serde_json::to_string(&payload).unwrap());
+
+        let cursor = std::io::Cursor::new(input);
+        let reader = BufReader::new(cursor);
+        let parsed = read_line_delimited_response(reader).unwrap();
+        assert_eq!(parsed, payload);
+    }
+
+    #[test]
+    fn line_delimited_response_errors_on_empty_input() {
+        let cursor = std::io::Cursor::new("");
+        let reader = BufReader::new(cursor);
+        let result = read_line_delimited_response(reader);
+        assert!(result.is_err());
     }
 
     #[test]

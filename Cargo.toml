@@ -8,6 +8,9 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+spore = { git = "https://github.com/basidiocarp/spore", tag = "v0.1.0" }
+
 [profile.release]
 opt-level = 3
 lto = true
