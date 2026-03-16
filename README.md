@@ -1,11 +1,19 @@
 # Rhizome
 
-Code intelligence MCP server for the [Mycelium](https://github.com/williamnewton/claude-mycelium) ecosystem. Gives AI agents symbol-level code navigation — definitions, references, structure — instead of reading raw files, eliminating the biggest source of wasted tokens.
+Editor-agnostic code intelligence MCP server. Gives AI agents symbol-level code navigation — definitions, references, structure — instead of reading raw files, eliminating the biggest source of wasted tokens.
+
+Part of the [Mycelium](https://github.com/williamnewton/claude-mycelium) ecosystem.
+
+## Why Rhizome?
+
+Some AI coding tools (like Claude Code) have built-in LSP access. Most don't. Cursor, Windsurf, Cline, Continue, Aider, custom agents built with the Agent SDK, and any other MCP-compatible client get **zero** code intelligence out of the box — they can read files, but they can't navigate symbols, find references, or understand code structure.
+
+Rhizome fills that gap as a standalone MCP server that works with **any** MCP client. It also provides analysis tools that go beyond what LSP offers — file summaries, cyclomatic complexity, test discovery, annotation scanning, and git-aware symbol diffs — useful even for tools that already have LSP access.
 
 Built in Rust with a dual-backend architecture:
 
-- **Tree-sitter** (always available) — instant offline parsing, sub-millisecond, no setup required
-- **LSP** (when a language server is installed) — cross-file go-to-definition, find-all-references, rename, type info
+- **Tree-sitter** (always available) — instant offline parsing, sub-millisecond, zero setup. Works immediately for any MCP client without installing language servers.
+- **LSP** (when a language server is installed) — cross-file go-to-definition, find-all-references, rename, type info. Adds deep intelligence on top of the tree-sitter baseline.
 
 ## Quick Start
 
@@ -21,7 +29,11 @@ cargo build --release
 ./target/release/rhizome structure src/lib.rs
 ```
 
-### Add to Claude Code
+### Add to Any MCP Client
+
+Works with Claude Code, Cursor, Windsurf, Cline, Continue, and any MCP-compatible tool.
+
+> **Note:** Claude Code already has built-in LSP access for core operations (go-to-definition, find-references, rename). Rhizome still adds value there through its analysis tools (`summarize_file`, `get_complexity`, `get_tests`, `get_annotations`, `get_diff_symbols`) that LSP doesn't provide. For all other MCP clients, Rhizome provides the full code intelligence stack.
 
 ```bash
 rhizome init
