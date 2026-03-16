@@ -1,82 +1,17 @@
-name: Code Coverage
+name: Coverage
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
   group: coverage-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
-  COVERAGE_THRESHOLD: 60
-
 jobs:
   coverage:
-    name: Code coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Generate coverage report
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --summary-only 2>&1 | tee /tmp/coverage-summary.txt
-
-      - name: Extract coverage percentage
-        id: coverage
-        run: |
-          COVERAGE=$(grep 'TOTAL' /tmp/coverage-summary.txt | awk '{print $10}' | tr -d '%')
-          echo "percentage=${COVERAGE}" >> "$GITHUB_OUTPUT"
-
-      - name: Post coverage summary
-        run: |
-          COVERAGE="${{ steps.coverage.outputs.percentage }}"
-          if (( $(echo "$COVERAGE >= $COVERAGE_THRESHOLD" | bc -l) )); then
-            STATUS="Above threshold (${COVERAGE_THRESHOLD}%)"
-          else
-            STATUS="Below threshold (${COVERAGE_THRESHOLD}%)"
-          fi
-
-          {
-            echo "## Code Coverage"
-            echo "| Metric | Value |"
-            echo "|--------|-------|"
-            echo "| Line Coverage | ${COVERAGE}% |"
-            echo "| Status | ${STATUS} |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Fail if coverage below threshold
-        run: |
-          COVERAGE="${{ steps.coverage.outputs.percentage }}"
-          if (( $(echo "$COVERAGE < $COVERAGE_THRESHOLD" | bc -l) )); then
-            echo "::error::Line coverage ${COVERAGE}% is below the required ${COVERAGE_THRESHOLD}% threshold"
-            exit 1
-          fi
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: lcov-report
-          path: lcov.info
-          retention-days: 30
+    uses: basidiocarp/.github/.github/workflows/rust-coverage.yml@main
+    with:
+      threshold: 60
