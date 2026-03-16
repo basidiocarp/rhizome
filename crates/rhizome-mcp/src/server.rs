@@ -11,12 +11,14 @@ use crate::tools::ToolDispatcher;
 /// and writes responses to stdout.
 pub struct McpServer {
     dispatcher: ToolDispatcher,
+    unified: bool,
 }
 
 impl McpServer {
-    pub fn new(project_root: PathBuf) -> Self {
+    pub fn new(project_root: PathBuf, unified: bool) -> Self {
         Self {
             dispatcher: ToolDispatcher::new(project_root),
+            unified,
         }
     }
 
@@ -116,6 +118,35 @@ impl McpServer {
     }
 
     fn handle_tools_list(&self) -> std::result::Result<Value, JsonRpcError> {
+        if self.unified {
+            let tool_schema = json!([{
+                "name": "rhizome",
+                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_changed_files, rename_symbol, get_diagnostics, get_hover_info",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string", "description": "The command to run (e.g. get_symbols, get_definition, summarize_file)" },
+                        "file": { "type": "string", "description": "Path to source file" },
+                        "symbol": { "type": "string", "description": "Symbol name (for get_definition, get_signature, etc.)" },
+                        "pattern": { "type": "string", "description": "Search pattern (for search_symbols)" },
+                        "line": { "type": "number", "description": "Line number, 0-based" },
+                        "column": { "type": "number", "description": "Column number, 0-based" },
+                        "function": { "type": "string", "description": "Function name filter" },
+                        "method": { "type": "string", "description": "Method name (for get_enclosing_class)" },
+                        "path": { "type": "string", "description": "Directory path override" },
+                        "depth": { "type": "number", "description": "Max nesting depth" },
+                        "full": { "type": "boolean", "description": "Show full body" },
+                        "new_name": { "type": "string", "description": "New name for rename" },
+                        "ref1": { "type": "string", "description": "Git ref for diff start" },
+                        "ref2": { "type": "string", "description": "Git ref for diff end" },
+                        "tags": { "type": "array", "items": { "type": "string" }, "description": "Annotation tags to search for" }
+                    },
+                    "required": ["command"]
+                }
+            }]);
+            return Ok(json!({ "tools": tool_schema }));
+        }
+
         let tools = self.dispatcher.list_tools();
         let tool_schemas: Vec<Value> = tools
             .into_iter()
@@ -142,7 +173,22 @@ impl McpServer {
 
         let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
-        match self.dispatcher.call_tool(name, arguments) {
+        // In unified mode, the tool name is "rhizome" and the actual command
+        // is in the "command" argument.
+        let effective_name = if self.unified && name == "rhizome" {
+            arguments
+                .get("command")
+                .and_then(|c| c.as_str())
+                .ok_or_else(|| JsonRpcError {
+                    code: -32602,
+                    message: "Missing 'command' in rhizome tool arguments".to_string(),
+                })?
+                .to_string()
+        } else {
+            name.to_string()
+        };
+
+        match self.dispatcher.call_tool(&effective_name, arguments) {
             Ok(result) => Ok(result),
             Err(e) => Ok(json!({
                 "isError": true,
@@ -157,6 +203,17 @@ impl McpServer {
         out.write_all(b"\n")?;
         out.flush()?;
         Ok(())
+    }
+
+    /// Process a single JSON-RPC request and return the response.
+    /// Exposed for integration testing.
+    pub fn handle_request_for_test(&self, request: &Value) -> Value {
+        let id = request.get("id").cloned();
+        let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
+        match self.handle_method(method, request, id.clone()) {
+            Some(resp) => resp,
+            None => json!({"jsonrpc": "2.0", "id": id, "result": null}),
+        }
     }
 }
 

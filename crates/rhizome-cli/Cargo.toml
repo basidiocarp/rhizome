@@ -2,6 +2,13 @@
 name = "rhizome-cli"
 version = "0.1.0"
 edition = "2021"
+authors = ["William Newton"]
+description = "Rhizome - Code intelligence MCP server with tree-sitter and LSP backends"
+license = "MIT"
+repository = "https://github.com/basidiocarp/rhizome"
+readme = "../../README.md"
+keywords = ["mcp", "code-intelligence", "tree-sitter", "lsp", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "rhizome"
@@ -17,3 +24,20 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde_json = "1"
+
+# cargo-deb configuration
+[package.metadata.deb]
+maintainer = "William Newton"
+license-file = ["../../LICENSE", "0"]
+extended-description = "Rhizome provides symbol-level code navigation via MCP, using tree-sitter for instant offline parsing and LSP for deep cross-file intelligence."
+section = "utility"
+priority = "optional"
+assets = [
+  ["target/release/rhizome", "usr/bin/", "755"],
+]
+
+# cargo-generate-rpm configuration
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/rhizome", dest = "/usr/bin/rhizome", mode = "755" },
+]

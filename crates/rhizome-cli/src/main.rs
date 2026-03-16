@@ -22,6 +22,9 @@ enum Commands {
         /// Workspace/project root path
         #[arg(long, short)]
         project: Option<PathBuf>,
+        /// Expose tools as separate MCP tools instead of unified rhizome command
+        #[arg(long)]
+        expanded: bool,
     },
     /// List symbols in a file
     Symbols {
@@ -159,14 +162,14 @@ fn cmd_init() {
     println!("{}", serde_json::to_string_pretty(&config).unwrap());
 }
 
-async fn cmd_serve(project: Option<PathBuf>) -> Result<()> {
+async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
     let project_root = detect_project_root(project);
     info!(
         "Starting MCP server with project root: {}",
         project_root.display()
     );
 
-    let mut server = McpServer::new(project_root);
+    let mut server = McpServer::new(project_root, !expanded);
 
     tokio::select! {
         result = server.run() => {
@@ -190,7 +193,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Serve { project } => cmd_serve(project).await,
+        Commands::Serve { project, expanded } => cmd_serve(project, expanded).await,
         Commands::Symbols { file } => cmd_symbols(&file),
         Commands::Structure { file } => cmd_structure(&file),
         Commands::Init => {

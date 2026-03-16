@@ -47,6 +47,27 @@ impl ToolDispatcher {
             "get_imports" => symbol_tools::get_imports(&self.treesitter, &args),
             "get_call_sites" => symbol_tools::get_call_sites(&self.treesitter, &args),
 
+            // New tree-sitter tools
+            "get_scope" => symbol_tools::get_scope(&self.treesitter, &args),
+            "get_exports" => symbol_tools::get_exports(&self.treesitter, &args),
+            "summarize_file" => symbol_tools::summarize_file(&self.treesitter, &args),
+            "get_tests" => symbol_tools::get_tests(&self.treesitter, &args),
+            "get_diff_symbols" => {
+                symbol_tools::get_diff_symbols(&self.treesitter, &args, &self.project_root)
+            }
+            "get_annotations" => symbol_tools::get_annotations(&self.treesitter, &args),
+            "get_complexity" => symbol_tools::get_complexity(&self.treesitter, &args),
+            "get_type_definitions" => symbol_tools::get_type_definitions(&self.treesitter, &args),
+
+            // Batch 2 tools
+            "get_dependencies" => symbol_tools::get_dependencies(&self.treesitter, &args),
+            "get_parameters" => symbol_tools::get_parameters(&self.treesitter, &args),
+            "get_enclosing_class" => symbol_tools::get_enclosing_class(&self.treesitter, &args),
+            "get_symbol_body" => symbol_tools::get_symbol_body(&self.treesitter, &args),
+            "get_changed_files" => {
+                symbol_tools::get_changed_files(&self.treesitter, &args, &self.project_root)
+            }
+
             // File/LSP tools
             "rename_symbol" => file_tools::rename_symbol(self.lsp.as_ref(), &args),
             "get_diagnostics" => {
