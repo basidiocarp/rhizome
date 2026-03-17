@@ -148,38 +148,38 @@ pub fn tool_requirement(tool_name: &str) -> BackendRequirement {
 
 fn all_languages() -> &'static [Language] {
     &[
-    Language::Rust,
-    Language::Python,
-    Language::JavaScript,
-    Language::TypeScript,
-    Language::Go,
-    Language::Java,
-    Language::C,
-    Language::Cpp,
-    Language::Ruby,
-    Language::Elixir,
-    Language::Zig,
-    Language::CSharp,
-    Language::FSharp,
-    Language::Swift,
-    Language::Php,
-    Language::Haskell,
-    Language::Bash,
-    Language::Terraform,
-    Language::Kotlin,
-    Language::Dart,
-    Language::Lua,
-    Language::Clojure,
-    Language::OCaml,
-    Language::Julia,
-    Language::Nix,
-    Language::Gleam,
-    Language::Vue,
-    Language::Svelte,
-    Language::Astro,
-    Language::Prisma,
-    Language::Typst,
-    Language::Yaml,
+        Language::Rust,
+        Language::Python,
+        Language::JavaScript,
+        Language::TypeScript,
+        Language::Go,
+        Language::Java,
+        Language::C,
+        Language::Cpp,
+        Language::Ruby,
+        Language::Elixir,
+        Language::Zig,
+        Language::CSharp,
+        Language::FSharp,
+        Language::Swift,
+        Language::Php,
+        Language::Haskell,
+        Language::Bash,
+        Language::Terraform,
+        Language::Kotlin,
+        Language::Dart,
+        Language::Lua,
+        Language::Clojure,
+        Language::OCaml,
+        Language::Julia,
+        Language::Nix,
+        Language::Gleam,
+        Language::Vue,
+        Language::Svelte,
+        Language::Astro,
+        Language::Prisma,
+        Language::Typst,
+        Language::Yaml,
     ]
 }
 
@@ -189,7 +189,11 @@ fn all_languages() -> &'static [Language] {
 
 /// Find-only: check if binary exists in PATH (including ~/.rhizome/bin).
 /// Does NOT attempt to install missing servers.
-fn find_server(language: &Language, config: &RhizomeConfig, installer: &LspInstaller) -> ServerProbe {
+fn find_server(
+    language: &Language,
+    config: &RhizomeConfig,
+    installer: &LspInstaller,
+) -> ServerProbe {
     let server_config = config
         .get_server_config(language)
         .or_else(|| language.default_server_config());

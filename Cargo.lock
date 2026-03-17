@@ -878,6 +878,7 @@ version = "0.4.1"
 dependencies = [
  "anyhow",
  "clap",
+ "dirs",
  "rhizome-core",
  "rhizome-mcp",
  "rhizome-treesitter",
@@ -887,6 +888,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "which",
 ]
 
 [[package]]

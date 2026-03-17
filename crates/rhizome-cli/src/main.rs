@@ -8,6 +8,7 @@ use rhizome_treesitter::TreeSitterBackend;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+mod doctor;
 mod self_update;
 
 #[derive(Parser)]
@@ -61,6 +62,12 @@ enum Commands {
         /// Only check for updates, don't download
         #[arg(long)]
         check: bool,
+    },
+    /// Diagnose common issues with the rhizome installation
+    Doctor {
+        /// Attempt to fix detected issues
+        #[arg(long)]
+        fix: bool,
     },
 }
 
@@ -316,5 +323,6 @@ async fn main() -> Result<()> {
         Commands::Export { project } => cmd_export(project),
         Commands::Status { project } => cmd_status(project),
         Commands::SelfUpdate { check } => self_update::run(check),
+        Commands::Doctor { fix } => doctor::run(fix),
     }
 }
