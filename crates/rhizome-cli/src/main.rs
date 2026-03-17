@@ -8,6 +8,8 @@ use rhizome_treesitter::TreeSitterBackend;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+mod self_update;
+
 #[derive(Parser)]
 #[command(name = "rhizome", version, about = "Code intelligence MCP server")]
 struct Cli {
@@ -53,6 +55,12 @@ enum Commands {
         /// Workspace/project root path
         #[arg(long, short)]
         project: Option<PathBuf>,
+    },
+    /// Check for and install updates
+    SelfUpdate {
+        /// Only check for updates, don't download
+        #[arg(long)]
+        check: bool,
     },
 }
 
@@ -307,5 +315,6 @@ async fn main() -> Result<()> {
         }
         Commands::Export { project } => cmd_export(project),
         Commands::Status { project } => cmd_status(project),
+        Commands::SelfUpdate { check } => self_update::run(check),
     }
 }
