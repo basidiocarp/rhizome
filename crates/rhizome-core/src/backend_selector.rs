@@ -103,47 +103,12 @@ impl BackendSelector {
         }
     }
 
-    /// Get status for all known languages.
+    /// Get status for all known languages (find-only, no auto-install).
     pub fn status(&mut self) -> Vec<LanguageStatus> {
-        let languages = [
-            Language::Rust,
-            Language::Python,
-            Language::JavaScript,
-            Language::TypeScript,
-            Language::Go,
-            Language::Java,
-            Language::C,
-            Language::Cpp,
-            Language::Ruby,
-            Language::Elixir,
-            Language::Zig,
-            Language::CSharp,
-            Language::FSharp,
-            Language::Swift,
-            Language::Php,
-            Language::Haskell,
-            Language::Bash,
-            Language::Terraform,
-            Language::Kotlin,
-            Language::Dart,
-            Language::Lua,
-            Language::Clojure,
-            Language::OCaml,
-            Language::Julia,
-            Language::Nix,
-            Language::Gleam,
-            Language::Vue,
-            Language::Svelte,
-            Language::Astro,
-            Language::Prisma,
-            Language::Typst,
-            Language::Yaml,
-        ];
-
-        languages
+        all_languages()
             .iter()
-            .map(|lang| {
-                let probe = self.probe_language(lang);
+            .map(|lang: &Language| {
+                let probe = find_server(lang, &self.config, &self.installer);
                 LanguageStatus {
                     language: lang.clone(),
                     tree_sitter: true,
@@ -155,6 +120,7 @@ impl BackendSelector {
             .collect()
     }
 
+    /// Probe a language, attempting auto-install if not found.
     fn probe_language(&mut self, language: &Language) -> &ServerProbe {
         if !self.cache.contains_key(language) {
             let probe = probe_server(language, &self.config, &self.installer);
@@ -177,9 +143,84 @@ pub fn tool_requirement(tool_name: &str) -> BackendRequirement {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// All known languages
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn all_languages() -> &'static [Language] {
+    &[
+    Language::Rust,
+    Language::Python,
+    Language::JavaScript,
+    Language::TypeScript,
+    Language::Go,
+    Language::Java,
+    Language::C,
+    Language::Cpp,
+    Language::Ruby,
+    Language::Elixir,
+    Language::Zig,
+    Language::CSharp,
+    Language::FSharp,
+    Language::Swift,
+    Language::Php,
+    Language::Haskell,
+    Language::Bash,
+    Language::Terraform,
+    Language::Kotlin,
+    Language::Dart,
+    Language::Lua,
+    Language::Clojure,
+    Language::OCaml,
+    Language::Julia,
+    Language::Nix,
+    Language::Gleam,
+    Language::Vue,
+    Language::Svelte,
+    Language::Astro,
+    Language::Prisma,
+    Language::Typst,
+    Language::Yaml,
+    ]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Server binary detection
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Find-only: check if binary exists in PATH (including ~/.rhizome/bin).
+/// Does NOT attempt to install missing servers.
+fn find_server(language: &Language, config: &RhizomeConfig, installer: &LspInstaller) -> ServerProbe {
+    let server_config = config
+        .get_server_config(language)
+        .or_else(|| language.default_server_config());
+
+    let binary = match &server_config {
+        Some(cfg) => cfg.binary.clone(),
+        None => {
+            return ServerProbe {
+                binary: "(none)".into(),
+                available: false,
+                path: None,
+            }
+        }
+    };
+
+    match installer.find_binary(&binary) {
+        Some(path) => ServerProbe {
+            binary,
+            available: true,
+            path: Some(path),
+        },
+        None => ServerProbe {
+            binary,
+            available: false,
+            path: None,
+        },
+    }
+}
+
+/// Find-or-install: check if binary exists, attempt auto-install if not.
+/// Used when a tool actually needs the LSP server.
 fn probe_server(
     language: &Language,
     config: &RhizomeConfig,
