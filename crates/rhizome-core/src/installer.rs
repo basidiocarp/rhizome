@@ -331,7 +331,11 @@ impl LspInstaller {
     /// Ensure the LSP server binary is installed.
     /// Looks up the install recipe by binary name, not by language.
     /// Returns the binary path if found or successfully installed, None if skipped.
-    pub fn ensure_server(&self, _language: &Language, binary_name: &str) -> Result<Option<PathBuf>> {
+    pub fn ensure_server(
+        &self,
+        _language: &Language,
+        binary_name: &str,
+    ) -> Result<Option<PathBuf>> {
         // Check if already available
         if let Some(path) = self.find_binary(binary_name) {
             return Ok(Some(path));
@@ -366,10 +370,12 @@ impl LspInstaller {
     }
 
     fn run_install(&self, recipe: &InstallRecipe, binary_name: &str) -> Result<Option<PathBuf>> {
-        std::fs::create_dir_all(&self.bin_dir)
-            .context("Failed to create rhizome bin directory")?;
+        std::fs::create_dir_all(&self.bin_dir).context("Failed to create rhizome bin directory")?;
 
-        info!("Installing LSP server: {binary_name} via {}", recipe.manager);
+        info!(
+            "Installing LSP server: {binary_name} via {}",
+            recipe.manager
+        );
 
         let mut command = Command::new(recipe.manager);
 
@@ -439,8 +445,7 @@ impl LspInstaller {
         // Extract the package name from the pipx args (e.g. ["install", "pyright"] → "pyright")
         let package = recipe.args.last().unwrap_or(&binary_name);
 
-        std::fs::create_dir_all(&self.bin_dir)
-            .context("Failed to create rhizome bin directory")?;
+        std::fs::create_dir_all(&self.bin_dir).context("Failed to create rhizome bin directory")?;
 
         info!("Installing LSP server: {binary_name} via {pip}");
 

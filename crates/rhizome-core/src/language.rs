@@ -97,11 +97,21 @@ impl Language {
             Language::Bash => ("bash-language-server", vec!["start".into()]),
             Language::Terraform => ("terraform-ls", vec!["serve".into()]),
             Language::Kotlin => ("kotlin-language-server", vec![]),
-            Language::Dart => ("dart", vec!["language-server".into(), "--protocol=lsp".into()]),
+            Language::Dart => (
+                "dart",
+                vec!["language-server".into(), "--protocol=lsp".into()],
+            ),
             Language::Lua => ("lua-language-server", vec![]),
             Language::Clojure => ("clojure-lsp", vec![]),
             Language::OCaml => ("ocamllsp", vec![]),
-            Language::Julia => ("julia", vec!["--startup-file=no".into(), "-e".into(), "using LanguageServer; runserver()".into()]),
+            Language::Julia => (
+                "julia",
+                vec![
+                    "--startup-file=no".into(),
+                    "-e".into(),
+                    "using LanguageServer; runserver()".into(),
+                ],
+            ),
             Language::Nix => ("nixd", vec![]),
             Language::Gleam => ("gleam", vec!["lsp".into()]),
             Language::Vue => ("vue-language-server", vec!["--stdio".into()]),

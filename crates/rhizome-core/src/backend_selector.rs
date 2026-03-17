@@ -62,7 +62,8 @@ pub struct BackendSelector {
 
 impl BackendSelector {
     pub fn new(config: RhizomeConfig) -> Self {
-        let installer = LspInstaller::from_env(config.lsp.disable_download, config.lsp.bin_dir.clone());
+        let installer =
+            LspInstaller::from_env(config.lsp.disable_download, config.lsp.bin_dir.clone());
         Self {
             config,
             installer,
@@ -179,7 +180,11 @@ pub fn tool_requirement(tool_name: &str) -> BackendRequirement {
 // Server binary detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn probe_server(language: &Language, config: &RhizomeConfig, installer: &LspInstaller) -> ServerProbe {
+fn probe_server(
+    language: &Language,
+    config: &RhizomeConfig,
+    installer: &LspInstaller,
+) -> ServerProbe {
     let server_config = config
         .get_server_config(language)
         .or_else(|| language.default_server_config());
@@ -220,9 +225,7 @@ fn install_hint(binary: &str) -> String {
                  and package manager availability."
             )
         }
-        None => format!(
-            "{binary} not found. No auto-install recipe available — install manually."
-        ),
+        None => format!("{binary} not found. No auto-install recipe available — install manually."),
     }
 }
 

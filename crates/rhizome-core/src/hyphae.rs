@@ -27,17 +27,14 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
         bail!("Hyphae binary not found in PATH");
     }
 
-    let project = graph_json
-        .get("project")
-        .cloned()
-        .unwrap_or_else(|| {
-            serde_json::Value::String(
-                memoir_name
-                    .strip_prefix("code:")
-                    .unwrap_or(memoir_name)
-                    .to_string(),
-            )
-        });
+    let project = graph_json.get("project").cloned().unwrap_or_else(|| {
+        serde_json::Value::String(
+            memoir_name
+                .strip_prefix("code:")
+                .unwrap_or(memoir_name)
+                .to_string(),
+        )
+    });
 
     let request = spore::jsonrpc::Request::new(
         "tools/call",
@@ -170,17 +167,14 @@ mod tests {
     #[test]
     fn jsonrpc_request_extracts_project_from_memoir_name() {
         let graph = serde_json::json!({"nodes": [], "edges": []});
-        let project = graph
-            .get("project")
-            .cloned()
-            .unwrap_or_else(|| {
-                serde_json::Value::String(
-                    "code:fallback-app"
-                        .strip_prefix("code:")
-                        .unwrap_or("code:fallback-app")
-                        .to_string(),
-                )
-            });
+        let project = graph.get("project").cloned().unwrap_or_else(|| {
+            serde_json::Value::String(
+                "code:fallback-app"
+                    .strip_prefix("code:")
+                    .unwrap_or("code:fallback-app")
+                    .to_string(),
+            )
+        });
 
         assert_eq!(project, "fallback-app");
     }

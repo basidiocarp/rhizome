@@ -19,18 +19,12 @@ impl Language {
                 "Pipfile",
                 "pyrightconfig.json",
             ],
-            Language::JavaScript | Language::TypeScript => &[
-                "tsconfig.json",
-                "package.json",
-                "jsconfig.json",
-            ],
+            Language::JavaScript | Language::TypeScript => {
+                &["tsconfig.json", "package.json", "jsconfig.json"]
+            }
             Language::Go => &["go.work", "go.mod", "go.sum"],
             Language::Java => &["pom.xml", "build.gradle", "build.gradle.kts"],
-            Language::C | Language::Cpp => &[
-                "CMakeLists.txt",
-                "compile_commands.json",
-                "Makefile",
-            ],
+            Language::C | Language::Cpp => &["CMakeLists.txt", "compile_commands.json", "Makefile"],
             Language::Ruby => &["Gemfile"],
             Language::Elixir => &["mix.exs", "mix.lock"],
             Language::Zig => &["build.zig", "build.zig.zon"],
@@ -49,10 +43,9 @@ impl Language {
             Language::Julia => &["Project.toml", "Manifest.toml"],
             Language::Nix => &["flake.nix", "default.nix", "shell.nix"],
             Language::Gleam => &["gleam.toml"],
-            Language::Vue | Language::Svelte | Language::Astro | Language::Prisma => &[
-                "package.json",
-                "tsconfig.json",
-            ],
+            Language::Vue | Language::Svelte | Language::Astro | Language::Prisma => {
+                &["package.json", "tsconfig.json"]
+            }
             Language::Typst => &["typst.toml"],
             Language::Yaml => &[],
             Language::Other(_) => &[],
@@ -227,16 +220,17 @@ mod tests {
         let root = dir.path();
 
         // Create workspace structure
-        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"crate-a\"]").unwrap();
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crate-a\"]",
+        )
+        .unwrap();
         fs::create_dir_all(root.join("crate-a/src")).unwrap();
         fs::write(root.join("crate-a/Cargo.toml"), "[package]\nname = \"a\"").unwrap();
         fs::write(root.join("crate-a/src/main.rs"), "fn main() {}").unwrap();
 
-        let detected = detect_workspace_root(
-            &root.join("crate-a/src/main.rs"),
-            &Language::Rust,
-            root,
-        );
+        let detected =
+            detect_workspace_root(&root.join("crate-a/src/main.rs"), &Language::Rust, root);
         assert_eq!(detected, root);
     }
 
@@ -250,11 +244,7 @@ mod tests {
         fs::write(root.join("Cargo.toml"), "[package]\nname = \"foo\"").unwrap();
         fs::write(root.join("src/main.rs"), "fn main() {}").unwrap();
 
-        let detected = detect_workspace_root(
-            &root.join("src/main.rs"),
-            &Language::Rust,
-            root,
-        );
+        let detected = detect_workspace_root(&root.join("src/main.rs"), &Language::Rust, root);
         assert_eq!(detected, root);
     }
 
@@ -268,11 +258,7 @@ mod tests {
         fs::write(root.join("svc/go.mod"), "module svc").unwrap();
         fs::write(root.join("svc/cmd/main.go"), "package main").unwrap();
 
-        let detected = detect_workspace_root(
-            &root.join("svc/cmd/main.go"),
-            &Language::Go,
-            root,
-        );
+        let detected = detect_workspace_root(&root.join("svc/cmd/main.go"), &Language::Go, root);
         assert_eq!(detected, root);
     }
 
@@ -285,11 +271,7 @@ mod tests {
         fs::write(root.join("go.mod"), "module myapp").unwrap();
         fs::write(root.join("cmd/main.go"), "package main").unwrap();
 
-        let detected = detect_workspace_root(
-            &root.join("cmd/main.go"),
-            &Language::Go,
-            root,
-        );
+        let detected = detect_workspace_root(&root.join("cmd/main.go"), &Language::Go, root);
         assert_eq!(detected, root);
     }
 
@@ -304,11 +286,8 @@ mod tests {
         fs::write(root.join("deno-app/deno.json"), "{}").unwrap();
         fs::write(root.join("deno-app/main.ts"), "").unwrap();
 
-        let detected = detect_workspace_root(
-            &root.join("deno-app/main.ts"),
-            &Language::TypeScript,
-            root,
-        );
+        let detected =
+            detect_workspace_root(&root.join("deno-app/main.ts"), &Language::TypeScript, root);
         // Should skip deno-app/ and find root/package.json
         assert_eq!(detected, root);
     }
@@ -322,11 +301,8 @@ mod tests {
         fs::write(root.join("pyproject.toml"), "[project]").unwrap();
         fs::write(root.join("src/myapp/main.py"), "").unwrap();
 
-        let detected = detect_workspace_root(
-            &root.join("src/myapp/main.py"),
-            &Language::Python,
-            root,
-        );
+        let detected =
+            detect_workspace_root(&root.join("src/myapp/main.py"), &Language::Python, root);
         assert_eq!(detected, root);
     }
 
@@ -338,11 +314,7 @@ mod tests {
         fs::create_dir_all(root.join("random")).unwrap();
         fs::write(root.join("random/file.rb"), "").unwrap();
 
-        let detected = detect_workspace_root(
-            &root.join("random/file.rb"),
-            &Language::Ruby,
-            root,
-        );
+        let detected = detect_workspace_root(&root.join("random/file.rb"), &Language::Ruby, root);
         assert_eq!(detected, root);
     }
 }

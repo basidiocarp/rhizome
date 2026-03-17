@@ -91,14 +91,18 @@ impl ToolDispatcher {
             // ── Auto-select tools (prefer LSP when available) ───────────
             "find_references" => {
                 let ts = &self.treesitter;
-                self.dispatch_auto(name, &args,
+                self.dispatch_auto(
+                    name,
+                    &args,
                     |a| symbol_tools::find_references(ts, a),
                     |lsp, a| symbol_tools::find_references(lsp, a),
                 )
             }
             "get_diagnostics" => {
                 let ts = &self.treesitter;
-                self.dispatch_auto(name, &args,
+                self.dispatch_auto(
+                    name,
+                    &args,
                     |a| file_tools::get_diagnostics(ts, None, a),
                     |lsp, a| file_tools::get_diagnostics(ts, Some(lsp), a),
                 )
@@ -141,7 +145,13 @@ impl ToolDispatcher {
     // ─────────────────────────────────────────────────────────────────────
 
     /// Dispatch for tools that prefer LSP but fall back to tree-sitter.
-    fn dispatch_auto<F, G>(&self, tool_name: &str, args: &Value, ts_fn: F, lsp_fn: G) -> Result<Value>
+    fn dispatch_auto<F, G>(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        ts_fn: F,
+        lsp_fn: G,
+    ) -> Result<Value>
     where
         F: FnOnce(&Value) -> Result<Value>,
         G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,

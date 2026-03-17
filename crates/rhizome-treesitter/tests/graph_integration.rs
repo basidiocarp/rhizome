@@ -70,7 +70,9 @@ fn test_build_graph_from_python_fixture() {
 fn test_build_graph_from_typescript_fixture() {
     let backend = TreeSitterBackend::new();
     let path = fixture_path("sample.ts");
-    let symbols = backend.get_symbols(&path).expect("Should extract TypeScript symbols");
+    let symbols = backend
+        .get_symbols(&path)
+        .expect("Should extract TypeScript symbols");
     assert!(!symbols.is_empty(), "Should extract at least one symbol");
 
     let graph = build_graph("test-project", &symbols, &path);
