@@ -88,6 +88,9 @@ impl ToolDispatcher {
             "get_changed_files" => {
                 symbol_tools::get_changed_files(&self.treesitter, &args, &self.project_root)
             }
+            "summarize_project" => {
+                symbol_tools::summarize_project_tool(&self.treesitter, &args, &self.project_root)
+            }
 
             // ── Auto-select tools (prefer LSP when available) ───────────
             "find_references" => {

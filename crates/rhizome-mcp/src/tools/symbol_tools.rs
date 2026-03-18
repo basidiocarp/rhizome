@@ -288,6 +288,15 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 "required": []
             }),
         },
+        ToolSchema {
+            name: "summarize_project".into(),
+            description: "Summarize project structure: entry points, key types, modules, language breakdown, test counts".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
     ]
 }
 
@@ -1852,6 +1861,43 @@ fn count_all_symbols(symbols: &[Symbol]) -> usize {
         count += count_all_symbols(&sym.children);
     }
     count
+}
+
+// ---------------------------------------------------------------------------
+// Tool: summarize_project
+// ---------------------------------------------------------------------------
+
+use std::sync::Mutex;
+use std::time::Instant;
+
+static PROJECT_SUMMARY_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+const CACHE_TTL_SECS: u64 = 300;
+
+/// Summarize project structure: entry points, key types, modules, tests.
+/// Cached for 5 minutes since project structure changes infrequently.
+pub fn summarize_project_tool(
+    backend: &dyn CodeIntelligence,
+    _args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    // Check cache
+    if let Ok(guard) = PROJECT_SUMMARY_CACHE.lock() {
+        if let Some((cached_at, ref text)) = *guard {
+            if cached_at.elapsed().as_secs() < CACHE_TTL_SECS {
+                return Ok(tool_response(text));
+            }
+        }
+    }
+
+    let summary = rhizome_core::summarize_project(project_root, backend)?;
+    let text = summary.format_display();
+
+    // Update cache
+    if let Ok(mut guard) = PROJECT_SUMMARY_CACHE.lock() {
+        *guard = Some((Instant::now(), text.clone()));
+    }
+
+    Ok(tool_response(text.trim_end()))
 }
 
 #[cfg(test)]

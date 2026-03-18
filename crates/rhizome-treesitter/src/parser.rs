@@ -39,6 +39,11 @@ impl ParserPool {
             Language::JavaScript => Ok(tree_sitter_javascript::LANGUAGE.into()),
             Language::TypeScript => Ok(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
             Language::Go => Ok(tree_sitter_go::LANGUAGE.into()),
+            Language::Java => Ok(tree_sitter_java::LANGUAGE.into()),
+            Language::C => Ok(tree_sitter_c::LANGUAGE.into()),
+            Language::Cpp => Ok(tree_sitter_cpp::LANGUAGE.into()),
+            Language::Ruby => Ok(tree_sitter_ruby::LANGUAGE.into()),
+            Language::Php => Ok(tree_sitter_php::LANGUAGE_PHP.into()),
             _ => Err(anyhow!("Unsupported language: {:?}", lang)),
         }
     }

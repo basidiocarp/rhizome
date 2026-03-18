@@ -69,6 +69,15 @@ enum Commands {
         #[arg(long)]
         fix: bool,
     },
+    /// Summarize project structure: entry points, key types, modules, tests
+    Summarize {
+        /// Workspace/project root path
+        #[arg(long, short)]
+        project: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
@@ -282,6 +291,22 @@ fn cmd_status(project: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+fn cmd_summarize(project: Option<PathBuf>, json_output: bool) -> Result<()> {
+    let project_root = detect_project_root(project);
+    let backend = TreeSitterBackend::new();
+    let summary = rhizome_core::summarize_project(&project_root, &backend)
+        .with_context(|| format!("Failed to summarize project at {}", project_root.display()))?;
+
+    if json_output {
+        let json = serde_json::to_string_pretty(&summary)
+            .context("Failed to serialize summary to JSON")?;
+        println!("{json}");
+    } else {
+        print!("{}", summary.format_display());
+    }
+    Ok(())
+}
+
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
     let project_root = detect_project_root(project);
     info!(
@@ -324,5 +349,6 @@ async fn main() -> Result<()> {
         Commands::Status { project } => cmd_status(project),
         Commands::SelfUpdate { check } => self_update::run(check),
         Commands::Doctor { fix } => doctor::run(fix),
+        Commands::Summarize { project, json } => cmd_summarize(project, json),
     }
 }

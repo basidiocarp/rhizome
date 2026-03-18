@@ -526,4 +526,402 @@ mod tests {
             "Tree-sitter should not produce diagnostics"
         );
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Java
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_java_symbols() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.java");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get Java symbols");
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"UserService"),
+            "Should find UserService class: {names:?}"
+        );
+        assert!(
+            names.contains(&"Repository"),
+            "Should find Repository interface: {names:?}"
+        );
+        assert!(
+            names.contains(&"Status"),
+            "Should find Status enum: {names:?}"
+        );
+    }
+
+    #[test]
+    fn test_java_symbol_kinds() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.java");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get Java symbols");
+
+        let class_sym = symbols
+            .iter()
+            .find(|s| s.name == "UserService" && s.kind == SymbolKind::Class);
+        assert!(class_sym.is_some(), "UserService should be a Class");
+
+        let iface_sym = symbols
+            .iter()
+            .find(|s| s.name == "Repository" && s.kind == SymbolKind::Trait);
+        assert!(
+            iface_sym.is_some(),
+            "Repository should be a Trait (interface)"
+        );
+
+        let enum_sym = symbols
+            .iter()
+            .find(|s| s.name == "Status" && s.kind == SymbolKind::Enum);
+        assert!(enum_sym.is_some(), "Status should be an Enum");
+    }
+
+    #[test]
+    fn test_java_methods_and_fields() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.java");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get Java symbols");
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"getName"),
+            "Should find getName method: {names:?}"
+        );
+        assert!(
+            names.contains(&"setAge"),
+            "Should find setAge method: {names:?}"
+        );
+    }
+
+    #[test]
+    fn test_java_imports() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.java");
+        let imports = backend
+            .get_imports(&path)
+            .expect("Failed to get Java imports");
+
+        assert!(
+            imports.len() >= 2,
+            "Should find at least 2 imports, found {}",
+            imports.len()
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // C
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_c_symbols() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.c");
+        let symbols = backend.get_symbols(&path).expect("Failed to get C symbols");
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"process"),
+            "Should find process function: {names:?}"
+        );
+        assert!(
+            names.contains(&"calculate"),
+            "Should find calculate function: {names:?}"
+        );
+        assert!(
+            names.contains(&"Config"),
+            "Should find Config struct: {names:?}"
+        );
+        assert!(
+            names.contains(&"Status"),
+            "Should find Status enum: {names:?}"
+        );
+    }
+
+    #[test]
+    fn test_c_symbol_kinds() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.c");
+        let symbols = backend.get_symbols(&path).expect("Failed to get C symbols");
+
+        let fn_sym = symbols
+            .iter()
+            .find(|s| s.name == "process" && s.kind == SymbolKind::Function);
+        assert!(fn_sym.is_some(), "process should be a Function");
+
+        let struct_sym = symbols
+            .iter()
+            .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct);
+        assert!(struct_sym.is_some(), "Config should be a Struct");
+
+        let enum_sym = symbols
+            .iter()
+            .find(|s| s.name == "Status" && s.kind == SymbolKind::Enum);
+        assert!(enum_sym.is_some(), "Status should be an Enum");
+    }
+
+    #[test]
+    fn test_c_typedef() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.c");
+        let symbols = backend.get_symbols(&path).expect("Failed to get C symbols");
+
+        let typedef_sym = symbols
+            .iter()
+            .find(|s| s.name == "usize" && s.kind == SymbolKind::Type);
+        assert!(typedef_sym.is_some(), "usize should be a Type (typedef)");
+    }
+
+    #[test]
+    fn test_c_macro() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.c");
+        let symbols = backend.get_symbols(&path).expect("Failed to get C symbols");
+
+        let macro_sym = symbols
+            .iter()
+            .find(|s| s.name == "SQUARE" && s.kind == SymbolKind::Function);
+        assert!(macro_sym.is_some(), "SQUARE should be a Function (macro)");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // C++
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_cpp_symbols() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.cpp");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get C++ symbols");
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"UserService"),
+            "Should find UserService class: {names:?}"
+        );
+        assert!(
+            names.contains(&"myapp"),
+            "Should find myapp namespace: {names:?}"
+        );
+        assert!(
+            names.contains(&"globalFunction"),
+            "Should find globalFunction: {names:?}"
+        );
+    }
+
+    #[test]
+    fn test_cpp_symbol_kinds() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.cpp");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get C++ symbols");
+
+        let class_sym = symbols
+            .iter()
+            .find(|s| s.name == "UserService" && s.kind == SymbolKind::Class);
+        assert!(class_sym.is_some(), "UserService should be a Class");
+
+        let ns_sym = symbols
+            .iter()
+            .find(|s| s.name == "myapp" && s.kind == SymbolKind::Type);
+        assert!(ns_sym.is_some(), "myapp should be a Type (namespace)");
+
+        let struct_sym = symbols
+            .iter()
+            .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct);
+        assert!(struct_sym.is_some(), "Config should be a Struct");
+
+        let enum_sym = symbols
+            .iter()
+            .find(|s| s.name == "Status" && s.kind == SymbolKind::Enum);
+        assert!(enum_sym.is_some(), "Status should be an Enum");
+    }
+
+    #[test]
+    fn test_cpp_functions() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.cpp");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get C++ symbols");
+
+        let fn_sym = symbols
+            .iter()
+            .find(|s| s.name == "globalFunction" && s.kind == SymbolKind::Function);
+        assert!(fn_sym.is_some(), "globalFunction should be a Function");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Ruby
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_ruby_symbols() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.rb");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get Ruby symbols");
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"Networking"),
+            "Should find Networking module: {names:?}"
+        );
+        assert!(
+            names.contains(&"HttpClient"),
+            "Should find HttpClient class: {names:?}"
+        );
+        assert!(
+            names.contains(&"Response"),
+            "Should find Response class: {names:?}"
+        );
+    }
+
+    #[test]
+    fn test_ruby_symbol_kinds() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.rb");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get Ruby symbols");
+
+        let module_sym = symbols
+            .iter()
+            .find(|s| s.name == "Networking" && s.kind == SymbolKind::Type);
+        assert!(module_sym.is_some(), "Networking should be a Type (module)");
+
+        let class_sym = symbols
+            .iter()
+            .find(|s| s.name == "HttpClient" && s.kind == SymbolKind::Class);
+        assert!(class_sym.is_some(), "HttpClient should be a Class");
+    }
+
+    #[test]
+    fn test_ruby_methods() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.rb");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get Ruby symbols");
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"initialize"),
+            "Should find initialize method: {names:?}"
+        );
+        assert!(names.contains(&"get"), "Should find get method: {names:?}");
+        assert!(
+            names.contains(&"post"),
+            "Should find post method: {names:?}"
+        );
+    }
+
+    #[test]
+    fn test_ruby_singleton_method() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.rb");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get Ruby symbols");
+
+        let singleton_sym = symbols
+            .iter()
+            .find(|s| s.name == "default_client" && s.kind == SymbolKind::Function);
+        assert!(
+            singleton_sym.is_some(),
+            "default_client should be a Function (singleton method)"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PHP
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_php_symbols() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.php");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get PHP symbols");
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"UserService"),
+            "Should find UserService class: {names:?}"
+        );
+        assert!(
+            names.contains(&"Repository"),
+            "Should find Repository interface: {names:?}"
+        );
+        assert!(
+            names.contains(&"Loggable"),
+            "Should find Loggable trait: {names:?}"
+        );
+        assert!(
+            names.contains(&"processUsers"),
+            "Should find processUsers function: {names:?}"
+        );
+    }
+
+    #[test]
+    fn test_php_symbol_kinds() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.php");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get PHP symbols");
+
+        let class_sym = symbols
+            .iter()
+            .find(|s| s.name == "UserService" && s.kind == SymbolKind::Class);
+        assert!(class_sym.is_some(), "UserService should be a Class");
+
+        let iface_sym = symbols
+            .iter()
+            .find(|s| s.name == "Repository" && s.kind == SymbolKind::Trait);
+        assert!(
+            iface_sym.is_some(),
+            "Repository should be a Trait (interface)"
+        );
+
+        let trait_sym = symbols
+            .iter()
+            .find(|s| s.name == "Loggable" && s.kind == SymbolKind::Trait);
+        assert!(trait_sym.is_some(), "Loggable should be a Trait");
+
+        let fn_sym = symbols
+            .iter()
+            .find(|s| s.name == "processUsers" && s.kind == SymbolKind::Function);
+        assert!(fn_sym.is_some(), "processUsers should be a Function");
+    }
+
+    #[test]
+    fn test_php_methods() {
+        let backend = TreeSitterBackend::new();
+        let path = fixture_path("sample.php");
+        let symbols = backend
+            .get_symbols(&path)
+            .expect("Failed to get PHP symbols");
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"findAll"),
+            "Should find findAll method: {names:?}"
+        );
+        assert!(
+            names.contains(&"create"),
+            "Should find create method: {names:?}"
+        );
+    }
 }

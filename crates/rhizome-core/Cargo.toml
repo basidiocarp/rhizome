@@ -11,6 +11,7 @@ which = "7"
 tracing = "0.1"
 toml = "1.0"
 dirs = "6"
+ignore = "0.4"
 spore = { workspace = true }
 
 [dev-dependencies]
