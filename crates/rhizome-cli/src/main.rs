@@ -386,20 +386,15 @@ fn cmd_lsp_install(language_name: &str) -> Result<()> {
     let language = Language::from_name(language_name)
         .with_context(|| format!("Unknown language: {language_name}"))?;
 
-    let config = rhizome_core::RhizomeConfig::default();
-    let selector = rhizome_core::BackendSelector::new(config);
-    let installer = selector.installer();
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Get default server config and install
-    // ─────────────────────────────────────────────────────────────────────────────
-
     let server_config = language
         .default_server_config()
         .with_context(|| format!("No LSP server available for {}", language))?;
 
     println!("Installing LSP server for {}...", language);
     println!("Server binary: {}", server_config.binary);
+
+    // Explicit install command should never be disabled
+    let installer = rhizome_core::LspInstaller::new(None, false);
 
     match installer.ensure_server(&language, &server_config.binary) {
         Ok(Some(path)) => {
