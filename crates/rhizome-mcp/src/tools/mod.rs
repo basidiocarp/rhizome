@@ -1,3 +1,4 @@
+pub mod edit_tools;
 pub mod export_tools;
 pub mod file_tools;
 pub mod symbol_tools;
@@ -116,6 +117,21 @@ impl ToolDispatcher {
                 file_tools::get_hover_info(Some(lsp), a)
             }),
 
+            // ── Edit tools ─────────────────────────────────────────────
+            "replace_symbol_body" => {
+                edit_tools::replace_symbol_body(&self.treesitter, &args, &self.project_root)
+            }
+            "insert_after_symbol" => {
+                edit_tools::insert_after_symbol(&self.treesitter, &args, &self.project_root)
+            }
+            "insert_before_symbol" => {
+                edit_tools::insert_before_symbol(&self.treesitter, &args, &self.project_root)
+            }
+            "replace_lines" => edit_tools::replace_lines(&args, &self.project_root),
+            "insert_at_line" => edit_tools::insert_at_line(&args, &self.project_root),
+            "delete_lines" => edit_tools::delete_lines(&args, &self.project_root),
+            "create_file" => edit_tools::create_file(&args, &self.project_root),
+
             // ── Export tools ────────────────────────────────────────────
             "export_to_hyphae" => {
                 export_tools::export_to_hyphae(&self.treesitter, &args, &self.project_root)
@@ -136,6 +152,7 @@ impl ToolDispatcher {
     pub fn list_tools(&self) -> Vec<ToolSchema> {
         let mut tools = symbol_tools::tool_schemas();
         tools.extend(file_tools::tool_schemas());
+        tools.extend(edit_tools::tool_schemas());
         tools.extend(export_tools::tool_schemas());
         tools
     }

@@ -159,7 +159,7 @@ impl McpServer {
         if self.unified {
             let tool_schema = json!([{
                 "name": "rhizome",
-                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_changed_files, rename_symbol, get_diagnostics, get_hover_info, export_to_hyphae",
+                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_changed_files, rename_symbol, get_diagnostics, get_hover_info, replace_symbol_body, insert_after_symbol, insert_before_symbol, replace_lines, insert_at_line, delete_lines, create_file, export_to_hyphae",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -178,7 +178,12 @@ impl McpServer {
                         "ref1": { "type": "string", "description": "Git ref for diff start" },
                         "ref2": { "type": "string", "description": "Git ref for diff end" },
                         "tags": { "type": "array", "items": { "type": "string" }, "description": "Annotation tags to search for" },
-                        "memoir": { "type": "string", "description": "Override memoir name for export" }
+                        "memoir": { "type": "string", "description": "Override memoir name for export" },
+                        "new_body": { "type": "string", "description": "New content for replace_symbol_body" },
+                        "content": { "type": "string", "description": "Content for insert/replace/create operations" },
+                        "start_line": { "type": "number", "description": "Start line (1-based) for line operations" },
+                        "end_line": { "type": "number", "description": "End line (1-based, inclusive) for line operations" },
+                        "overwrite": { "type": "boolean", "description": "Allow overwriting existing files in create_file" }
                     },
                     "required": ["command"]
                 }
