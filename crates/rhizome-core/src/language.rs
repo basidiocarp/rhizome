@@ -76,6 +76,44 @@ impl Language {
         }
     }
 
+    pub fn from_name(name: &str) -> Option<Language> {
+        match name.to_lowercase().as_str() {
+            "rust" => Some(Language::Rust),
+            "python" | "py" => Some(Language::Python),
+            "javascript" | "js" => Some(Language::JavaScript),
+            "typescript" | "ts" => Some(Language::TypeScript),
+            "go" | "golang" => Some(Language::Go),
+            "java" => Some(Language::Java),
+            "c" => Some(Language::C),
+            "cpp" | "c++" => Some(Language::Cpp),
+            "ruby" | "rb" => Some(Language::Ruby),
+            "elixir" | "ex" => Some(Language::Elixir),
+            "zig" => Some(Language::Zig),
+            "csharp" | "c#" => Some(Language::CSharp),
+            "fsharp" | "f#" => Some(Language::FSharp),
+            "swift" => Some(Language::Swift),
+            "php" => Some(Language::Php),
+            "haskell" | "hs" => Some(Language::Haskell),
+            "bash" | "sh" => Some(Language::Bash),
+            "terraform" | "tf" => Some(Language::Terraform),
+            "kotlin" | "kt" => Some(Language::Kotlin),
+            "dart" => Some(Language::Dart),
+            "lua" => Some(Language::Lua),
+            "clojure" | "clj" => Some(Language::Clojure),
+            "ocaml" | "ml" => Some(Language::OCaml),
+            "julia" | "jl" => Some(Language::Julia),
+            "nix" => Some(Language::Nix),
+            "gleam" => Some(Language::Gleam),
+            "vue" => Some(Language::Vue),
+            "svelte" => Some(Language::Svelte),
+            "astro" => Some(Language::Astro),
+            "prisma" => Some(Language::Prisma),
+            "typst" => Some(Language::Typst),
+            "yaml" | "yml" => Some(Language::Yaml),
+            _ => None,
+        }
+    }
+
     pub fn default_server_config(&self) -> Option<LanguageServerConfig> {
         let (binary, args) = match self {
             Language::Rust => ("rust-analyzer", vec![]),

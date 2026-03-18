@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use crate::config::RhizomeConfig;
 use crate::installer::LspInstaller;
 use crate::language::Language;
@@ -33,7 +35,7 @@ pub enum ResolvedBackend {
 }
 
 /// Per-language availability info for `rhizome status`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct LanguageStatus {
     pub language: Language,
     pub tree_sitter: bool,

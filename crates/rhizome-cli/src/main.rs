@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use rhizome_core::{CodeIntelligence, Symbol, SymbolKind};
+use rhizome_core::{CodeIntelligence, Language, Symbol, SymbolKind};
 use rhizome_mcp::McpServer;
 use rhizome_treesitter::TreeSitterBackend;
 use tracing::info;
@@ -77,6 +77,25 @@ enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+    },
+    /// Manage LSP server installations
+    Lsp {
+        #[command(subcommand)]
+        action: LspAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum LspAction {
+    /// Show LSP server status for all languages
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Install LSP server for a language
+    Install {
+        /// Language name (e.g. rust, python, typescript)
+        language: String,
     },
 }
 
@@ -307,6 +326,98 @@ fn cmd_summarize(project: Option<PathBuf>, json_output: bool) -> Result<()> {
     Ok(())
 }
 
+fn cmd_lsp_status(json_output: bool) -> Result<()> {
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Load configuration and get status
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    let config = rhizome_core::RhizomeConfig::default();
+    let mut selector = rhizome_core::BackendSelector::new(config);
+    let statuses = selector.status();
+
+    if json_output {
+        let json = serde_json::to_string_pretty(&statuses)
+            .context("Failed to serialize status to JSON")?;
+        println!("{json}");
+    } else {
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Print table format
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        println!("Rhizome LSP Status");
+        println!("==================\n");
+        println!(
+            "{:<14} {:<14} {:<30} Status",
+            "Language", "Tree-Sitter", "LSP Server"
+        );
+        println!(
+            "{:<14} {:<14} {:<30} ------",
+            "--------", "-----------", "----------"
+        );
+
+        for s in &statuses {
+            let status = if s.lsp_available {
+                match &s.lsp_path {
+                    Some(p) => format!("available ({})", p.display()),
+                    None => "available".into(),
+                }
+            } else {
+                "not found".into()
+            };
+
+            println!(
+                "{:<14} {:<14} {:<30} {}",
+                s.language.to_string(),
+                "active",
+                s.lsp_binary,
+                status,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_lsp_install(language_name: &str) -> Result<()> {
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Parse language name and get configuration
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    let language = Language::from_name(language_name)
+        .with_context(|| format!("Unknown language: {language_name}"))?;
+
+    let config = rhizome_core::RhizomeConfig::default();
+    let selector = rhizome_core::BackendSelector::new(config);
+    let installer = selector.installer();
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Get default server config and install
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    let server_config = language
+        .default_server_config()
+        .with_context(|| format!("No LSP server available for {}", language))?;
+
+    println!("Installing LSP server for {}...", language);
+    println!("Server binary: {}", server_config.binary);
+
+    match installer.ensure_server(&language, &server_config.binary) {
+        Ok(Some(path)) => {
+            println!("Successfully installed: {}", path.display());
+            Ok(())
+        }
+        Ok(None) => {
+            anyhow::bail!(
+                "LSP server installation skipped. Auto-install may be disabled. \
+                 Set RHIZOME_DISABLE_LSP_DOWNLOAD=0 and ensure package manager is available."
+            );
+        }
+        Err(e) => {
+            anyhow::bail!("Failed to install LSP server: {e}");
+        }
+    }
+}
+
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
     let project_root = detect_project_root(project);
     info!(
@@ -350,5 +461,9 @@ async fn main() -> Result<()> {
         Commands::SelfUpdate { check } => self_update::run(check),
         Commands::Doctor { fix } => doctor::run(fix),
         Commands::Summarize { project, json } => cmd_summarize(project, json),
+        Commands::Lsp { action } => match action {
+            LspAction::Status { json } => cmd_lsp_status(json),
+            LspAction::Install { language } => cmd_lsp_install(&language),
+        },
     }
 }
