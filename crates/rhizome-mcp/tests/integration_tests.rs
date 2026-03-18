@@ -25,7 +25,7 @@ fn make_dispatcher() -> ToolDispatcher {
 fn test_list_tools_returns_25_tools() {
     let dispatcher = make_dispatcher();
     let tools = dispatcher.list_tools();
-    assert_eq!(tools.len(), 34, "Expected 34 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 35, "Expected 35 tools, got {}", tools.len());
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"get_symbols"));
@@ -945,8 +945,8 @@ fn test_expanded_mode_tools_list_returns_25_tools() {
         .expect("Should have tools array");
     assert_eq!(
         tools.len(),
-        34,
-        "Expanded mode should return 34 tools, got {}",
+        35,
+        "Expanded mode should return 35 tools, got {}",
         tools.len()
     );
 }

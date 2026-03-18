@@ -140,6 +140,9 @@ impl ToolDispatcher {
                 export_tools::export_to_hyphae(&self.treesitter, &args, &self.project_root)
             }
 
+            // ── Onboarding ───────────────────────────────────────────────
+            "rhizome_onboard" => symbol_tools::rhizome_onboard(&self.project_root),
+
             _ => Err(anyhow!("Unknown tool: {name}")),
         }
     }
@@ -157,6 +160,7 @@ impl ToolDispatcher {
         tools.extend(file_tools::tool_schemas());
         tools.extend(edit_tools::tool_schemas());
         tools.extend(export_tools::tool_schemas());
+        tools.push(symbol_tools::onboard_schema());
         tools
     }
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.3] - 2026-03-18
+
+### Added
+
+- **7 file editing MCP tools**: `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `replace_lines`, `insert_lines`, `delete_lines`, `create_file` — enabling agents to make targeted code edits through Rhizome.
+- **`summarize_project` MCP tool**: Generates a high-level project summary including language breakdown, key entry points, dependency count, and architecture overview.
+- **`rhizome summarize` CLI command**: CLI entrypoint for project summarization.
+- **`rhizome_onboard` MCP tool**: Guided onboarding that detects the project stack, available backends, and returns a structured orientation for new agents.
+- **`rhizome doctor` diagnostic command**: Health check that validates tree-sitter grammars, LSP server availability, Hyphae connectivity, and configuration.
+- **Tree-sitter queries for Java, C, C++, Ruby, PHP**: Extended language-specific query patterns from 5 to 10 languages, improving symbol extraction accuracy for these languages.
+- **Spore adoption for Hyphae discovery**: Replaced manual binary detection with the shared `spore` crate for consistent Hyphae tool resolution during export.
+
 ## [0.4.0] - 2026-03-16
 
 ### Added
