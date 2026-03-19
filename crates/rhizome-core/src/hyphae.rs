@@ -90,12 +90,25 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
         .get("result")
         .context("Missing 'result' in hyphae response")?;
 
-    let concepts_created = result
+    // Hyphae wraps tool results in MCP content envelope: result.content[0].text is a JSON string
+    let text = result
+        .get("content")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|item| item.get("text"))
+        .and_then(|t| t.as_str())
+        .context("Missing 'content' in hyphae response")?;
+
+    // Parse the text field as JSON to extract counts
+    let parsed = serde_json::from_str::<serde_json::Value>(text)
+        .context("Failed to parse hyphae response text as JSON")?;
+
+    let concepts_created = parsed
         .get("concepts_created")
         .and_then(|v| v.as_u64())
         .unwrap_or(0) as usize;
 
-    let links_created = result
+    let links_created = parsed
         .get("links_created")
         .and_then(|v| v.as_u64())
         .unwrap_or(0) as usize;

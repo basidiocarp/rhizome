@@ -148,10 +148,11 @@ impl McpServer {
     }
 
     fn handle_initialize(&self) -> std::result::Result<Value, JsonRpcError> {
+        let instructions = "Rhizome provides code intelligence — symbol extraction, definitions, references, diagnostics. Top tools: get_symbols (file overview), get_definition (symbol source), find_references (cross-file), search_symbols (global search), get_diagnostics (errors/warnings). Most tools require an absolute file path. Use get_structure for project overview. Use export_to_hyphae to push code graphs to Hyphae for persistent knowledge.";
         Ok(json!({
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "rhizome", "version": "0.4.0" }
+            "serverInfo": { "name": "rhizome", "version": "0.4.0", "instructions": instructions }
         }))
     }
 
