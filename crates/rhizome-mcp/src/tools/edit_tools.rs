@@ -160,14 +160,30 @@ fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
     fs::write(path, content).map_err(|e| anyhow!("Failed to write {}: {e}", path.display()))
 }
 
-/// Resolve a file path that may be absolute or relative to project_root.
-fn resolve_path(file: &str, project_root: &Path) -> std::path::PathBuf {
+/// Resolve a file path, validating it stays within project_root to prevent path traversal.
+fn resolve_path(file: &str, project_root: &Path) -> Result<std::path::PathBuf> {
     let p = Path::new(file);
-    if p.is_absolute() {
+    let resolved = if p.is_absolute() {
         p.to_path_buf()
     } else {
         project_root.join(p)
+    };
+
+    // Canonicalize to resolve symlinks and ../ components
+    let canonical = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+    let canonical_root = project_root
+        .canonicalize()
+        .unwrap_or_else(|_| project_root.to_path_buf());
+
+    if !canonical.starts_with(&canonical_root) {
+        anyhow::bail!(
+            "Path traversal denied: {} is outside project root {}",
+            canonical.display(),
+            canonical_root.display()
+        );
     }
+
+    Ok(resolved)
 }
 
 /// Look up a symbol's location in a file via the backend.
@@ -201,7 +217,7 @@ pub fn replace_symbol_body(
     let symbol_name = required_str(args, "symbol")?;
     let new_body = required_str(args, "new_body")?;
 
-    let path = resolve_path(file, project_root);
+    let path = resolve_path(file, project_root)?;
 
     let (line_start, line_end) = match find_symbol_location(backend, &path, symbol_name) {
         Ok(loc) => loc,
@@ -253,7 +269,7 @@ pub fn insert_after_symbol(
     let symbol_name = required_str(args, "symbol")?;
     let content = required_str(args, "content")?;
 
-    let path = resolve_path(file, project_root);
+    let path = resolve_path(file, project_root)?;
 
     let (_line_start, line_end) = match find_symbol_location(backend, &path, symbol_name) {
         Ok(loc) => loc,
@@ -302,7 +318,7 @@ pub fn insert_before_symbol(
     let symbol_name = required_str(args, "symbol")?;
     let content = required_str(args, "content")?;
 
-    let path = resolve_path(file, project_root);
+    let path = resolve_path(file, project_root)?;
 
     let (line_start, _line_end) = match find_symbol_location(backend, &path, symbol_name) {
         Ok(loc) => loc,
@@ -354,7 +370,7 @@ pub fn replace_lines(args: &Value, project_root: &Path) -> Result<Value> {
         )));
     }
 
-    let path = resolve_path(file, project_root);
+    let path = resolve_path(file, project_root)?;
     let lines = match read_lines(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
@@ -405,7 +421,7 @@ pub fn insert_at_line(args: &Value, project_root: &Path) -> Result<Value> {
         return Ok(tool_error("Line number is 1-based; 0 is not valid."));
     }
 
-    let path = resolve_path(file, project_root);
+    let path = resolve_path(file, project_root)?;
     let lines = match read_lines(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
@@ -461,7 +477,7 @@ pub fn delete_lines(args: &Value, project_root: &Path) -> Result<Value> {
         )));
     }
 
-    let path = resolve_path(file, project_root);
+    let path = resolve_path(file, project_root)?;
     let lines = match read_lines(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
@@ -508,7 +524,7 @@ pub fn create_file(args: &Value, project_root: &Path) -> Result<Value> {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let path = resolve_path(file, project_root);
+    let path = resolve_path(file, project_root)?;
 
     if path.exists() && !overwrite {
         return Ok(tool_error(&format!(
