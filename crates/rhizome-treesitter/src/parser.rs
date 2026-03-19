@@ -44,7 +44,15 @@ impl ParserPool {
             Language::Cpp => Ok(tree_sitter_cpp::LANGUAGE.into()),
             Language::Ruby => Ok(tree_sitter_ruby::LANGUAGE.into()),
             Language::Php => Ok(tree_sitter_php::LANGUAGE_PHP.into()),
-            _ => Err(anyhow!("Unsupported language: {:?}", lang)),
+            Language::Bash => Ok(tree_sitter_bash::LANGUAGE.into()),
+            Language::CSharp => Ok(tree_sitter_c_sharp::LANGUAGE.into()),
+            Language::Elixir => Ok(tree_sitter_elixir::LANGUAGE.into()),
+            // Kotlin: tree-sitter-kotlin uses incompatible tree-sitter version; uses generic fallback
+            Language::Lua => Ok(tree_sitter_lua::LANGUAGE.into()),
+            Language::Swift => Ok(tree_sitter_swift::LANGUAGE.into()),
+            Language::Zig => Ok(tree_sitter_zig::LANGUAGE.into()),
+            Language::Haskell => Ok(tree_sitter_haskell::LANGUAGE.into()),
+            _ => Err(anyhow!("No tree-sitter grammar for {:?}", lang)),
         }
     }
 }
