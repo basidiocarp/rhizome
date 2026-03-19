@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use spore::{discover, Tool};
 
@@ -23,9 +23,8 @@ pub fn is_available() -> bool {
 /// Export a code graph to Hyphae by spawning `hyphae serve` and sending a
 /// JSON-RPC request over its stdio transport.
 pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result<ExportResult> {
-    if !is_available() {
-        bail!("Hyphae binary not found in PATH");
-    }
+    let info = discover(Tool::Hyphae)
+        .ok_or_else(|| anyhow!("Hyphae binary not found in PATH"))?;
 
     let project = graph_json.get("project").cloned().unwrap_or_else(|| {
         serde_json::Value::String(
@@ -53,7 +52,7 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
     let message =
         serde_json::to_string(&request).context("Failed to serialize JSON-RPC request")? + "\n";
 
-    let mut child = Command::new("hyphae")
+    let mut child = Command::new(&info.binary_path)
         .arg("serve")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
