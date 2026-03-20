@@ -28,16 +28,16 @@ These languages work immediately with zero setup:
 | C++ | All tree-sitter tools | Yes, full support |
 | Ruby | All tree-sitter tools | Yes, full support |
 | PHP | All tree-sitter tools | Yes, full support |
-| Bash | Basic symbol extraction (generic fallback) | Limited |
-| C# | Basic symbol extraction (generic fallback) | Limited |
-| Elixir | Basic symbol extraction (generic fallback) | Limited |
-| Lua | Basic symbol extraction (generic fallback) | Limited |
-| Swift | Basic symbol extraction (generic fallback) | Limited |
-| Zig | Basic symbol extraction (generic fallback) | Limited |
-| Haskell | Basic symbol extraction (generic fallback) | Limited |
+| Bash | All tree-sitter tools (dedicated query) | Yes, full support |
+| C# | All tree-sitter tools (dedicated query) | Yes, full support |
+| Elixir | All tree-sitter tools (dedicated query) | Yes, full support |
+| Lua | All tree-sitter tools (dedicated query) | Yes, full support |
+| Swift | All tree-sitter tools (dedicated query) | Yes, full support |
+| Zig | All tree-sitter tools (dedicated query) | Yes, full support |
+| Haskell | All tree-sitter tools (dedicated query) | Yes, full support |
 | TOML | Basic symbol extraction (generic fallback) | Limited |
 
-"Full support" = precise symbol extraction via query patterns. "Limited" = generic fallback extracts functions, classes, imports.
+"Full support" = precise symbol extraction via dedicated query patterns. "Limited" = generic fallback extracts functions, classes, imports.
 
 **What's the difference?**
 

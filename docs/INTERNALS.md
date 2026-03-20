@@ -145,15 +145,15 @@ Symbol Extraction
     └─ Fallback to generic AST walk (symbols.rs:262)
 ```
 
-**Query patterns** (10 languages with full extraction):
+**Query patterns** (17 languages with full extraction):
 
-- Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, Ruby, PHP
+- Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, Ruby, PHP, Bash, C#, Elixir, Lua, Swift, Zig, Haskell
 - Each has a `.scm` query file in `crates/rhizome-treesitter/src/queries/`
 - Queries use tree-sitter capture groups: `@function`, `@struct_def`, `@import`, etc.
 
-**Generic fallback** (8 languages):
+**Generic fallback** (1 language):
 
-- Bash, C#, Elixir, Lua, Swift, Zig, Haskell, TOML
+- TOML
 - Walks the AST looking for common node types:
   - `GENERIC_FUNCTION_KINDS`: `function_definition`, `function_item`, `method_declaration`, etc.
   - `GENERIC_CLASS_KINDS`: `class_definition`, `struct_item`, `interface_declaration`, etc.
@@ -170,6 +170,25 @@ Symbol Extraction
    - Extract location (line/column), signature, and doc comment
    - For `impl` blocks, recursively extract methods as children
 4. Return `Vec<Symbol>`
+
+## Hyphae Integration & Code Export
+
+Rhizome exports code graphs to Hyphae via the `spore` IPC library for incremental caching and reuse.
+
+**Export flow** (`hyphae_import_code_graph` MCP tool):
+
+1. Query tree-sitter or LSP for symbols in project
+2. Build code graph: concepts (functions, types, modules) + links (calls, implements, imports)
+3. Connect to Hyphae via spore's `McpClient`
+4. Serialize graph to JSON-RPC calls (create memoir, add concepts, add links)
+5. Cache result in Hyphae memoirs under `code:{project}` namespace
+
+**Benefits:**
+- Code context available to agents during recall
+- Code changes detected (memoir updated_at) trigger refresh hints
+- Monorepo support: per-root code graphs
+
+---
 
 ## LSP: Multi-Client Manager & Root Detection
 
