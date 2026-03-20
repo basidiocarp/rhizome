@@ -129,6 +129,88 @@ pub const PHP_QUERY: &str = r#"
 (method_declaration name: (name) @name) @function
 "#;
 
+pub const BASH_QUERY: &str = r#"
+(function_definition name: (word) @name) @function
+
+(command name: (command_name) @name) @function
+
+(variable_assignment name: (variable_name) @name) @variable
+"#;
+
+pub const CSHARP_QUERY: &str = r#"
+(class_declaration name: (identifier) @name) @class_def
+
+(method_declaration name: (identifier) @name) @function
+
+(interface_declaration name: (identifier) @name) @trait_def
+
+(struct_declaration name: (identifier) @name) @struct_def
+
+(using_directive) @import
+
+(field_declaration declarator: (variable_declarator name: (identifier) @name)) @variable
+
+(const_declaration declarator: (variable_declarator name: (identifier) @name)) @const_def
+"#;
+
+pub const ELIXIR_QUERY: &str = r#"
+(call target: (identifier) @_name arguments: (arguments (identifier) @name)) @function
+
+(alias_expression) @import
+
+(module) @type_def
+"#;
+
+pub const LUA_QUERY: &str = r#"
+(function_declaration name: (identifier) @name) @function
+
+(function_declaration name: (dot_index_expression) @name) @function
+
+(variable_declaration (identifier) @name) @variable
+
+(assignment_statement (variable_list (identifier) @name)) @variable
+
+(table_constructor) @variable
+"#;
+
+pub const SWIFT_QUERY: &str = r#"
+(function_declaration name: (simple_identifier) @name) @function
+
+(class_declaration name: (type_identifier) @name) @class_def
+
+(struct_declaration name: (type_identifier) @name) @struct_def
+
+(protocol_declaration name: (type_identifier) @name) @trait_def
+
+(import_declaration) @import
+
+(constant_declaration (identifier) @name) @const_def
+
+(variable_declaration (identifier) @name) @variable
+"#;
+
+pub const ZIG_QUERY: &str = r#"
+(FnProto (IDENTIFIER) @name) @function
+
+(ContainerDecl (IDENTIFIER) @name) @struct_def
+
+(VarDecl (IDENTIFIER) @name) @variable
+
+(CONST (IDENTIFIER) @name) @const_def
+"#;
+
+pub const HASKELL_QUERY: &str = r#"
+(function name: (variable) @name) @function
+
+(type_alias name: (type) @name) @type_def
+
+(module_import) @import
+
+(class_definition name: (type) @name) @class_def
+
+(instance) @impl_def
+"#;
+
 static RUST_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static PYTHON_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static JS_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
@@ -139,6 +221,13 @@ static C_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new(
 static CPP_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static RUBY_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static PHP_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+static BASH_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+static CSHARP_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+static ELIXIR_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+static LUA_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+static SWIFT_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+static ZIG_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+static HASKELL_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 
 fn compile_query(lang: &tree_sitter::Language, source: &str) -> Result<tree_sitter::Query, String> {
     tree_sitter::Query::new(lang, source).map_err(|e| format!("{e}"))
@@ -185,6 +274,34 @@ pub fn get_query(lang: &Language) -> Result<&'static tree_sitter::Query> {
         Language::Php => {
             let ts_lang: tree_sitter::Language = tree_sitter_php::LANGUAGE_PHP.into();
             PHP_COMPILED.get_or_init(|| compile_query(&ts_lang, PHP_QUERY))
+        }
+        Language::Bash => {
+            let ts_lang: tree_sitter::Language = tree_sitter_bash::LANGUAGE.into();
+            BASH_COMPILED.get_or_init(|| compile_query(&ts_lang, BASH_QUERY))
+        }
+        Language::CSharp => {
+            let ts_lang: tree_sitter::Language = tree_sitter_c_sharp::LANGUAGE.into();
+            CSHARP_COMPILED.get_or_init(|| compile_query(&ts_lang, CSHARP_QUERY))
+        }
+        Language::Elixir => {
+            let ts_lang: tree_sitter::Language = tree_sitter_elixir::LANGUAGE.into();
+            ELIXIR_COMPILED.get_or_init(|| compile_query(&ts_lang, ELIXIR_QUERY))
+        }
+        Language::Lua => {
+            let ts_lang: tree_sitter::Language = tree_sitter_lua::LANGUAGE.into();
+            LUA_COMPILED.get_or_init(|| compile_query(&ts_lang, LUA_QUERY))
+        }
+        Language::Swift => {
+            let ts_lang: tree_sitter::Language = tree_sitter_swift::LANGUAGE.into();
+            SWIFT_COMPILED.get_or_init(|| compile_query(&ts_lang, SWIFT_QUERY))
+        }
+        Language::Zig => {
+            let ts_lang: tree_sitter::Language = tree_sitter_zig::LANGUAGE.into();
+            ZIG_COMPILED.get_or_init(|| compile_query(&ts_lang, ZIG_QUERY))
+        }
+        Language::Haskell => {
+            let ts_lang: tree_sitter::Language = tree_sitter_haskell::LANGUAGE.into();
+            HASKELL_COMPILED.get_or_init(|| compile_query(&ts_lang, HASKELL_QUERY))
         }
         _ => return Err(anyhow!("Unsupported language: {:?}", lang)),
     };
