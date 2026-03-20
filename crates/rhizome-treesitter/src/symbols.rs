@@ -254,7 +254,11 @@ fn extract_node_name(node: tree_sitter::Node, source: &[u8]) -> String {
     node.utf8_text(source)
         .map(|t| {
             let line = t.lines().next().unwrap_or(t).trim();
-            if line.len() > 100 { line[..100].to_string() } else { line.to_string() }
+            if line.len() > 100 {
+                line[..100].to_string()
+            } else {
+                line.to_string()
+            }
         })
         .unwrap_or_default()
 }
