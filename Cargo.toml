@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-spore = { path = "../spore" }
+spore = { git = "https://github.com/basidiocarp/spore", tag = "v0.3.0" }
 
 [profile.release]
 opt-level = 3
