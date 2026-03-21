@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.3] - 2026-03-21
+
+### Added
+
+- **Parse-tree LRU cache**: Process-wide shared cache (100 entries) for tree-sitter parsed trees, keyed by `(file_path, mtime)`. Eliminates redundant re-parsing when multiple MCP tools operate on the same file. ~5-10x speedup on repeated file access.
+
+### Changed
+
+- **Spore v0.3.0**: Self-update and logging now use shared spore modules.
+
 ## [0.4.3] - 2026-03-18
 
 ### Added

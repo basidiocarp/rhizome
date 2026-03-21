@@ -6,7 +6,6 @@ use rhizome_core::{CodeIntelligence, Language, Symbol, SymbolKind};
 use rhizome_mcp::McpServer;
 use rhizome_treesitter::TreeSitterBackend;
 use tracing::info;
-use tracing_subscriber::EnvFilter;
 
 mod doctor;
 mod self_update;
@@ -436,10 +435,7 @@ async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .with_writer(std::io::stderr)
-        .init();
+    spore::logging::init(tracing::Level::WARN);
 
     let cli = Cli::parse();
 

@@ -1,6 +1,6 @@
 [package]
 name = "rhizome-cli"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2021"
 authors = ["William Newton"]
 description = "Rhizome - Code intelligence MCP server with tree-sitter and LSP backends"
@@ -18,11 +18,11 @@ path = "src/main.rs"
 rhizome-core = { path = "../rhizome-core" }
 rhizome-mcp = { path = "../rhizome-mcp" }
 rhizome-treesitter = { path = "../rhizome-treesitter" }
+spore = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde_json = "1"
 ureq = "3"
 tempfile = "3"

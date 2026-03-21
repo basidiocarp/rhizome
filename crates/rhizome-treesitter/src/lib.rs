@@ -3,6 +3,7 @@ pub mod queries;
 pub mod symbols;
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Result};
@@ -17,21 +18,34 @@ use crate::parser::ParserPool;
 use crate::symbols::extract_symbols;
 
 /// ─────────────────────────────────────────────────────────────────────────
+/// SharedParseCache
+/// ─────────────────────────────────────────────────────────────────────────
+/// Thread-safe LRU cache for parsed trees, shared across backend instances.
+/// Key: (canonicalized path, file mtime). Capacity: 100 entries.
+type ParseCache = Mutex<LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>>;
+
+fn shared_cache() -> &'static ParseCache {
+    // Lazy-initialized static cache - created once per process lifetime
+    static CACHE: std::sync::OnceLock<ParseCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| {
+        Mutex::new(LruCache::new(std::num::NonZeroUsize::new(100).unwrap()))
+    })
+}
+
+/// ─────────────────────────────────────────────────────────────────────────
 /// TreeSitterBackend
 /// ─────────────────────────────────────────────────────────────────────────
 /// Code intelligence backend using tree-sitter parsing with LRU cache.
 /// Cache key: (canonicalized path, file mtime) to invalidate on changes.
 pub struct TreeSitterBackend {
     parser_pool: ParserPool,
-    cache: LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>,
 }
 
 impl TreeSitterBackend {
-    /// Create a new backend with a 50-entry LRU parse tree cache.
+    /// Create a new backend. Uses a shared, process-wide LRU parse tree cache.
     pub fn new() -> Self {
         Self {
             parser_pool: ParserPool::new(),
-            cache: LruCache::new(std::num::NonZeroUsize::new(50).unwrap()),
         }
     }
 
@@ -55,14 +69,17 @@ impl TreeSitterBackend {
         let cache_key = (canonical_path.clone(), mtime);
 
         // ─────────────────────────────────────────────────────────────────
-        // Check cache
+        // Check shared cache for hit
         // ─────────────────────────────────────────────────────────────────
-        if let Some((tree, source, lang)) = self.cache.get(&cache_key) {
-            return Ok((tree.clone(), source.clone(), lang.clone()));
+        {
+            let mut cache = shared_cache().lock().unwrap();
+            if let Some((tree, source, lang)) = cache.get(&cache_key) {
+                return Ok((tree.clone(), source.clone(), lang.clone()));
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────
-        // Cache miss: parse and insert
+        // Cache miss: parse and insert into shared cache
         // ─────────────────────────────────────────────────────────────────
         let source = std::fs::read(file)?;
         let parser = self.parser_pool.get_parser(&language)?;
@@ -70,8 +87,10 @@ impl TreeSitterBackend {
             .parse(&source, None)
             .ok_or_else(|| anyhow!("Failed to parse: {}", file.display()))?;
 
-        self.cache
-            .put(cache_key, (tree.clone(), source.clone(), language.clone()));
+        {
+            let mut cache = shared_cache().lock().unwrap();
+            cache.put(cache_key, (tree.clone(), source.clone(), language.clone()));
+        }
 
         Ok((tree, source, language))
     }
@@ -85,8 +104,8 @@ impl Default for TreeSitterBackend {
 
 impl CodeIntelligence for TreeSitterBackend {
     fn get_symbols(&self, file: &Path) -> Result<Vec<Symbol>> {
-        // We need a mutable reference for the parser pool, so use interior
-        // approach via a fresh pool per call for trait compatibility.
+        // Use shared cache via parse_file. Create a new pool (lightweight) for
+        // this call, but the parse tree results come from the process-wide cache.
         let mut backend = TreeSitterBackend::new();
         let (tree, source, language) = backend.parse_file(file)?;
         let file_path = file.to_string_lossy().to_string();
@@ -955,5 +974,84 @@ mod tests {
             names.contains(&"create"),
             "Should find create method: {names:?}"
         );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Parse Cache Tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_cache_hit() {
+        let path = fixture_path("sample.rs");
+        let backend = TreeSitterBackend::new();
+
+        // First call: cache miss, parse and store
+        let start = std::time::Instant::now();
+        let symbols1 = backend.get_symbols(&path).expect("First call failed");
+        let first_duration = start.elapsed();
+
+        // Second call: cache hit, should be much faster
+        let start = std::time::Instant::now();
+        let symbols2 = backend.get_symbols(&path).expect("Second call failed");
+        let second_duration = start.elapsed();
+
+        // Verify results are identical (same cache)
+        assert_eq!(symbols1.len(), symbols2.len(), "Symbol count should match");
+        for (s1, s2) in symbols1.iter().zip(symbols2.iter()) {
+            assert_eq!(s1.name, s2.name, "Symbol names should match");
+            assert_eq!(s1.kind, s2.kind, "Symbol kinds should match");
+        }
+
+        // Cache hit should be at least 2x faster (not strict - debug builds slow)
+        if !cfg!(debug_assertions) {
+            assert!(
+                second_duration < first_duration / 2,
+                "Cache hit ({:?}) should be at least 2x faster than cache miss ({:?})",
+                second_duration,
+                first_duration
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_cache_mtime_invalidation() {
+        use std::fs::File;
+        use std::io::Write;
+
+        // Create a temporary test file
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("rhizome_test_cache.rs");
+
+        // Write initial content
+        {
+            let mut file = File::create(&test_file).expect("Failed to create temp file");
+            file.write_all(b"fn test_func() {}")
+                .expect("Failed to write to temp file");
+        }
+
+        let backend = TreeSitterBackend::new();
+
+        // First parse
+        let symbols1 = backend
+            .get_symbols(&test_file)
+            .expect("First parse failed");
+        assert_eq!(symbols1.len(), 1, "Should find one function");
+
+        // Modify file (change mtime)
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        {
+            let mut file = File::create(&test_file).expect("Failed to update temp file");
+            file.write_all(b"fn func1() {} fn func2() {}")
+                .expect("Failed to write to temp file");
+        }
+
+        // Second parse should see the new content (mtime changed, cache invalidated)
+        let symbols2 = backend
+            .get_symbols(&test_file)
+            .expect("Second parse failed");
+        assert_eq!(symbols2.len(), 2, "Should find two functions after modification");
+
+        // Clean up
+        let _ = std::fs::remove_file(test_file);
     }
 }
