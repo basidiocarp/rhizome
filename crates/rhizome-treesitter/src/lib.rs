@@ -2,10 +2,12 @@ pub mod parser;
 pub mod queries;
 pub mod symbols;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use anyhow::{anyhow, Result};
 use ignore::WalkBuilder;
+use lru::LruCache;
 use rhizome_core::{
     BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Symbol,
     SymbolKind,
@@ -14,14 +16,22 @@ use rhizome_core::{
 use crate::parser::ParserPool;
 use crate::symbols::extract_symbols;
 
+/// ─────────────────────────────────────────────────────────────────────────
+/// TreeSitterBackend
+/// ─────────────────────────────────────────────────────────────────────────
+/// Code intelligence backend using tree-sitter parsing with LRU cache.
+/// Cache key: (canonicalized path, file mtime) to invalidate on changes.
 pub struct TreeSitterBackend {
     parser_pool: ParserPool,
+    cache: LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>,
 }
 
 impl TreeSitterBackend {
+    /// Create a new backend with a 50-entry LRU parse tree cache.
     pub fn new() -> Self {
         Self {
             parser_pool: ParserPool::new(),
+            cache: LruCache::new(std::num::NonZeroUsize::new(50).unwrap()),
         }
     }
 
@@ -36,11 +46,33 @@ impl TreeSitterBackend {
 
     fn parse_file(&mut self, file: &Path) -> Result<(tree_sitter::Tree, Vec<u8>, Language)> {
         let language = Self::detect_language(file)?;
+
+        // Try to get canonical path and file mtime for cache lookup
+        let canonical_path = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+        let metadata = std::fs::metadata(file)?;
+        let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+
+        let cache_key = (canonical_path.clone(), mtime);
+
+        // ─────────────────────────────────────────────────────────────────
+        // Check cache
+        // ─────────────────────────────────────────────────────────────────
+        if let Some((tree, source, lang)) = self.cache.get(&cache_key) {
+            return Ok((tree.clone(), source.clone(), lang.clone()));
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // Cache miss: parse and insert
+        // ─────────────────────────────────────────────────────────────────
         let source = std::fs::read(file)?;
         let parser = self.parser_pool.get_parser(&language)?;
         let tree = parser
             .parse(&source, None)
             .ok_or_else(|| anyhow!("Failed to parse: {}", file.display()))?;
+
+        self.cache
+            .put(cache_key, (tree.clone(), source.clone(), language.clone()));
+
         Ok((tree, source, language))
     }
 }
