@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.4] - 2026-03-22
+
+### Fixed
+
+- **Path traversal security**: `resolve_path` now canonicalizes parent directories for non-existent files. Previously, `../` sequences in new file paths bypassed the project root check.
+- **Mutex poison safety**: Replaced 5 `lock().unwrap()` calls with poison-safe alternatives in LSP client and parse cache. A panic in one request no longer permanently crashes the server.
+- **LSP manager entry API**: Replaced insert-then-unwrap pattern with `HashMap::entry()`, eliminating a potential panic if the key disappeared between operations.
+- **Probe server logging**: Installation and probing failures are now logged at `warn!` level instead of silently swallowed.
+- **Deprecated annotations**: Added `reason` attributes to 3 `#[allow(deprecated)]` sites.
+
 ## [0.5.3] - 2026-03-21
 
 ### Added
