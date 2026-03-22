@@ -919,6 +919,7 @@ dependencies = [
  "serde_json",
  "spore",
  "tempfile",
+ "thiserror",
  "toml 1.0.6+spec-1.1.0",
  "tracing",
  "which",
@@ -934,6 +935,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
  "url",
@@ -966,6 +968,7 @@ dependencies = [
  "serde",
  "serde_json",
  "streaming-iterator",
+ "thiserror",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",
@@ -1198,8 +1201,8 @@ dependencies = [
 
 [[package]]
 name = "spore"
-version = "0.3.0"
-source = "git+https://github.com/basidiocarp/spore?tag=v0.3.0#58c4d5e099dc58abd2e3290364ef2b18dac4aef1"
+version = "0.4.0"
+source = "git+https://github.com/basidiocarp/spore?tag=v0.4.0#bd4843d2797f5918c9b6927bad42f98a23e34592"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1207,6 +1210,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "toml 0.8.23",
  "tracing",
  "tracing-subscriber",

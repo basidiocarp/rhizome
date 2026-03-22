@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 
 use crate::backend::CodeIntelligence;
+use crate::error::Result;
 use crate::language::Language;
 use crate::symbol::{Symbol, SymbolKind};
 

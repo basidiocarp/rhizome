@@ -624,27 +624,39 @@ mod tests {
     }
 
     impl CodeIntelligence for MockBackend {
-        fn get_symbols(&self, _file: &Path) -> Result<Vec<Symbol>> {
+        fn get_symbols(&self, _file: &Path) -> rhizome_core::Result<Vec<Symbol>> {
             Ok(vec![])
         }
 
-        fn get_definition(&self, _file: &Path, _name: &str) -> Result<Option<Symbol>> {
+        fn get_definition(
+            &self,
+            _file: &Path,
+            _name: &str,
+        ) -> rhizome_core::Result<Option<Symbol>> {
             Ok(self.symbol.clone())
         }
 
-        fn find_references(&self, _file: &Path, _pos: &Position) -> Result<Vec<Location>> {
+        fn find_references(
+            &self,
+            _file: &Path,
+            _pos: &Position,
+        ) -> rhizome_core::Result<Vec<Location>> {
             Ok(vec![])
         }
 
-        fn search_symbols(&self, _pattern: &str, _root: &Path) -> Result<Vec<Symbol>> {
+        fn search_symbols(
+            &self,
+            _pattern: &str,
+            _root: &Path,
+        ) -> rhizome_core::Result<Vec<Symbol>> {
             Ok(vec![])
         }
 
-        fn get_imports(&self, _file: &Path) -> Result<Vec<Symbol>> {
+        fn get_imports(&self, _file: &Path) -> rhizome_core::Result<Vec<Symbol>> {
             Ok(vec![])
         }
 
-        fn get_diagnostics(&self, _file: &Path) -> Result<Vec<Diagnostic>> {
+        fn get_diagnostics(&self, _file: &Path) -> rhizome_core::Result<Vec<Diagnostic>> {
             Ok(vec![])
         }
 

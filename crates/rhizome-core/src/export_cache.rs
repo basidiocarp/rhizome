@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
+
+use crate::error::Result;
 
 /// Mtime-based file change cache for incremental exports.
 ///

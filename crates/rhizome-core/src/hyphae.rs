@@ -1,10 +1,11 @@
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use spore::discover;
 use spore::subprocess::McpClient;
 use spore::types::Tool;
+
+use crate::error::{Result, RhizomeError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportResult {
@@ -25,7 +26,8 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
     // ─────────────────────────────────────────────────────────────────────────
     // Verify Hyphae is available
     // ─────────────────────────────────────────────────────────────────────────
-    discover(Tool::Hyphae).ok_or_else(|| anyhow!("Hyphae binary not found in PATH"))?;
+    discover(Tool::Hyphae)
+        .ok_or_else(|| RhizomeError::Other("Hyphae binary not found in PATH".to_string()))?;
 
     let project = graph_json.get("project").cloned().unwrap_or_else(|| {
         serde_json::Value::String(
@@ -40,7 +42,7 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
     // Call Hyphae via McpClient
     // ─────────────────────────────────────────────────────────────────────────
     let mut client = McpClient::spawn(Tool::Hyphae, &["serve"])
-        .context("Failed to spawn hyphae serve")?
+        .map_err(|e| RhizomeError::Other(format!("Failed to spawn hyphae serve: {}", e)))?
         .with_timeout(Duration::from_secs(10));
 
     let result = client
@@ -52,7 +54,9 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
                 "edges": graph_json["edges"]
             }),
         )
-        .context("Failed to call hyphae_import_code_graph")?;
+        .map_err(|e| {
+            RhizomeError::Other(format!("Failed to call hyphae_import_code_graph: {}", e))
+        })?;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Extract content from MCP response envelope
@@ -64,11 +68,15 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
         .and_then(|a| a.first())
         .and_then(|item| item.get("text"))
         .and_then(|t| t.as_str())
-        .context("Missing 'content' in hyphae response")?;
+        .ok_or_else(|| RhizomeError::Other("Missing 'content' in hyphae response".to_string()))?;
 
     // Parse the text field as JSON to extract counts
-    let parsed = serde_json::from_str::<serde_json::Value>(text)
-        .context("Failed to parse hyphae response text as JSON")?;
+    let parsed = serde_json::from_str::<serde_json::Value>(text).map_err(|e| {
+        RhizomeError::Other(format!(
+            "Failed to parse hyphae response text as JSON: {}",
+            e
+        ))
+    })?;
 
     let concepts_created = parsed
         .get("concepts_created")

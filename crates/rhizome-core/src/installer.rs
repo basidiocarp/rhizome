@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Result};
 use tracing::{debug, info, warn};
 
+use crate::error::{Result, RhizomeError};
 use crate::Language;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -370,7 +370,9 @@ impl LspInstaller {
     }
 
     fn run_install(&self, recipe: &InstallRecipe, binary_name: &str) -> Result<Option<PathBuf>> {
-        std::fs::create_dir_all(&self.bin_dir).context("Failed to create rhizome bin directory")?;
+        std::fs::create_dir_all(&self.bin_dir).map_err(|e| {
+            RhizomeError::Other(format!("Failed to create rhizome bin directory: {}", e))
+        })?;
 
         info!(
             "Installing LSP server: {binary_name} via {}",
@@ -413,7 +415,12 @@ impl LspInstaller {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output()
-            .with_context(|| format!("Failed to run {} for {binary_name}", recipe.manager))?;
+            .map_err(|e| {
+                RhizomeError::Other(format!(
+                    "Failed to run {} for {binary_name}: {}",
+                    recipe.manager, e
+                ))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -445,7 +452,9 @@ impl LspInstaller {
         // Extract the package name from the pipx args (e.g. ["install", "pyright"] → "pyright")
         let package = recipe.args.last().unwrap_or(&binary_name);
 
-        std::fs::create_dir_all(&self.bin_dir).context("Failed to create rhizome bin directory")?;
+        std::fs::create_dir_all(&self.bin_dir).map_err(|e| {
+            RhizomeError::Other(format!("Failed to create rhizome bin directory: {}", e))
+        })?;
 
         info!("Installing LSP server: {binary_name} via {pip}");
 
@@ -454,7 +463,9 @@ impl LspInstaller {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output()
-            .with_context(|| format!("Failed to run {pip} for {binary_name}"))?;
+            .map_err(|e| {
+                RhizomeError::Other(format!("Failed to run {pip} for {binary_name}: {}", e))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
+
+use crate::error::Result;
 
 /// Per-language configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -431,7 +432,7 @@ mod tests {
     #[test]
     fn test_example_config_parses_as_valid_toml() {
         let example = RhizomeConfig::example_config();
-        let parsed: Result<RhizomeConfig, _> = toml::from_str(&example);
+        let parsed: std::result::Result<RhizomeConfig, _> = toml::from_str(&example);
         assert!(parsed.is_ok(), "Example config should parse as valid TOML");
         // All entries are commented out so languages should be empty
         assert!(parsed.unwrap().languages.is_empty());

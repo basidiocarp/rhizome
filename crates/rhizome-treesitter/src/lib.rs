@@ -6,12 +6,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Result};
 use ignore::WalkBuilder;
 use lru::LruCache;
 use rhizome_core::{
-    BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Symbol,
-    SymbolKind,
+    BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Result,
+    RhizomeError, Symbol, SymbolKind,
 };
 
 use crate::parser::ParserPool;
@@ -48,12 +47,12 @@ impl TreeSitterBackend {
     }
 
     fn detect_language(file: &Path) -> Result<Language> {
-        let ext = file
-            .extension()
-            .and_then(|e| e.to_str())
-            .ok_or_else(|| anyhow!("No file extension: {}", file.display()))?;
+        let ext = file.extension().and_then(|e| e.to_str()).ok_or_else(|| {
+            RhizomeError::ParseError(format!("No file extension: {}", file.display()))
+        })?;
 
-        Language::from_extension(ext).ok_or_else(|| anyhow!("Unsupported extension: {}", ext))
+        Language::from_extension(ext)
+            .ok_or_else(|| RhizomeError::UnsupportedLanguage(ext.to_string()))
     }
 
     fn parse_file(&mut self, file: &Path) -> Result<(tree_sitter::Tree, Vec<u8>, Language)> {
@@ -80,10 +79,13 @@ impl TreeSitterBackend {
         // Cache miss: parse and insert into shared cache
         // ─────────────────────────────────────────────────────────────────
         let source = std::fs::read(file)?;
-        let parser = self.parser_pool.get_parser(&language)?;
-        let tree = parser
-            .parse(&source, None)
-            .ok_or_else(|| anyhow!("Failed to parse: {}", file.display()))?;
+        let parser = self
+            .parser_pool
+            .get_parser(&language)
+            .map_err(|e| RhizomeError::Other(format!("Failed to get parser: {}", e)))?;
+        let tree = parser.parse(&source, None).ok_or_else(|| {
+            RhizomeError::ParseError(format!("Failed to parse: {}", file.display()))
+        })?;
 
         {
             let mut cache = shared_cache().lock().unwrap_or_else(|p| p.into_inner());
@@ -108,6 +110,7 @@ impl CodeIntelligence for TreeSitterBackend {
         let (tree, source, language) = backend.parse_file(file)?;
         let file_path = file.to_string_lossy().to_string();
         extract_symbols(&tree, &source, &file_path, &language)
+            .map_err(|e| RhizomeError::Other(format!("Failed to extract symbols: {}", e)))
     }
 
     fn get_definition(&self, file: &Path, name: &str) -> Result<Option<Symbol>> {
@@ -125,9 +128,17 @@ impl CodeIntelligence for TreeSitterBackend {
         let target_node = tree
             .root_node()
             .descendant_for_point_range(point, point)
-            .ok_or_else(|| anyhow!("No node at position {}:{}", position.line, position.column))?;
+            .ok_or_else(|| {
+                RhizomeError::ParseError(format!(
+                    "No node at position {}:{}",
+                    position.line, position.column
+                ))
+            })?;
 
-        let target_name = target_node.utf8_text(&source)?.to_string();
+        let target_name = target_node
+            .utf8_text(&source)
+            .map_err(|e| RhizomeError::ParseError(format!("Invalid UTF-8: {}", e)))?
+            .to_string();
         if target_name.is_empty() {
             return Ok(Vec::new());
         }

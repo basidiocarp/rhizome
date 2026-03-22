@@ -5,11 +5,12 @@ pub mod manager;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::Result;
 use rhizome_core::{
-    BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Symbol,
-    SymbolKind,
+    BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Result,
+    Symbol, SymbolKind,
 };
+
+use rhizome_core::RhizomeError;
 
 use crate::convert::{
     lsp_diagnostic_to_diagnostic, lsp_location_to_location, lsp_symbol_info_to_symbol,
@@ -45,7 +46,12 @@ impl LspBackend {
 
     /// Shut down all managed language servers.
     pub async fn shutdown(&self) -> Result<()> {
-        self.manager.lock().await.shutdown_all().await
+        self.manager
+            .lock()
+            .await
+            .shutdown_all()
+            .await
+            .map_err(|e| RhizomeError::LspError(e.to_string()))
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -59,8 +65,14 @@ impl LspBackend {
         self.handle.block_on(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
-            let client = mgr.get_client(&lang, &root).await?;
-            let response = client.document_symbols(&file).await?;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let response = client
+                .document_symbols(&file)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
             let file_str = file.to_string_lossy().to_string();
 
             Ok(match response {
@@ -92,8 +104,14 @@ impl LspBackend {
         self.handle.block_on(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
-            let client = mgr.get_client(&lang, &root).await?;
-            let refs = client.find_references(&file, lsp_pos).await?;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let refs = client
+                .find_references(&file, lsp_pos)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
             Ok(refs.iter().map(lsp_location_to_location).collect())
         })
     }
@@ -109,7 +127,10 @@ impl LspBackend {
         self.handle.block_on(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
-            let client = mgr.get_client(&lang, &root).await?;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
             let file_str = file.to_string_lossy().to_string();
             let diags = client.cached_diagnostics(&file);
             Ok(diags
@@ -121,12 +142,10 @@ impl LspBackend {
 }
 
 fn detect_language(file: &Path) -> Result<Language> {
-    let ext = file
-        .extension()
-        .and_then(|e| e.to_str())
-        .ok_or_else(|| anyhow::anyhow!("Cannot detect language for: {}", file.display()))?;
-    Language::from_extension(ext)
-        .ok_or_else(|| anyhow::anyhow!("Unsupported language extension: {}", ext))
+    let ext = file.extension().and_then(|e| e.to_str()).ok_or_else(|| {
+        RhizomeError::ParseError(format!("Cannot detect language for: {}", file.display()))
+    })?;
+    Language::from_extension(ext).ok_or_else(|| RhizomeError::UnsupportedLanguage(ext.to_string()))
 }
 
 /// Recursively search a symbol tree for a symbol matching `name`.
@@ -154,8 +173,14 @@ impl CodeIntelligence for LspBackend {
         self.handle.block_on(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
-            let client = mgr.get_client(&lang, &root).await?;
-            let response = client.document_symbols(&file).await?;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let response = client
+                .document_symbols(&file)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
             let file_str = file.to_string_lossy().to_string();
 
             let symbols: Vec<Symbol> = match response {

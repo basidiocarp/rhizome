@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::error::Result;
 use crate::symbol::{Location, Symbol};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

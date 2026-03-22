@@ -1,6 +1,7 @@
 pub mod backend;
 pub mod backend_selector;
 pub mod config;
+pub mod error;
 pub mod export_cache;
 pub mod graph;
 pub mod hyphae;
@@ -15,6 +16,7 @@ pub use backend::{
 };
 pub use backend_selector::{BackendRequirement, BackendSelector, LanguageStatus, ResolvedBackend};
 pub use config::RhizomeConfig;
+pub use error::{Result, RhizomeError};
 pub use export_cache::ExportCache;
 pub use graph::{CodeGraph, ConceptEdge, ConceptNode};
 pub use hyphae::ExportResult;
