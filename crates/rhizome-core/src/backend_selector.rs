@@ -254,7 +254,15 @@ fn probe_server(
             available: true,
             path: Some(path),
         },
-        _ => ServerProbe {
+        Err(e) => {
+            tracing::warn!("Failed to probe/install {}: {e:#}", binary);
+            ServerProbe {
+                binary,
+                available: false,
+                path: None,
+            }
+        }
+        Ok(None) => ServerProbe {
             binary,
             available: false,
             path: None,

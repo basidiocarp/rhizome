@@ -242,7 +242,10 @@ mod tests {
         assert_eq!(result.column_end, 21);
     }
 
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "lsp_types::DocumentSymbol construction; test compatibility"
+    )]
     #[test]
     fn test_lsp_symbol_to_symbol_with_children() {
         let child = lsp_types::DocumentSymbol {
@@ -391,7 +394,10 @@ mod tests {
     #[test]
     fn test_symbol_info_to_symbol() {
         let uri: lsp_types::Uri = "file:///project/src/lib.rs".parse().unwrap();
-        #[allow(deprecated)]
+        #[allow(
+            deprecated,
+            reason = "lsp_types::SymbolInformation construction; test compatibility"
+        )]
         let info = lsp_types::SymbolInformation {
             name: "my_function".to_string(),
             kind: lsp_types::SymbolKind::FUNCTION,

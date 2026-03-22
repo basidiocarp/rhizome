@@ -70,7 +70,7 @@ impl TreeSitterBackend {
         // Check shared cache for hit
         // ─────────────────────────────────────────────────────────────────
         {
-            let mut cache = shared_cache().lock().unwrap();
+            let mut cache = shared_cache().lock().unwrap_or_else(|p| p.into_inner());
             if let Some((tree, source, lang)) = cache.get(&cache_key) {
                 return Ok((tree.clone(), source.clone(), lang.clone()));
             }
@@ -86,7 +86,7 @@ impl TreeSitterBackend {
             .ok_or_else(|| anyhow!("Failed to parse: {}", file.display()))?;
 
         {
-            let mut cache = shared_cache().lock().unwrap();
+            let mut cache = shared_cache().lock().unwrap_or_else(|p| p.into_inner());
             cache.put(cache_key, (tree.clone(), source.clone(), language.clone()));
         }
 

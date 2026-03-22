@@ -169,8 +169,41 @@ fn resolve_path(file: &str, project_root: &Path) -> Result<std::path::PathBuf> {
         project_root.join(p)
     };
 
-    // Canonicalize to resolve symlinks and ../ components
-    let canonical = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+    // Canonicalize to resolve symlinks and ../ components.
+    // For non-existent paths, canonicalize the parent and re-attach the filename.
+    let canonical = if resolved.exists() {
+        resolved.canonicalize()?
+    } else {
+        // Path doesn't exist. Normalize it by canonicalizing the parent and re-attaching the name.
+        if let Some(parent) = resolved.parent() {
+            match parent.canonicalize() {
+                Ok(canonical_parent) => {
+                    canonical_parent.join(resolved.file_name().unwrap_or_default())
+                }
+                Err(_) => {
+                    // Parent path can't be canonicalized (may not exist yet).
+                    // Use dunce to normalize .. components without I/O.
+                    use std::path::Component;
+                    let mut normalized = project_root.to_path_buf();
+                    for component in resolved.components() {
+                        match component {
+                            Component::ParentDir => {
+                                normalized.pop();
+                            }
+                            Component::Normal(name) => {
+                                normalized.push(name);
+                            }
+                            _ => {}
+                        }
+                    }
+                    normalized
+                }
+            }
+        } else {
+            resolved.clone()
+        }
+    };
+
     let canonical_root = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());

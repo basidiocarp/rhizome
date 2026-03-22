@@ -67,7 +67,10 @@ impl LspClient {
     }
 
     /// Initialize the language server with workspace root and capabilities.
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "lsp_types::InitializeParams::root_path required by protocol; no non-deprecated alternative"
+    )]
     pub async fn initialize(&mut self, workspace_root: &Path) -> Result<()> {
         let uri = path_to_lsp_uri(workspace_root)?;
 
@@ -113,7 +116,10 @@ impl LspClient {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
 
-        self.pending_requests.lock().unwrap().insert(id, tx);
+        self.pending_requests
+            .lock()
+            .map_err(|_| anyhow::anyhow!("request table poisoned"))?
+            .insert(id, tx);
 
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -282,7 +288,7 @@ impl LspClient {
         let file_str = file.to_string_lossy().to_string();
         self.diagnostics_cache
             .lock()
-            .unwrap()
+            .unwrap_or_else(|p| p.into_inner())
             .get(&file_str)
             .cloned()
             .unwrap_or_default()
@@ -356,7 +362,10 @@ impl LspClient {
 
             // Dispatch: response (has "id") vs notification (has "method", no "id")
             if let Some(id) = msg.get("id").and_then(|v| v.as_i64()) {
-                let sender = pending.lock().unwrap().remove(&id);
+                let sender = pending
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&id);
                 if let Some(tx) = sender {
                     let _ = tx.send(msg);
                 }
@@ -370,7 +379,7 @@ impl LspClient {
                             let file_path = uri_to_file_path(&diag_params.uri);
                             diagnostics_cache
                                 .lock()
-                                .unwrap()
+                                .unwrap_or_else(|p| p.into_inner())
                                 .insert(file_path, diag_params.diagnostics);
                         }
                     }

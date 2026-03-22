@@ -30,6 +30,8 @@ impl LanguageServerManager {
         language: &Language,
         workspace_root: &Path,
     ) -> Result<&mut LspClient> {
+        use std::collections::hash_map::Entry;
+
         let key = (language.clone(), workspace_root.to_path_buf());
 
         // Check if existing client's process has exited
@@ -48,23 +50,29 @@ impl LanguageServerManager {
             self.clients.remove(&key);
         }
 
-        if !self.clients.contains_key(&key) {
-            let config = language.default_server_config().ok_or_else(|| {
-                anyhow::anyhow!("No default language server config for {:?}", language)
-            })?;
+        // ─────────────────────────────────────────────────────────────────
+        // Use Entry API to safely get or insert client
+        // ─────────────────────────────────────────────────────────────────
+        let client = match self.clients.entry(key) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => {
+                let config = language.default_server_config().ok_or_else(|| {
+                    anyhow::anyhow!("No default language server config for {:?}", language)
+                })?;
 
-            tracing::info!(
-                "Spawning LSP server: {} for {:?} at {}",
-                config.binary,
-                language,
-                workspace_root.display()
-            );
-            let mut client = LspClient::spawn(&config).await?;
-            client.initialize(workspace_root).await?;
-            self.clients.insert(key.clone(), client);
-        }
+                tracing::info!(
+                    "Spawning LSP server: {} for {:?} at {}",
+                    config.binary,
+                    language,
+                    workspace_root.display()
+                );
+                let mut client = LspClient::spawn(&config).await?;
+                client.initialize(workspace_root).await?;
+                e.insert(client)
+            }
+        };
 
-        Ok(self.clients.get_mut(&key).unwrap())
+        Ok(client)
     }
 
     /// Shut down all active language server clients.
