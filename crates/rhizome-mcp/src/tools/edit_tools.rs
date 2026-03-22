@@ -794,13 +794,14 @@ mod tests {
     #[test]
     fn test_create_file() {
         let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
 
         let args = json!({
             "file": "subdir/new_file.txt",
             "content": "hello world\nsecond line"
         });
 
-        let result = create_file(&args, dir.path()).unwrap();
+        let result = create_file(&args, &root).unwrap();
         let text = result["content"][0]["text"].as_str().unwrap();
         let parsed: Value = serde_json::from_str(text).unwrap();
         assert_eq!(parsed["lines"], 2);
