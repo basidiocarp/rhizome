@@ -891,7 +891,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "rhizome-cli"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -910,7 +910,7 @@ dependencies = [
 
 [[package]]
 name = "rhizome-core"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "dirs",
@@ -926,7 +926,7 @@ dependencies = [
 
 [[package]]
 name = "rhizome-lsp"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "lsp-types",
@@ -941,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "rhizome-mcp"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "ignore",
@@ -957,7 +957,7 @@ dependencies = [
 
 [[package]]
 name = "rhizome-treesitter"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "ignore",
@@ -1040,9 +1040,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.9"
+version = "0.103.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7df23109aa6c1567d1c575b9952556388da57401e4ace1d15f79eedad0d8f53"
+checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -1199,6 +1199,7 @@ dependencies = [
 [[package]]
 name = "spore"
 version = "0.3.0"
+source = "git+https://github.com/basidiocarp/spore?tag=v0.3.0#58c4d5e099dc58abd2e3290364ef2b18dac4aef1"
 dependencies = [
  "anyhow",
  "chrono",
