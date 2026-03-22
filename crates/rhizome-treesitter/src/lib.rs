@@ -27,9 +27,7 @@ type ParseCache = Mutex<LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<
 fn shared_cache() -> &'static ParseCache {
     // Lazy-initialized static cache - created once per process lifetime
     static CACHE: std::sync::OnceLock<ParseCache> = std::sync::OnceLock::new();
-    CACHE.get_or_init(|| {
-        Mutex::new(LruCache::new(std::num::NonZeroUsize::new(100).unwrap()))
-    })
+    CACHE.get_or_init(|| Mutex::new(LruCache::new(std::num::NonZeroUsize::new(100).unwrap())))
 }
 
 /// ─────────────────────────────────────────────────────────────────────────
@@ -1032,9 +1030,7 @@ mod tests {
         let backend = TreeSitterBackend::new();
 
         // First parse
-        let symbols1 = backend
-            .get_symbols(&test_file)
-            .expect("First parse failed");
+        let symbols1 = backend.get_symbols(&test_file).expect("First parse failed");
         assert_eq!(symbols1.len(), 1, "Should find one function");
 
         // Modify file (change mtime)
@@ -1049,7 +1045,11 @@ mod tests {
         let symbols2 = backend
             .get_symbols(&test_file)
             .expect("Second parse failed");
-        assert_eq!(symbols2.len(), 2, "Should find two functions after modification");
+        assert_eq!(
+            symbols2.len(),
+            2,
+            "Should find two functions after modification"
+        );
 
         // Clean up
         let _ = std::fs::remove_file(test_file);
