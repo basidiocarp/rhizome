@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0] - 2026-03-23
+
+### Added
+
+- **Symbol copy and move workflows**: Added `copy_symbol` and `move_symbol` MCP tools for whole-symbol edits across files, and completed end-to-end `rename_symbol` workspace-edit application through the LSP pipeline.
+
+### Fixed
+
+- **Worktree-aware export cache**: Export cache keys now include git context so separate branches and worktrees do not reuse stale export state.
+- **LSP startup noise tolerance**: The LSP client now ignores noisy stdout preambles before the first JSON-RPC payload instead of failing startup.
+- **Hyphae export compatibility**: Export parsing now accepts current Hyphae response shapes and compact summaries, and graph merges drop invalid edges before import.
+- **Released Spore dependency**: Rhizome now depends on the released `spore` `v0.4.2` tag instead of a raw git revision.
+
 ## [0.5.4] - 2026-03-22
 
 ### Fixed
