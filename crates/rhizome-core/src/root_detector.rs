@@ -317,4 +317,28 @@ mod tests {
         let detected = detect_workspace_root(&root.join("random/file.rb"), &Language::Ruby, root);
         assert_eq!(detected, root);
     }
+
+    #[test]
+    fn fallback_uses_worktree_root_when_git_is_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        let worktree_root = dir.path().join("wt1");
+        let nested_dir = worktree_root.join("packages/app");
+
+        fs::create_dir_all(&nested_dir).unwrap();
+        fs::write(nested_dir.join("script.rb"), "").unwrap();
+        fs::create_dir_all(repo_root.join(".git/worktrees/wt1")).unwrap();
+        fs::write(
+            worktree_root.join(".git"),
+            "gitdir: ../repo/.git/worktrees/wt1\n",
+        )
+        .unwrap();
+
+        let detected = detect_workspace_root(
+            &nested_dir.join("script.rb"),
+            &Language::Ruby,
+            &worktree_root,
+        );
+        assert_eq!(detected, worktree_root);
+    }
 }

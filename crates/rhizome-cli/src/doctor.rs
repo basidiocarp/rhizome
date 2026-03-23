@@ -92,7 +92,13 @@ pub fn run(fix: bool) -> Result<()> {
     println!();
     println!("\x1b[1mExport Cache\x1b[0m");
     let project_root = detect_project_root();
-    let cache_path = project_root.join(".rhizome/cache.json");
+    let scoped_cache_path = rhizome_core::ExportCache::cache_path(&project_root);
+    let legacy_cache_path = rhizome_core::ExportCache::legacy_cache_path(&project_root);
+    let cache_path = if scoped_cache_path.exists() {
+        scoped_cache_path
+    } else {
+        legacy_cache_path
+    };
     if cache_path.exists() {
         match std::fs::read_to_string(&cache_path) {
             Ok(content) => {

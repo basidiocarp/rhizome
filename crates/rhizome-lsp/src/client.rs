@@ -333,10 +333,10 @@ impl LspClient {
                 if trimmed.is_empty() {
                     break;
                 }
-                if let Some(len_str) = trimmed.strip_prefix("Content-Length: ") {
-                    if let Ok(len) = len_str.parse::<usize>() {
-                        content_length = len;
-                    }
+                if let Some(len) = parse_content_length(&line) {
+                    content_length = len;
+                } else {
+                    tracing::trace!("Skipping LSP stdout noise: {}", trimmed);
                 }
             }
 
@@ -391,8 +391,18 @@ impl LspClient {
     }
 }
 
+fn parse_content_length(line: &str) -> Option<usize> {
+    let lower = line.to_ascii_lowercase();
+    let header = "content-length:";
+    let idx = lower.find(header)?;
+    let value = line[idx + header.len()..].trim();
+    value.split_whitespace().next()?.parse::<usize>().ok()
+}
+
 #[cfg(test)]
 mod tests {
+    use super::parse_content_length;
+
     #[test]
     fn test_json_rpc_message_format() {
         let request = serde_json::json!({
@@ -462,5 +472,23 @@ mod tests {
             notification.get("method").unwrap().as_str().unwrap(),
             "textDocument/publishDiagnostics"
         );
+    }
+
+    #[test]
+    fn test_parse_content_length_matches_header_with_prefix_noise() {
+        assert_eq!(
+            parse_content_length("booting... Content-Length: 42"),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn test_parse_content_length_is_case_insensitive() {
+        assert_eq!(parse_content_length("content-length: 128"), Some(128));
+    }
+
+    #[test]
+    fn test_parse_content_length_returns_none_for_noise() {
+        assert_eq!(parse_content_length("starting up..."), None);
     }
 }

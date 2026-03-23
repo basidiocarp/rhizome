@@ -21,14 +21,17 @@ fn write_mock_server_script(dir: &std::path::Path) -> PathBuf {
 """Minimal mock LSP server that responds to initialize and documentSymbol."""
 import json, sys
 
+NOISY_STDOUT = "--noisy" in sys.argv[1:]
+noisy_banner_written = False
+
 def read_message():
     headers = {{}}
     while True:
         line = sys.stdin.readline()
         if not line or line.strip() == "":
             break
-        if line.startswith("Content-Length:"):
-            headers["Content-Length"] = int(line.split(":")[1].strip())
+        if "Content-Length:" in line:
+            headers["Content-Length"] = int(line.split("Content-Length:", 1)[1].strip())
     length = headers.get("Content-Length", 0)
     if length == 0:
         return None
@@ -36,7 +39,11 @@ def read_message():
     return json.loads(body)
 
 def send_message(msg):
+    global noisy_banner_written
     body = json.dumps(msg)
+    if NOISY_STDOUT and not noisy_banner_written:
+        sys.stdout.write("mock server booting... ")
+        noisy_banner_written = True
     sys.stdout.write(f"Content-Length: {{len(body)}}\r\n\r\n{{body}}")
     sys.stdout.flush()
 
@@ -163,5 +170,52 @@ async fn test_mock_lsp_initialize_and_document_symbols() {
     }
 
     // Shut down
+    client.shutdown().await.expect("Shutdown failed");
+}
+
+#[tokio::test]
+async fn test_mock_lsp_handles_noisy_stdout_before_first_response() {
+    // Check that python3 is available
+    let python_check = std::process::Command::new("python3")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if python_check.is_err() || !python_check.unwrap().success() {
+        eprintln!("Skipping mock LSP test: python3 not available");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let script_path = write_mock_server_script(tmp.path());
+
+    let config = LanguageServerConfig {
+        binary: "python3".to_string(),
+        args: vec![
+            script_path.to_string_lossy().to_string(),
+            "--noisy".to_string(),
+        ],
+        initialization_options: None,
+    };
+
+    let mut client = rhizome_lsp::client::LspClient::spawn(&config)
+        .await
+        .expect("Failed to spawn noisy mock server");
+
+    let workspace = tmp.path().to_path_buf();
+    client
+        .initialize(&workspace)
+        .await
+        .expect("Initialize failed");
+
+    let fake_file = tmp.path().join("test.rs");
+    std::fs::write(&fake_file, "// placeholder").unwrap();
+
+    let response = client
+        .document_symbols(&fake_file)
+        .await
+        .expect("documentSymbol request failed");
+
+    assert!(response.is_some(), "Expected document symbols response");
     client.shutdown().await.expect("Shutdown failed");
 }
