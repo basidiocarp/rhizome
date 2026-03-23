@@ -24,6 +24,22 @@ fn required_u32(args: &Value, key: &str) -> Result<u32> {
         .ok_or_else(|| anyhow!("Missing required parameter: {key}"))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelativePosition {
+    Before,
+    After,
+}
+
+fn required_position(args: &Value, key: &str) -> Result<RelativePosition> {
+    match required_str(args, key)? {
+        "before" => Ok(RelativePosition::Before),
+        "after" => Ok(RelativePosition::After),
+        value => Err(anyhow!(
+            "Invalid value for {key}: {value}. Expected 'before' or 'after'"
+        )),
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool schemas
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,6 +152,40 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 "required": ["file", "content"]
             }),
         },
+        ToolSchema {
+            name: "copy_symbol".into(),
+            description: "Copy a symbol's full source block to a position before or after \
+                another symbol. Safe MVP: text-preserving, tree-sitter-located symbol movement."
+                .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "source_file": { "type": "string", "description": "Path to the source file containing the symbol" },
+                    "symbol": { "type": "string", "description": "Name of the source symbol to copy" },
+                    "target_file": { "type": "string", "description": "Path to the target file" },
+                    "target_symbol": { "type": "string", "description": "Name of the symbol to insert relative to" },
+                    "position": { "type": "string", "enum": ["before", "after"], "description": "Whether to insert before or after the target symbol" }
+                },
+                "required": ["source_file", "symbol", "target_file", "target_symbol", "position"]
+            }),
+        },
+        ToolSchema {
+            name: "move_symbol".into(),
+            description: "Move a symbol's full source block to a position before or after \
+                another symbol in a different file. Same-file moves are rejected in this MVP."
+                .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "source_file": { "type": "string", "description": "Path to the source file containing the symbol" },
+                    "symbol": { "type": "string", "description": "Name of the source symbol to move" },
+                    "target_file": { "type": "string", "description": "Path to the target file" },
+                    "target_symbol": { "type": "string", "description": "Name of the symbol to insert relative to" },
+                    "position": { "type": "string", "enum": ["before", "after"], "description": "Whether to insert before or after the target symbol" }
+                },
+                "required": ["source_file", "symbol", "target_file", "target_symbol", "position"]
+            }),
+        },
     ]
 }
 
@@ -234,6 +284,67 @@ fn find_symbol_location(
             path.display()
         )),
     }
+}
+
+fn extract_symbol_lines(path: &Path, line_start: u32, line_end: u32) -> Result<Vec<String>> {
+    let lines = read_lines(path)?;
+    let start = line_start as usize;
+    let end = (line_end as usize + 1).min(lines.len());
+    Ok(lines[start..end].to_vec())
+}
+
+fn insert_lines_relative_to_symbol(
+    backend: &dyn CodeIntelligence,
+    target_path: &Path,
+    target_symbol: &str,
+    position: RelativePosition,
+    content_lines: &[String],
+) -> Result<(usize, usize)> {
+    let (target_start, target_end) = find_symbol_location(backend, target_path, target_symbol)?;
+    let lines = read_lines(target_path)?;
+
+    let insert_idx = match position {
+        RelativePosition::Before => target_start as usize,
+        RelativePosition::After => (target_end as usize + 1).min(lines.len()),
+    };
+
+    let lines_inserted = content_lines.len() + 1;
+    let mut result_lines = Vec::with_capacity(lines.len() + lines_inserted);
+
+    result_lines.extend_from_slice(&lines[..insert_idx]);
+    match position {
+        RelativePosition::Before => {
+            result_lines.extend(content_lines.iter().cloned());
+            result_lines.push(String::new());
+        }
+        RelativePosition::After => {
+            result_lines.push(String::new());
+            result_lines.extend(content_lines.iter().cloned());
+        }
+    }
+    if insert_idx < lines.len() {
+        result_lines.extend_from_slice(&lines[insert_idx..]);
+    }
+
+    write_lines(target_path, &result_lines)?;
+    Ok((insert_idx + 1, lines_inserted))
+}
+
+fn delete_symbol_lines(path: &Path, line_start: u32, line_end: u32) -> Result<(usize, usize)> {
+    let lines = read_lines(path)?;
+    let lines_before = lines.len();
+    let start = line_start as usize;
+    let end = (line_end as usize + 1).min(lines.len());
+
+    let mut result_lines = Vec::with_capacity(lines.len());
+    result_lines.extend_from_slice(&lines[..start]);
+    if end < lines.len() {
+        result_lines.extend_from_slice(&lines[end..]);
+    }
+
+    let lines_after = result_lines.len();
+    write_lines(path, &result_lines)?;
+    Ok((lines_before, lines_after))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -585,6 +696,122 @@ pub fn create_file(args: &Value, project_root: &Path) -> Result<Value> {
     Ok(tool_response(&text))
 }
 
+/// Copy a symbol's source block relative to another symbol.
+pub fn copy_symbol(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let source_file = required_str(args, "source_file")?;
+    let symbol_name = required_str(args, "symbol")?;
+    let target_file = required_str(args, "target_file")?;
+    let target_symbol = required_str(args, "target_symbol")?;
+    let position = required_position(args, "position")?;
+
+    let source_path = resolve_path(source_file, project_root)?;
+    let target_path = resolve_path(target_file, project_root)?;
+
+    let (line_start, line_end) = match find_symbol_location(backend, &source_path, symbol_name) {
+        Ok(loc) => loc,
+        Err(e) => return Ok(tool_error(&e.to_string())),
+    };
+    let content_lines = match extract_symbol_lines(&source_path, line_start, line_end) {
+        Ok(lines) => lines,
+        Err(e) => return Ok(tool_error(&e.to_string())),
+    };
+
+    let (inserted_at_line, lines_inserted) = match insert_lines_relative_to_symbol(
+        backend,
+        &target_path,
+        target_symbol,
+        position,
+        &content_lines,
+    ) {
+        Ok(result) => result,
+        Err(e) => return Ok(tool_error(&e.to_string())),
+    };
+
+    let text = serde_json::to_string_pretty(&json!({
+        "source_file": source_file,
+        "target_file": target_file,
+        "symbol": symbol_name,
+        "target_symbol": target_symbol,
+        "position": match position {
+            RelativePosition::Before => "before",
+            RelativePosition::After => "after",
+        },
+        "inserted_at_line": inserted_at_line,
+        "lines_copied": content_lines.len(),
+        "lines_inserted": lines_inserted,
+    }))?;
+    Ok(tool_response(&text))
+}
+
+/// Move a symbol's source block relative to another symbol in a different file.
+pub fn move_symbol(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let source_file = required_str(args, "source_file")?;
+    let symbol_name = required_str(args, "symbol")?;
+    let target_file = required_str(args, "target_file")?;
+    let target_symbol = required_str(args, "target_symbol")?;
+    let position = required_position(args, "position")?;
+
+    let source_path = resolve_path(source_file, project_root)?;
+    let target_path = resolve_path(target_file, project_root)?;
+
+    if source_path == target_path {
+        return Ok(tool_error(
+            "Same-file move_symbol is not supported in this MVP. Use copy_symbol plus delete_lines or replace_symbol_body instead.",
+        ));
+    }
+
+    let (line_start, line_end) = match find_symbol_location(backend, &source_path, symbol_name) {
+        Ok(loc) => loc,
+        Err(e) => return Ok(tool_error(&e.to_string())),
+    };
+    let content_lines = match extract_symbol_lines(&source_path, line_start, line_end) {
+        Ok(lines) => lines,
+        Err(e) => return Ok(tool_error(&e.to_string())),
+    };
+
+    let (inserted_at_line, lines_inserted) = match insert_lines_relative_to_symbol(
+        backend,
+        &target_path,
+        target_symbol,
+        position,
+        &content_lines,
+    ) {
+        Ok(result) => result,
+        Err(e) => return Ok(tool_error(&e.to_string())),
+    };
+
+    let (lines_before, lines_after) = match delete_symbol_lines(&source_path, line_start, line_end)
+    {
+        Ok(result) => result,
+        Err(e) => return Ok(tool_error(&e.to_string())),
+    };
+
+    let text = serde_json::to_string_pretty(&json!({
+        "source_file": source_file,
+        "target_file": target_file,
+        "symbol": symbol_name,
+        "target_symbol": target_symbol,
+        "position": match position {
+            RelativePosition::Before => "before",
+            RelativePosition::After => "after",
+        },
+        "inserted_at_line": inserted_at_line,
+        "lines_moved": content_lines.len(),
+        "lines_inserted": lines_inserted,
+        "source_lines_before": lines_before,
+        "source_lines_after": lines_after,
+    }))?;
+    Ok(tool_response(&text))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -599,26 +826,33 @@ mod tests {
 
     /// Minimal mock backend that returns a single symbol for get_definition.
     struct MockBackend {
-        symbol: Option<Symbol>,
+        symbols: Vec<Symbol>,
     }
 
     impl MockBackend {
         fn with_symbol(name: &str, file: &str, line_start: u32, line_end: u32) -> Self {
+            Self::with_symbols(vec![(name, file, line_start, line_end)])
+        }
+
+        fn with_symbols(entries: Vec<(&str, &str, u32, u32)>) -> Self {
             Self {
-                symbol: Some(Symbol {
-                    name: name.to_string(),
-                    kind: SymbolKind::Function,
-                    location: Location {
-                        file_path: file.to_string(),
-                        line_start,
-                        line_end,
-                        column_start: 0,
-                        column_end: 0,
-                    },
-                    signature: None,
-                    doc_comment: None,
-                    children: vec![],
-                }),
+                symbols: entries
+                    .into_iter()
+                    .map(|(name, file, line_start, line_end)| Symbol {
+                        name: name.to_string(),
+                        kind: SymbolKind::Function,
+                        location: Location {
+                            file_path: file.to_string(),
+                            line_start,
+                            line_end,
+                            column_start: 0,
+                            column_end: 0,
+                        },
+                        signature: None,
+                        doc_comment: None,
+                        children: vec![],
+                    })
+                    .collect(),
             }
         }
     }
@@ -628,12 +862,12 @@ mod tests {
             Ok(vec![])
         }
 
-        fn get_definition(
-            &self,
-            _file: &Path,
-            _name: &str,
-        ) -> rhizome_core::Result<Option<Symbol>> {
-            Ok(self.symbol.clone())
+        fn get_definition(&self, _file: &Path, name: &str) -> rhizome_core::Result<Option<Symbol>> {
+            Ok(self
+                .symbols
+                .iter()
+                .find(|symbol| symbol.name == name)
+                .cloned())
         }
 
         fn find_references(
@@ -893,12 +1127,93 @@ mod tests {
     }
 
     #[test]
+    fn test_copy_symbol_to_another_file_after_target() {
+        let dir = TempDir::new().unwrap();
+        let source_path = write_test_file(&dir, "source.rs", "fn alpha() {\n    1\n}\n");
+        let target_path = write_test_file(&dir, "target.rs", "fn beta() {\n    2\n}\n");
+
+        let backend = MockBackend::with_symbols(vec![
+            ("alpha", source_path.to_str().unwrap(), 0, 2),
+            ("beta", target_path.to_str().unwrap(), 0, 2),
+        ]);
+
+        let args = json!({
+            "source_file": source_path.to_str().unwrap(),
+            "symbol": "alpha",
+            "target_file": target_path.to_str().unwrap(),
+            "target_symbol": "beta",
+            "position": "after"
+        });
+
+        let result = copy_symbol(&backend, &args, dir.path()).unwrap();
+        assert!(result.get("isError").is_none());
+
+        let target_content = fs::read_to_string(&target_path).unwrap();
+        assert!(target_content.contains("fn beta()"));
+        assert!(target_content.contains("fn alpha()"));
+        assert_eq!(
+            fs::read_to_string(&source_path).unwrap(),
+            "fn alpha() {\n    1\n}\n"
+        );
+    }
+
+    #[test]
+    fn test_move_symbol_to_another_file_before_target() {
+        let dir = TempDir::new().unwrap();
+        let source_path = write_test_file(&dir, "source.rs", "fn alpha() {\n    1\n}\n");
+        let target_path = write_test_file(&dir, "target.rs", "fn beta() {\n    2\n}\n");
+
+        let backend = MockBackend::with_symbols(vec![
+            ("alpha", source_path.to_str().unwrap(), 0, 2),
+            ("beta", target_path.to_str().unwrap(), 0, 2),
+        ]);
+
+        let args = json!({
+            "source_file": source_path.to_str().unwrap(),
+            "symbol": "alpha",
+            "target_file": target_path.to_str().unwrap(),
+            "target_symbol": "beta",
+            "position": "before"
+        });
+
+        let result = move_symbol(&backend, &args, dir.path()).unwrap();
+        assert!(result.get("isError").is_none());
+
+        assert_eq!(fs::read_to_string(&source_path).unwrap(), "");
+        let target_content = fs::read_to_string(&target_path).unwrap();
+        assert!(target_content.starts_with("fn alpha() {\n    1\n}\n\n"));
+        assert!(target_content.contains("fn beta()"));
+    }
+
+    #[test]
+    fn test_move_symbol_same_file_is_rejected() {
+        let dir = TempDir::new().unwrap();
+        let path = write_test_file(&dir, "test.rs", "fn alpha() {}\nfn beta() {}\n");
+
+        let backend = MockBackend::with_symbols(vec![
+            ("alpha", path.to_str().unwrap(), 0, 0),
+            ("beta", path.to_str().unwrap(), 1, 1),
+        ]);
+
+        let args = json!({
+            "source_file": path.to_str().unwrap(),
+            "symbol": "alpha",
+            "target_file": path.to_str().unwrap(),
+            "target_symbol": "beta",
+            "position": "after"
+        });
+
+        let result = move_symbol(&backend, &args, dir.path()).unwrap();
+        assert!(result["isError"].as_bool().unwrap_or(false));
+    }
+
+    #[test]
     fn test_symbol_not_found() {
         let dir = TempDir::new().unwrap();
         let content = "fn hello() {}\n";
         let _path = write_test_file(&dir, "test.rs", content);
 
-        let backend = MockBackend { symbol: None };
+        let backend = MockBackend { symbols: vec![] };
 
         let args = json!({
             "file": "test.rs",

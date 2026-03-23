@@ -1,5 +1,6 @@
 pub mod client;
 pub mod convert;
+pub mod edit;
 pub mod manager;
 
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ use crate::convert::{
     lsp_diagnostic_to_diagnostic, lsp_location_to_location, lsp_symbol_info_to_symbol,
     lsp_symbol_to_symbol,
 };
+use crate::edit::{apply_workspace_edit, ApplyResult};
 use crate::manager::LanguageServerManager;
 
 /// LSP-backed code intelligence. Wraps async LSP calls behind the sync
@@ -98,8 +100,8 @@ impl LspBackend {
         let file = file.to_path_buf();
         let root = workspace_root.to_path_buf();
         let lsp_pos = lsp_types::Position {
-            line: position.line.saturating_sub(1),
-            character: position.column.saturating_sub(1),
+            line: position.line,
+            character: position.column,
         };
         self.handle.block_on(async {
             let lang = detect_language(&file)?;
@@ -137,6 +139,45 @@ impl LspBackend {
                 .iter()
                 .map(|d| lsp_diagnostic_to_diagnostic(d, &file_str))
                 .collect())
+        })
+    }
+
+    /// Rename a symbol using LSP and apply the resulting workspace edit.
+    pub fn rename_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        new_name: &str,
+        workspace_root: &Path,
+    ) -> Result<ApplyResult> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let new_name = new_name.to_string();
+        let lsp_pos = lsp_types::Position {
+            line: position.line,
+            character: position.column,
+        };
+
+        self.handle.block_on(async {
+            let lang = detect_language(&file)?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+
+            let edit = client
+                .rename(&file, lsp_pos, &new_name)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+
+            let edit = edit.ok_or_else(|| {
+                RhizomeError::LspError(
+                    "language server returned no workspace edit for rename".into(),
+                )
+            })?;
+
+            apply_workspace_edit(&edit).map_err(|e| RhizomeError::LspError(e.to_string()))
         })
     }
 }

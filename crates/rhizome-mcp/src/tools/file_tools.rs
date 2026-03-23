@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use rhizome_core::CodeIntelligence;
+use rhizome_core::{detect_workspace_root, CodeIntelligence, Language, Position};
 use serde_json::{json, Value};
 
 use super::{tool_error, tool_response, ToolSchema};
@@ -59,15 +59,55 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
 // ---------------------------------------------------------------------------
 
 /// Rename a symbol (LSP only).
-pub fn rename_symbol(lsp: Option<&rhizome_lsp::LspBackend>, _args: &Value) -> Result<Value> {
+pub fn rename_symbol(
+    lsp: Option<&rhizome_lsp::LspBackend>,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     match lsp {
-        Some(_lsp_backend) => {
-            // Full rename implementation would use the LSP rename request.
-            // For now, indicate this requires an active LSP connection.
-            Ok(tool_error(
-                "LSP rename is not yet fully wired. \
-                 Install rust-analyzer for Rust or pyright for Python support.",
-            ))
+        Some(lsp_backend) => {
+            let file = args
+                .get("file")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
+            let line = args
+                .get("line")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))?;
+            let column = args
+                .get("column")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))?;
+            let new_name = args
+                .get("new_name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing required parameter: new_name"))?;
+
+            let path = Path::new(file);
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .ok_or_else(|| anyhow::anyhow!("Cannot detect language for {}", path.display()))?;
+            let language = Language::from_extension(ext)
+                .ok_or_else(|| anyhow::anyhow!("Unsupported language extension: {ext}"))?;
+            let workspace_root = detect_workspace_root(path, &language, project_root);
+            let position = Position {
+                line: line as u32,
+                column: column as u32,
+            };
+
+            match lsp_backend.rename_with_root(path, &position, new_name, &workspace_root) {
+                Ok(result) => Ok(tool_response(&format!(
+                    "Renamed symbol at {}:{}:{} to {}.\nfiles_modified: {}\nedits_applied: {}",
+                    path.display(),
+                    line,
+                    column,
+                    new_name,
+                    result.files_modified,
+                    result.edits_applied
+                ))),
+                Err(err) => Ok(tool_error(&format!("rename failed: {err}"))),
+            }
         }
         None => Ok(lsp_required_error("rename_symbol")),
     }

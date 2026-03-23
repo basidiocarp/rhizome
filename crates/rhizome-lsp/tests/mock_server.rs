@@ -18,7 +18,7 @@ fn write_mock_server_script(dir: &std::path::Path) -> PathBuf {
     write!(
         f,
         r#"#!/usr/bin/env python3
-"""Minimal mock LSP server that responds to initialize and documentSymbol."""
+"""Minimal mock LSP server that responds to initialize, documentSymbol, and rename."""
 import json, sys
 
 NOISY_STDOUT = "--noisy" in sys.argv[1:]
@@ -96,6 +96,27 @@ while True:
                     "children": []
                 }}
             ]
+        }})
+    elif method == "textDocument/rename":
+        params = msg.get("params", {{}})
+        new_name = params.get("newName", "renamed_symbol")
+        text_uri = params.get("textDocument", {{}}).get("uri")
+        send_message({{
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {{
+                "changes": {{
+                    text_uri: [
+                        {{
+                            "range": {{
+                                "start": {{"line": 0, "character": 3}},
+                                "end": {{"line": 0, "character": 6}}
+                            }},
+                            "newText": new_name
+                        }}
+                    ]
+                }}
+            }}
         }})
     elif method == "shutdown":
         send_message({{"jsonrpc": "2.0", "id": msg_id, "result": None}})
@@ -217,5 +238,62 @@ async fn test_mock_lsp_handles_noisy_stdout_before_first_response() {
         .expect("documentSymbol request failed");
 
     assert!(response.is_some(), "Expected document symbols response");
+    client.shutdown().await.expect("Shutdown failed");
+}
+
+#[tokio::test]
+async fn test_mock_lsp_rename_returns_workspace_edit_that_can_be_applied() {
+    let python_check = std::process::Command::new("python3")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if python_check.is_err() || !python_check.unwrap().success() {
+        eprintln!("Skipping mock LSP test: python3 not available");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let script_path = write_mock_server_script(tmp.path());
+
+    let config = LanguageServerConfig {
+        binary: "python3".to_string(),
+        args: vec![script_path.to_string_lossy().to_string()],
+        initialization_options: None,
+    };
+
+    let mut client = rhizome_lsp::client::LspClient::spawn(&config)
+        .await
+        .expect("Failed to spawn mock server");
+
+    client
+        .initialize(tmp.path())
+        .await
+        .expect("Initialize failed");
+
+    let fake_file = tmp.path().join("test.rs");
+    std::fs::write(&fake_file, "fn old() {}\n").unwrap();
+
+    let edit = client
+        .rename(
+            &fake_file,
+            lsp_types::Position {
+                line: 0,
+                character: 3,
+            },
+            "new_name",
+        )
+        .await
+        .expect("rename request failed")
+        .expect("rename should return a workspace edit");
+
+    let apply_result = rhizome_lsp::edit::apply_workspace_edit(&edit).unwrap();
+    assert_eq!(apply_result.files_modified, 1);
+    assert_eq!(apply_result.edits_applied, 1);
+    assert_eq!(
+        std::fs::read_to_string(&fake_file).unwrap(),
+        "fn new_name() {}\n"
+    );
+
     client.shutdown().await.expect("Shutdown failed");
 }

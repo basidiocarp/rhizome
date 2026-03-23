@@ -22,10 +22,10 @@ fn make_dispatcher() -> ToolDispatcher {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_list_tools_returns_25_tools() {
+fn test_list_tools_returns_37_tools() {
     let dispatcher = make_dispatcher();
     let tools = dispatcher.list_tools();
-    assert_eq!(tools.len(), 35, "Expected 35 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 37, "Expected 37 tools, got {}", tools.len());
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"get_symbols"));
@@ -55,6 +55,8 @@ fn test_list_tools_returns_25_tools() {
     assert!(names.contains(&"get_enclosing_class"));
     assert!(names.contains(&"get_symbol_body"));
     assert!(names.contains(&"get_changed_files"));
+    assert!(names.contains(&"copy_symbol"));
+    assert!(names.contains(&"move_symbol"));
 }
 
 #[test]
@@ -926,7 +928,7 @@ fn test_unified_mode_tools_list_returns_one_tool() {
 }
 
 #[test]
-fn test_expanded_mode_tools_list_returns_25_tools() {
+fn test_expanded_mode_tools_list_returns_37_tools() {
     let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let server = rhizome_mcp::McpServer::new(project_root, false);
 
@@ -945,8 +947,8 @@ fn test_expanded_mode_tools_list_returns_25_tools() {
         .expect("Should have tools array");
     assert_eq!(
         tools.len(),
-        35,
-        "Expanded mode should return 35 tools, got {}",
+        37,
+        "Expanded mode should return 37 tools, got {}",
         tools.len()
     );
 }

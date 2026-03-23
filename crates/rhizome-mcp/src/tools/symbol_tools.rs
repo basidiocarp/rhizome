@@ -1975,6 +1975,8 @@ pub fn rhizome_onboard(project_root: &Path) -> Result<Value> {
         "insert_at_line",
         "delete_lines",
         "create_file",
+        "copy_symbol",
+        "move_symbol",
         "export_to_hyphae",
         "rhizome_onboard",
     ];

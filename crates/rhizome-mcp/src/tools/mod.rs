@@ -114,7 +114,7 @@ impl ToolDispatcher {
 
             // ── LSP-required tools ──────────────────────────────────────
             "rename_symbol" => self.dispatch_lsp_required(name, &args, |lsp, a| {
-                file_tools::rename_symbol(Some(lsp), a)
+                file_tools::rename_symbol(Some(lsp), a, &self.project_root)
             }),
             "get_hover_info" => self.dispatch_lsp_required(name, &args, |lsp, a| {
                 file_tools::get_hover_info(Some(lsp), a)
@@ -134,6 +134,8 @@ impl ToolDispatcher {
             "insert_at_line" => edit_tools::insert_at_line(&args, &self.project_root),
             "delete_lines" => edit_tools::delete_lines(&args, &self.project_root),
             "create_file" => edit_tools::create_file(&args, &self.project_root),
+            "copy_symbol" => edit_tools::copy_symbol(&self.treesitter, &args, &self.project_root),
+            "move_symbol" => edit_tools::move_symbol(&self.treesitter, &args, &self.project_root),
 
             // ── Export tools ────────────────────────────────────────────
             "export_to_hyphae" => {
