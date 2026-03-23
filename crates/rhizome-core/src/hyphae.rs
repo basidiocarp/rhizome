@@ -14,6 +14,72 @@ pub struct ExportResult {
     pub links_created: usize,
 }
 
+fn parse_count(value: &serde_json::Value, nested_key: &str, flat_key: &str) -> usize {
+    value
+        .get(nested_key)
+        .and_then(|v| v.get("created"))
+        .and_then(|v| v.as_u64())
+        .or_else(|| value.get(flat_key).and_then(|v| v.as_u64()))
+        .unwrap_or(0) as usize
+}
+
+fn parse_compact_import_summary(text: &str, fallback_memoir_name: &str) -> Option<ExportResult> {
+    let text = text.trim();
+    if !text.starts_with("Imported ") {
+        return None;
+    }
+
+    let (memoir_name, rest) = text
+        .strip_prefix("Imported ")?
+        .split_once(": concepts +")
+        .map(|(memoir, rest)| (memoir.trim(), rest))?;
+
+    let concepts_created = rest
+        .split('/')
+        .next()
+        .and_then(|count| count.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+
+    let links_created = rest
+        .split("links +")
+        .nth(1)
+        .and_then(|tail| tail.split('/').next())
+        .and_then(|count| count.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+
+    Some(ExportResult {
+        memoir_name: if memoir_name.is_empty() {
+            fallback_memoir_name.to_string()
+        } else {
+            memoir_name.to_string()
+        },
+        concepts_created,
+        links_created,
+    })
+}
+
+fn parse_export_result(text: &str, fallback_memoir_name: &str) -> Result<ExportResult> {
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
+        let memoir_name = parsed
+            .get("memoir")
+            .and_then(|v| v.as_str())
+            .unwrap_or(fallback_memoir_name)
+            .to_string();
+
+        return Ok(ExportResult {
+            memoir_name,
+            concepts_created: parse_count(&parsed, "concepts", "concepts_created"),
+            links_created: parse_count(&parsed, "links", "links_created"),
+        });
+    }
+
+    parse_compact_import_summary(text, fallback_memoir_name).ok_or_else(|| {
+        RhizomeError::Other(format!(
+            "Failed to parse hyphae response text as JSON or compact summary: {text}"
+        ))
+    })
+}
+
 /// Check whether the `hyphae` binary is available in PATH.
 /// The result is cached after the first call via spore's discovery cache.
 pub fn is_available() -> bool {
@@ -70,29 +136,7 @@ pub fn export_graph(graph_json: &serde_json::Value, memoir_name: &str) -> Result
         .and_then(|t| t.as_str())
         .ok_or_else(|| RhizomeError::Other("Missing 'content' in hyphae response".to_string()))?;
 
-    // Parse the text field as JSON to extract counts
-    let parsed = serde_json::from_str::<serde_json::Value>(text).map_err(|e| {
-        RhizomeError::Other(format!(
-            "Failed to parse hyphae response text as JSON: {}",
-            e
-        ))
-    })?;
-
-    let concepts_created = parsed
-        .get("concepts_created")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as usize;
-
-    let links_created = parsed
-        .get("links_created")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as usize;
-
-    Ok(ExportResult {
-        memoir_name: memoir_name.to_string(),
-        concepts_created,
-        links_created,
-    })
+    parse_export_result(text, memoir_name)
 }
 
 #[cfg(test)]
@@ -171,5 +215,23 @@ mod tests {
             err_msg.contains("not found"),
             "Expected 'not found' in error, got: {err_msg}"
         );
+    }
+
+    #[test]
+    fn parse_export_result_accepts_nested_json_shape() {
+        let text = r#"{"memoir":"code:myapp","concepts":{"created":3,"updated":2,"unchanged":1,"pruned":0},"links":{"created":4,"updated":1,"unchanged":0}}"#;
+        let result = parse_export_result(text, "code:fallback").unwrap();
+        assert_eq!(result.memoir_name, "code:myapp");
+        assert_eq!(result.concepts_created, 3);
+        assert_eq!(result.links_created, 4);
+    }
+
+    #[test]
+    fn parse_export_result_accepts_compact_summary() {
+        let text = "Imported code:myapp: concepts +3/2/1 pruned=0 links +4/1/0";
+        let result = parse_export_result(text, "code:fallback").unwrap();
+        assert_eq!(result.memoir_name, "code:myapp");
+        assert_eq!(result.concepts_created, 3);
+        assert_eq!(result.links_created, 4);
     }
 }

@@ -218,6 +218,8 @@ pub fn merge_graphs(graphs: Vec<CodeGraph>) -> CodeGraph {
         edges.extend(graph.edges);
     }
 
+    edges.retain(|edge| seen_names.contains(&edge.source) && seen_names.contains(&edge.target));
+
     CodeGraph {
         project,
         nodes,
@@ -437,6 +439,29 @@ mod tests {
         assert_eq!(merged.nodes.len(), 2);
         assert_eq!(merged.nodes[0].description, "first");
         assert_eq!(merged.edges.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_graphs_drops_edges_with_missing_endpoints() {
+        let graph = CodeGraph {
+            project: "proj".into(),
+            nodes: vec![ConceptNode {
+                name: "serde".into(),
+                labels: vec!["import".into()],
+                description: String::new(),
+                metadata: HashMap::new(),
+            }],
+            edges: vec![ConceptEdge {
+                source: "integration_tests".into(),
+                target: "serde".into(),
+                relation: "imports".into(),
+                weight: WEIGHT_IMPORTS,
+            }],
+        };
+
+        let merged = merge_graphs(vec![graph]);
+        assert_eq!(merged.nodes.len(), 1);
+        assert!(merged.edges.is_empty());
     }
 
     #[test]
