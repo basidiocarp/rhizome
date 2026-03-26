@@ -200,16 +200,17 @@ pub fn run(fix: bool) -> Result<()> {
                 Ok(true) => pass(&format!("Registered in {}", editor.name())),
                 Ok(false) => {
                     warn(&format!(
-                        "Not registered in {} — add rhizome to {}",
+                        "Not registered in {} — {}",
                         editor.name(),
-                        editor_config_label(editor)
+                        registration_repair_hint(editor)
                     ));
                     warnings += 1;
                 }
                 Err(error) => {
                     warn(&format!(
-                        "Could not inspect {} MCP config: {error}",
-                        editor.name()
+                        "Could not inspect {} MCP config: {error} — {}",
+                        editor.name(),
+                        registration_repair_hint(editor)
                     ));
                     warnings += 1;
                 }
@@ -280,10 +281,32 @@ fn has_rhizome_registration(editor: Editor) -> Result<bool> {
     }
 }
 
-fn editor_config_label(editor: Editor) -> String {
+fn editor_slug(editor: Editor) -> &'static str {
+    match editor {
+        Editor::ClaudeCode => "claude-code",
+        Editor::Cursor => "cursor",
+        Editor::VsCode => "vscode",
+        Editor::Zed => "zed",
+        Editor::Windsurf => "windsurf",
+        Editor::Amp => "amp",
+        Editor::ClaudeDesktop => "claude-desktop",
+        Editor::CodexCli => "codex",
+        Editor::GeminiCli => "gemini",
+        Editor::CopilotCli => "copilot",
+    }
+}
+
+fn registration_repair_hint(editor: Editor) -> String {
+    let init_hint = format!("run `rhizome init --editor {}`", editor_slug(editor));
     match editors::config_path(editor) {
-        Ok(path) => path.display().to_string(),
-        Err(_) => format!("the {} MCP config", editor.name()),
+        Ok(path) => match editor {
+            Editor::ClaudeCode => format!(
+                "{init_hint} and merge it into {}, or run `claude mcp add --scope user rhizome -- rhizome serve --expanded`",
+                path.display()
+            ),
+            _ => format!("{init_hint} and merge it into {}", path.display()),
+        },
+        Err(_) => init_hint,
     }
 }
 
@@ -396,6 +419,12 @@ args = ["serve"]
             .get(Editor::CodexCli.mcp_key())
             .and_then(|value: &toml::Value| value.get("rhizome"))
             .is_some());
+    }
+
+    #[test]
+    fn registration_repair_hint_includes_editor_specific_init_command() {
+        let hint = registration_repair_hint(Editor::CodexCli);
+        assert!(hint.contains("rhizome init --editor codex"));
     }
 }
 
