@@ -189,7 +189,7 @@ fn all_languages() -> &'static [Language] {
 // Server binary detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Find-only: check if binary exists in PATH (including ~/.rhizome/bin).
+/// Find-only: check if binary exists in PATH (including the managed rhizome bin dir).
 /// Does NOT attempt to install missing servers.
 fn find_server(
     language: &Language,

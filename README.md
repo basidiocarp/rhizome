@@ -21,8 +21,12 @@ Built in Rust with a dual-backend architecture:
 # Build
 cargo build --release
 
-# Generate MCP config for your editor
+# Generate MCP config guidance for detected hosts
 ./target/release/rhizome init
+
+# Print a paste-ready MCP snippet for one host
+./target/release/rhizome init --editor claude-code
+./target/release/rhizome init --editor codex
 
 # Check backend status and available LSP servers
 ./target/release/rhizome status
@@ -42,10 +46,16 @@ Works with Claude Code, Cursor, Windsurf, Cline, Continue, OpenCode, and any MCP
 
 ```bash
 rhizome init
-# Paste the output into your MCP settings
+# Shows detected hosts and the right MCP snippet shape for each one
+
+rhizome init --editor claude-code
+# Prints only the Claude Code JSON snippet
+
+rhizome init --editor codex
+# Prints only the Codex TOML snippet
 ```
 
-Or manually add to your MCP configuration:
+For Claude-family JSON MCP configs:
 
 ```json
 {
@@ -57,6 +67,14 @@ Or manually add to your MCP configuration:
     }
   }
 }
+```
+
+For Codex CLI TOML config:
+
+```toml
+[mcp_servers.rhizome]
+command = "rhizome"
+args = ["serve"]
 ```
 
 ## Supported Languages
@@ -85,7 +103,7 @@ All 32 languages have LSP server configs. 20+ have auto-install recipes (npm, pi
 │  └─ Per-tool requirement mapping                            │
 ├─────────────────────────────────────────────────────────────┤
 │ Smart Infrastructure                                        │
-│  ├─ Auto-install LSP servers (~/.rhizome/bin/)              │
+│  ├─ Auto-install LSP servers (platform data dir/bin)        │
 │  ├─ Per-language workspace root detection                   │
 │  ├─ Multi-client LSP (per language × root pair)             │
 │  ├─ Path traversal prevention in edit tools                 │
@@ -184,7 +202,7 @@ rhizome status [--project <path>]                Backend status per language
 rhizome lsp status [--json]                      LSP server availability
 rhizome lsp install <language>                   Install LSP server
 rhizome export [--project <path>]                Export code graph to Hyphae
-rhizome init [--config]                          Print MCP or example config
+rhizome init [--config] [--editor <host>]       Print MCP or example config
 rhizome doctor [--fix]                           Diagnose issues
 rhizome self-update [--check]                    Check/install updates
 rhizome summarize [--project <path>] [--json]    Project summary
@@ -193,7 +211,7 @@ rhizome summarize [--project <path>] [--json]    Project summary
 ## Configuration
 
 ```toml
-# ~/.config/rhizome/config.toml
+# <platform config dir>/rhizome/config.toml
 
 [languages.python]
 server_binary = "ruff"

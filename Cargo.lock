@@ -895,7 +895,6 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
- "dirs",
  "rhizome-core",
  "rhizome-mcp",
  "rhizome-treesitter",
@@ -903,6 +902,7 @@ dependencies = [
  "spore",
  "tempfile",
  "tokio",
+ "toml 1.0.6+spec-1.1.0",
  "tracing",
  "ureq",
  "which",
@@ -913,7 +913,6 @@ name = "rhizome-core"
 version = "0.6.0"
 dependencies = [
  "anyhow",
- "dirs",
  "ignore",
  "serde",
  "serde_json",
@@ -1201,8 +1200,8 @@ dependencies = [
 
 [[package]]
 name = "spore"
-version = "0.4.2"
-source = "git+https://github.com/basidiocarp/spore?tag=v0.4.2#80d09cbef7028fcb1613c83878bc5ebcd783f9f8"
+version = "0.4.3"
+source = "git+https://github.com/basidiocarp/spore?tag=v0.4.3#974f813f34debebc7d4f91b57938c5843fb4c887"
 dependencies = [
  "anyhow",
  "chrono",

@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use rhizome_core::{CodeIntelligence, Language, Symbol, SymbolKind};
 use rhizome_mcp::McpServer;
 use rhizome_treesitter::TreeSitterBackend;
+use spore::editors;
 use tracing::info;
 
 mod doctor;
@@ -15,6 +16,47 @@ mod self_update;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum InitEditor {
+    #[value(name = "claude-code")]
+    ClaudeCode,
+    #[value(name = "cursor")]
+    Cursor,
+    #[value(name = "vscode")]
+    VsCode,
+    #[value(name = "zed")]
+    Zed,
+    #[value(name = "windsurf")]
+    Windsurf,
+    #[value(name = "amp")]
+    Amp,
+    #[value(name = "claude-desktop")]
+    ClaudeDesktop,
+    #[value(name = "codex")]
+    CodexCli,
+    #[value(name = "gemini")]
+    GeminiCli,
+    #[value(name = "copilot")]
+    CopilotCli,
+}
+
+impl InitEditor {
+    fn into_editor(self) -> editors::Editor {
+        match self {
+            Self::ClaudeCode => editors::Editor::ClaudeCode,
+            Self::Cursor => editors::Editor::Cursor,
+            Self::VsCode => editors::Editor::VsCode,
+            Self::Zed => editors::Editor::Zed,
+            Self::Windsurf => editors::Editor::Windsurf,
+            Self::Amp => editors::Editor::Amp,
+            Self::ClaudeDesktop => editors::Editor::ClaudeDesktop,
+            Self::CodexCli => editors::Editor::CodexCli,
+            Self::GeminiCli => editors::Editor::GeminiCli,
+            Self::CopilotCli => editors::Editor::CopilotCli,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -43,6 +85,9 @@ enum Commands {
         /// Print an example rhizome config.toml instead of MCP config
         #[arg(long)]
         config: bool,
+        /// Print a paste-ready MCP snippet for a specific editor/host
+        #[arg(long, value_enum)]
+        editor: Option<InitEditor>,
     },
     /// Export code symbols to Hyphae as a knowledge graph
     Export {
@@ -207,21 +252,86 @@ fn cmd_structure(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_init(config_mode: bool) {
-    if config_mode {
-        print!("{}", rhizome_core::RhizomeConfig::example_config());
+fn render_editor_snippet(editor: editors::Editor) -> Result<String> {
+    if editor.uses_toml() {
+        let mut root = toml::Table::new();
+        let mut servers = toml::Table::new();
+        let mut rhizome = toml::Table::new();
+        rhizome.insert(
+            "command".to_string(),
+            toml::Value::String("rhizome".to_string()),
+        );
+        rhizome.insert(
+            "args".to_string(),
+            toml::Value::Array(vec![toml::Value::String("serve".to_string())]),
+        );
+        servers.insert("rhizome".to_string(), toml::Value::Table(rhizome));
+        root.insert(editor.mcp_key().to_string(), toml::Value::Table(servers));
+        toml::to_string_pretty(&root).context("Failed to serialize MCP TOML snippet")
     } else {
-        let config = serde_json::json!({
-            "mcpServers": {
-                "rhizome": {
-                    "command": "rhizome",
-                    "args": ["serve"],
-                    "env": {}
-                }
+        let snippet = serde_json::json!({
+            editor.mcp_key(): {
+                "rhizome": editors::mcp_entry(editor, "rhizome", &["serve"])
             }
         });
-        println!("{}", serde_json::to_string_pretty(&config).unwrap());
+        serde_json::to_string_pretty(&snippet).context("Failed to serialize MCP JSON snippet")
     }
+}
+
+fn print_editor_block(editor: editors::Editor) -> Result<()> {
+    println!("{} MCP config", editor.name());
+    match editors::config_path(editor) {
+        Ok(path) => println!("Path: {}", path.display()),
+        Err(error) => println!("Path: unavailable ({error})"),
+    }
+    println!();
+    println!("{}", render_editor_snippet(editor)?);
+    Ok(())
+}
+
+fn cmd_init(config_mode: bool, editor: Option<InitEditor>) -> Result<()> {
+    if config_mode {
+        print!("{}", rhizome_core::RhizomeConfig::example_config());
+        return Ok(());
+    }
+
+    if let Some(editor) = editor {
+        print!("{}", render_editor_snippet(editor.into_editor())?);
+        return Ok(());
+    }
+
+    let detected = editors::detect();
+    let editors_to_show = if detected.is_empty() {
+        vec![
+            editors::Editor::ClaudeCode,
+            editors::Editor::CodexCli,
+            editors::Editor::Cursor,
+            editors::Editor::ClaudeDesktop,
+        ]
+    } else {
+        detected
+    };
+
+    println!("Rhizome MCP setup");
+    println!("=================\n");
+    println!(
+        "Detected hosts: {}",
+        editors_to_show
+            .iter()
+            .map(|editor| editor.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!("Use `rhizome init --editor <host>` for a paste-ready single-host snippet.\n");
+
+    for (idx, editor) in editors_to_show.iter().enumerate() {
+        print_editor_block(*editor)?;
+        if idx + 1 != editors_to_show.len() {
+            println!("\n---\n");
+        }
+    }
+
+    Ok(())
 }
 
 fn cmd_export(project: Option<PathBuf>) -> Result<()> {
@@ -443,10 +553,7 @@ async fn main() -> Result<()> {
         Commands::Serve { project, expanded } => cmd_serve(project, expanded).await,
         Commands::Symbols { file } => cmd_symbols(&file),
         Commands::Structure { file } => cmd_structure(&file),
-        Commands::Init { config } => {
-            cmd_init(config);
-            Ok(())
-        }
+        Commands::Init { config, editor } => cmd_init(config, editor),
         Commands::Export { project } => cmd_export(project),
         Commands::Status { project } => cmd_status(project),
         Commands::SelfUpdate { check } => self_update::run(check),
@@ -456,5 +563,24 @@ async fn main() -> Result<()> {
             LspAction::Status { json } => cmd_lsp_status(json),
             LspAction::Install { language } => cmd_lsp_install(&language),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_editor_snippet_uses_json_key_for_claude_code() {
+        let snippet = render_editor_snippet(editors::Editor::ClaudeCode).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&snippet).unwrap();
+        assert!(value["mcpServers"]["rhizome"].is_object());
+    }
+
+    #[test]
+    fn render_editor_snippet_uses_toml_key_for_codex() {
+        let snippet = render_editor_snippet(editors::Editor::CodexCli).unwrap();
+        let value = toml::Value::Table(toml::from_str::<toml::Table>(&snippet).unwrap());
+        assert!(value["mcp_servers"]["rhizome"].is_table());
     }
 }

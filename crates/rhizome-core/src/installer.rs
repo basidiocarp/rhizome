@@ -4,6 +4,7 @@ use std::process::Command;
 use tracing::{debug, info, warn};
 
 use crate::error::{Result, RhizomeError};
+use crate::paths;
 use crate::Language;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,7 +297,7 @@ pub struct LspInstaller {
 
 impl LspInstaller {
     pub fn new(bin_dir: Option<PathBuf>, disabled: bool) -> Self {
-        let bin_dir = bin_dir.unwrap_or_else(default_bin_dir);
+        let bin_dir = bin_dir.unwrap_or_else(paths::managed_bin_dir);
         Self { bin_dir, disabled }
     }
 
@@ -318,9 +319,8 @@ impl LspInstaller {
     }
 
     /// Augmented PATH including the managed bin directory.
-    pub fn augmented_path(&self) -> String {
-        let system_path = std::env::var("PATH").unwrap_or_default();
-        format!("{}:{system_path}", self.bin_dir.display())
+    pub fn augmented_path(&self) -> std::ffi::OsString {
+        paths::augmented_path(&self.bin_dir)
     }
 
     /// Try to find a binary in PATH (including managed bin dir).
@@ -383,14 +383,14 @@ impl LspInstaller {
 
         match recipe.strategy {
             InstallStrategy::NpmPrefix => {
-                // npm install --prefix ~/.rhizome <packages>
+                // npm install --prefix <managed bin dir> <packages>
                 command.arg("install");
                 command.arg("--prefix");
                 command.arg(&self.bin_dir);
                 command.args(&recipe.args[1..]); // skip "install"
             }
             InstallStrategy::GemBinDir => {
-                // gem install <gem> --bindir ~/.rhizome/bin
+                // gem install <gem> --bindir <managed bin dir>
                 command.args(recipe.args);
                 command.arg("--bindir");
                 command.arg(&self.bin_dir);
@@ -402,7 +402,7 @@ impl LspInstaller {
                 }
             }
             InstallStrategy::DotnetToolPath => {
-                // dotnet tool install <tool> --tool-path ~/.rhizome/bin
+                // dotnet tool install <tool> --tool-path <managed bin dir>
                 command.args(recipe.args);
                 command.arg(&self.bin_dir);
             }
@@ -458,14 +458,9 @@ impl LspInstaller {
 
         info!("Installing LSP server: {binary_name} via {pip}");
 
-        let output = Command::new(pip)
-            .args(["install", "--break-system-packages", package])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .map_err(|e| {
-                RhizomeError::Other(format!("Failed to run {pip} for {binary_name}: {}", e))
-            })?;
+        let output = run_pip_install(pip, package).map_err(|e| {
+            RhizomeError::Other(format!("Failed to run {pip} for {binary_name}: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -478,10 +473,29 @@ impl LspInstaller {
     }
 }
 
-fn default_bin_dir() -> PathBuf {
-    dirs::home_dir()
-        .map(|h| h.join(".rhizome").join("bin"))
-        .unwrap_or_else(|| PathBuf::from(".rhizome/bin"))
+fn run_pip_install(pip: &str, package: &str) -> std::io::Result<std::process::Output> {
+    let output = Command::new(pip)
+        .args(["install", "--break-system-packages", package])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()?;
+
+    if output.status.success() {
+        return Ok(output);
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("no such option: --break-system-packages")
+        || stderr.contains("unrecognized arguments: --break-system-packages")
+    {
+        return Command::new(pip)
+            .args(["install", package])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
+    }
+
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -489,9 +503,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_bin_dir_under_home() {
-        let dir = default_bin_dir();
-        assert!(dir.to_string_lossy().contains(".rhizome/bin"));
+    fn default_bin_dir_uses_managed_bin_dir() {
+        let installer = LspInstaller::new(None, false);
+        assert_eq!(installer.bin_dir(), paths::managed_bin_dir());
     }
 
     #[test]
@@ -565,6 +579,26 @@ mod tests {
     fn augmented_path_includes_bin_dir() {
         let installer = LspInstaller::new(Some(PathBuf::from("/test/bin")), false);
         let path = installer.augmented_path();
-        assert!(path.starts_with("/test/bin:"));
+        let mut split = std::env::split_paths(&path);
+        assert_eq!(split.next(), Some(PathBuf::from("/test/bin")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pip_fallback_retries_without_break_system_packages_on_unsupported_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("fake-pip.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nif [ \"$2\" = \"--break-system-packages\" ]; then echo 'no such option: --break-system-packages' >&2; exit 2; fi\nexit 0\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+
+        let output = run_pip_install(script.to_str().unwrap(), "demo-package").unwrap();
+        assert!(output.status.success());
     }
 }

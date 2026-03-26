@@ -1,29 +1,22 @@
 //! `rhizome doctor` — diagnose common issues with the rhizome installation.
 
 use anyhow::Result;
+use spore::editors::{self, Editor};
 use std::path::PathBuf;
 use std::process::Command;
 
 /// Known LSP servers to check in PATH.
-const LSP_SERVERS: &[(&str, &str, &str)] = &[
-    ("rust-analyzer", "Rust", "brew install rust-analyzer"),
-    ("pyright-langserver", "Python", "pip install pyright"),
-    (
-        "typescript-language-server",
-        "TypeScript",
-        "npm i -g typescript-language-server",
-    ),
-    ("gopls", "Go", "go install golang.org/x/tools/gopls@latest"),
-    ("clangd", "C/C++", "brew install llvm"),
-    ("jdtls", "Java", "brew install jdtls"),
-    ("ruby-lsp", "Ruby", "gem install ruby-lsp"),
-    (
-        "lua-language-server",
-        "Lua",
-        "brew install lua-language-server",
-    ),
-    ("elixir-ls", "Elixir", "mix archive.install hex elixir_ls"),
-    ("zls", "Zig", "brew install zls"),
+const LSP_SERVERS: &[(&str, &str)] = &[
+    ("rust-analyzer", "Rust"),
+    ("pyright-langserver", "Python"),
+    ("typescript-language-server", "TypeScript"),
+    ("gopls", "Go"),
+    ("clangd", "C/C++"),
+    ("jdtls", "Java"),
+    ("ruby-lsp", "Ruby"),
+    ("lua-language-server", "Lua"),
+    ("elixir-ls", "Elixir"),
+    ("zls", "Zig"),
 ];
 
 /// Tree-sitter languages with full query support.
@@ -56,14 +49,17 @@ pub fn run(fix: bool) -> Result<()> {
     println!();
     println!("\x1b[1mLSP Servers\x1b[0m");
     let mut lsp_found = 0;
-    for (bin, lang, install) in LSP_SERVERS {
+    for (bin, lang) in LSP_SERVERS {
         match which::which(bin) {
             Ok(path) => {
                 pass(&format!("{bin} found ({lang}) at {}", path.display()));
                 lsp_found += 1;
             }
             Err(_) => {
-                warn(&format!("{bin} not found ({lang}) — install: {install}"));
+                warn(&format!(
+                    "{bin} not found ({lang}) — install: {}",
+                    install_hint(bin)
+                ));
                 warnings += 1;
             }
         }
@@ -135,9 +131,7 @@ pub fn run(fix: bool) -> Result<()> {
     println!();
     println!("\x1b[1mConfiguration\x1b[0m");
 
-    let global_config = dirs::config_dir()
-        .map(|d| d.join("rhizome/config.toml"))
-        .unwrap_or_else(|| PathBuf::from("~/.config/rhizome/config.toml"));
+    let global_config = rhizome_core::global_config_path();
     if global_config.exists() {
         pass(&format!("Global config: {}", global_config.display()));
     } else {
@@ -148,11 +142,14 @@ pub fn run(fix: bool) -> Result<()> {
         warnings += 1;
     }
 
-    let project_config = project_root.join(".rhizome/config.toml");
+    let project_config = rhizome_core::project_config_path(&project_root);
     if project_config.exists() {
         pass(&format!("Project config: {}", project_config.display()));
     } else {
-        warn("No project config (.rhizome/config.toml)");
+        warn(&format!(
+            "No project config at {}",
+            project_config.display()
+        ));
         warnings += 1;
     }
 
@@ -180,10 +177,10 @@ pub fn run(fix: bool) -> Result<()> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // MCP Server
+    // MCP Registration
     // ─────────────────────────────────────────────────────────────────────────
     println!();
-    println!("\x1b[1mMCP Server\x1b[0m");
+    println!("\x1b[1mMCP Registration\x1b[0m");
     match which::which("rhizome") {
         Ok(path) => pass(&format!("rhizome binary at {}", path.display())),
         Err(_) => {
@@ -193,20 +190,49 @@ pub fn run(fix: bool) -> Result<()> {
     }
     pass(&format!("Version: {}", env!("CARGO_PKG_VERSION")));
 
-    if which::which("claude").is_ok() {
-        match Command::new("claude").args(["mcp", "list"]).output() {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if stdout.contains("rhizome") {
-                    pass("Registered as Claude Code MCP server");
-                } else {
-                    warn("Not registered — run: claude mcp add --scope user rhizome -- rhizome serve --expanded");
+    let detected_editors = editors::detect();
+    if detected_editors.is_empty() {
+        warn("No supported MCP host configs detected");
+        warnings += 1;
+    } else {
+        for &editor in &detected_editors {
+            match has_rhizome_registration(editor) {
+                Ok(true) => pass(&format!("Registered in {}", editor.name())),
+                Ok(false) => {
+                    warn(&format!(
+                        "Not registered in {} — add rhizome to {}",
+                        editor.name(),
+                        editor_config_label(editor)
+                    ));
+                    warnings += 1;
+                }
+                Err(error) => {
+                    warn(&format!(
+                        "Could not inspect {} MCP config: {error}",
+                        editor.name()
+                    ));
                     warnings += 1;
                 }
             }
-            Err(_) => {
-                warn("Could not check Claude Code MCP registration");
-                warnings += 1;
+        }
+
+        if detected_editors.contains(&Editor::ClaudeCode) && which::which("claude").is_ok() {
+            match Command::new("claude").args(["mcp", "list"]).output() {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if stdout.contains("rhizome") {
+                        pass("Registered in Claude Code CLI runtime");
+                    } else {
+                        warn(
+                            "Not registered in Claude Code CLI runtime — run: claude mcp add --scope user rhizome -- rhizome serve --expanded",
+                        );
+                        warnings += 1;
+                    }
+                }
+                Err(_) => {
+                    warn("Could not check Claude Code CLI runtime registration");
+                    warnings += 1;
+                }
             }
         }
     }
@@ -226,6 +252,55 @@ pub fn run(fix: bool) -> Result<()> {
         anyhow::bail!("{errors} error(s) detected");
     }
     Ok(())
+}
+
+fn has_rhizome_registration(editor: Editor) -> Result<bool> {
+    let path = editors::config_path(editor)?;
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    let content = std::fs::read_to_string(&path)?;
+    if content.trim().is_empty() {
+        return Ok(false);
+    }
+
+    if editor.uses_toml() {
+        let root = toml::Value::Table(toml::from_str::<toml::Table>(&content)?);
+        Ok(root
+            .get(editor.mcp_key())
+            .and_then(|value: &toml::Value| value.get("rhizome"))
+            .is_some())
+    } else {
+        let root: serde_json::Value = serde_json::from_str(&content)?;
+        Ok(root
+            .get(editor.mcp_key())
+            .and_then(|value: &serde_json::Value| value.get("rhizome"))
+            .is_some())
+    }
+}
+
+fn editor_config_label(editor: Editor) -> String {
+    match editors::config_path(editor) {
+        Ok(path) => path.display().to_string(),
+        Err(_) => format!("the {} MCP config", editor.name()),
+    }
+}
+
+fn install_hint(binary: &str) -> &'static str {
+    match binary {
+        "rust-analyzer" => "rustup component add rust-analyzer",
+        "pyright-langserver" => "npm install -g pyright or pipx install pyright",
+        "typescript-language-server" => "npm install -g typescript typescript-language-server",
+        "gopls" => "go install golang.org/x/tools/gopls@latest",
+        "clangd" => "install LLVM/clangd with your platform package manager",
+        "jdtls" => "install jdtls with your platform package manager",
+        "ruby-lsp" => "gem install ruby-lsp",
+        "lua-language-server" => "install lua-language-server with your platform package manager",
+        "elixir-ls" => "mix archive.install hex elixir_ls",
+        "zls" => "install zls with your platform package manager or release binary",
+        _ => "install with your preferred package manager",
+    }
 }
 
 fn detect_project_root() -> PathBuf {
@@ -282,6 +357,45 @@ fn count_files_by_ext(root: &std::path::Path, counts: &mut Vec<(&'static str, us
 
     for (lang, count) in map {
         counts.push((lang, count));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn has_rhizome_registration_detects_json_entry() {
+        let root = serde_json::json!({
+            "mcpServers": {
+                "rhizome": {
+                    "command": "rhizome",
+                    "args": ["serve"]
+                }
+            }
+        });
+        assert!(root
+            .get(Editor::ClaudeCode.mcp_key())
+            .and_then(|value| value.get("rhizome"))
+            .is_some());
+    }
+
+    #[test]
+    fn has_rhizome_registration_detects_toml_entry() {
+        let root = toml::Value::Table(
+            toml::from_str::<toml::Table>(
+                r#"
+[mcp_servers.rhizome]
+command = "rhizome"
+args = ["serve"]
+"#,
+            )
+            .unwrap(),
+        );
+        assert!(root
+            .get(Editor::CodexCli.mcp_key())
+            .and_then(|value: &toml::Value| value.get("rhizome"))
+            .is_some());
     }
 }
 

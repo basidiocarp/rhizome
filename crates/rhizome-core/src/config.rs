@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use crate::error::{Result, RhizomeError};
 
 /// Per-language configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +43,7 @@ pub struct LspConfig {
     /// Disable automatic LSP server installation (default: false)
     #[serde(default)]
     pub disable_download: bool,
-    /// Custom directory for managed LSP binaries (default: ~/.rhizome/bin/)
+    /// Custom directory for managed LSP binaries.
     pub bin_dir: Option<std::path::PathBuf>,
 }
 
@@ -65,33 +65,8 @@ impl RhizomeConfig {
     /// Load configuration by merging global + project configs.
     /// Project config overrides global config.
     pub fn load(project_root: &Path) -> Result<Self> {
-        let global = Self::load_global()?;
-        let project = Self::load_project(project_root)?;
-        Ok(Self::merge(global, project))
-    }
-
-    /// Load global config from ~/.config/rhizome/config.toml
-    fn load_global() -> Result<Self> {
-        let config_dir = dirs::config_dir().map(|d| d.join("rhizome").join("config.toml"));
-
-        match config_dir {
-            Some(path) if path.exists() => {
-                let content = std::fs::read_to_string(&path)?;
-                Ok(toml::from_str(&content)?)
-            }
-            _ => Ok(Self::default()),
-        }
-    }
-
-    /// Load project config from <project_root>/.rhizome/config.toml
-    fn load_project(project_root: &Path) -> Result<Self> {
-        let path = project_root.join(".rhizome").join("config.toml");
-        if path.exists() {
-            let content = std::fs::read_to_string(&path)?;
-            Ok(toml::from_str(&content)?)
-        } else {
-            Ok(Self::default())
-        }
+        spore::config::load_merged("rhizome", project_root, Self::merge)
+            .map_err(|error| RhizomeError::Config(error.to_string()))
     }
 
     /// Merge two configs. `project` values override `global`.
@@ -168,7 +143,7 @@ impl RhizomeConfig {
     pub fn example_config() -> String {
         r#"# Rhizome Configuration
 # Place this file at:
-#   Global:  ~/.config/rhizome/config.toml
+#   Global:  <platform config dir>/rhizome/config.toml
 #   Project: <project_root>/.rhizome/config.toml
 #
 # Project config overrides global config on a per-language basis.
