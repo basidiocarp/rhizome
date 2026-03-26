@@ -2,6 +2,8 @@
 
 Rhizome problems and fixes. This guide covers backend selection, LSP setup, tool failures, and error interpretation.
 
+Commands below use POSIX shell syntax. On PowerShell, use the equivalent `Get-Command`, `Get-Content`, `Test-Path`, `Get-Item Env:...`, and `Remove-Item Env:...` forms for the same checks.
+
 ## Backend Selection Issues
 
 ### Symptom: Tool returns empty results, should have data
@@ -30,26 +32,23 @@ Tree-sitter only supports 10 languages with precise query patterns (Rust, Python
 **Fix:**
 
 1. Verify server is running:
-   ```bash
+   ```sh
    rhizome status
    # Look for: LSP binary: <name>, LSP available: Yes
    ```
 
 2. Check server logs (language-specific):
-   ```bash
-   # Rust
-   cat /tmp/ra.log
+   ```sh
+   # Rust: inspect the log file path configured for the server, or
+   # start Rhizome with debug logging in a terminal.
 
    # Python
    PYRIGHT_PYTHONPATH=... pyright-langserver --stdio
    ```
 
 3. Restart Rhizome:
-   ```bash
-   # Kill existing MCP server
-   pkill rhizome
-
-   # Start fresh
+   ```sh
+   # Stop any existing rhizome process, then start fresh
    rhizome serve
    ```
 
@@ -62,9 +61,9 @@ Tree-sitter only supports 10 languages with precise query patterns (Rust, Python
 See [LANGUAGE-SETUP.md: Path 2](./LANGUAGE-SETUP.md#path-2-lsp-languages-auto-install) for auto-install or manual setup.
 
 Quick check:
-```bash
-which rust-analyzer  # Check if binary is in PATH
-ls ~/.rhizome/bin/   # Check auto-installed binaries
+```sh
+rhizome status
+# Confirms whether the binary is available and prints the managed bin dir
 ```
 
 ## LSP Server Auto-Install Issues
@@ -76,19 +75,19 @@ ls ~/.rhizome/bin/   # Check auto-installed binaries
 **How auto-install works:**
 
 1. Look up recipe by server binary name (e.g., `rust-analyzer` → `rustup component add`)
-2. Check if package manager exists (`which rustup`)
+2. Check if the package manager exists on `PATH`
 3. If yes, run install command
 4. If any step fails, return None and tool gets tree-sitter fallback
 
 **Fix:**
 
 1. Check if package manager is installed:
-   ```bash
-   which rustup    # Rust
-   which pip3      # Python
-   which npm       # JavaScript/TypeScript
-   which go        # Go
-   which gem       # Ruby
+   ```sh
+   command -v rustup    # Rust
+   command -v pip3      # Python
+   command -v npm       # JavaScript/TypeScript
+   command -v go        # Go
+   command -v gem       # Ruby
    ```
 
 2. Install package manager if missing
@@ -109,12 +108,12 @@ ls ~/.rhizome/bin/   # Check auto-installed binaries
 
 **Fix:**
 
-```bash
+```sh
 # Check environment
-echo $RHIZOME_DISABLE_LSP_DOWNLOAD  # Should be unset
+printenv RHIZOME_DISABLE_LSP_DOWNLOAD  # Should be unset
 
 # Check config
-cat ~/.config/rhizome/config.toml
+cat "<platform config dir>/rhizome/config.toml"
 # [lsp] section should have disable_download = false (or omitted)
 
 # Unset variable
@@ -131,21 +130,21 @@ unset RHIZOME_DISABLE_LSP_DOWNLOAD
 
 **Fix:**
 
-1. Install package manager or make it available in PATH:
-   ```bash
-   # Rust: curl https://sh.rustup.rs -sSf | sh
-   # Python: already comes with pip
-   # Node: brew install node (macOS)
+1. Install package manager or make it available in `PATH`:
+   ```text
+   Rust: install rustup
+   Python: install pip or pipx
+   Node: install Node.js with your platform package manager or installer
    ```
 
 2. Or manually install server:
-   ```bash
+   ```sh
    rustup component add rust-analyzer
    ```
 
 3. Verify:
-   ```bash
-   which rust-analyzer
+   ```sh
+   command -v rust-analyzer
    rhizome status
    ```
 
@@ -158,7 +157,7 @@ unset RHIZOME_DISABLE_LSP_DOWNLOAD
 **Fix:**
 
 List all tools:
-```bash
+```sh
 rhizome list-tools
 ```
 
@@ -170,13 +169,10 @@ Check tool name matches exactly (case-sensitive).
 
 **Fix:**
 
-1. Kill hanging process:
-   ```bash
-   pkill rhizome
-   ```
+1. Stop any existing `rhizome` process from your client or terminal session.
 
 2. Check if LSP server is responsive:
-   ```bash
+   ```sh
    # Manual LSP test
    echo '{"jsonrpc": "2.0", "method": "initialize", ...}' | rust-analyzer
    ```
@@ -186,9 +182,8 @@ Check tool name matches exactly (case-sensitive).
    - Try different tool
    - Check logs: `RUST_LOG=debug rhizome serve`
 
-4. Restart with fresh LSP connection:
-   ```bash
-   pkill rhizome
+4. Restart with a fresh LSP connection:
+   ```sh
    rhizome serve
    ```
 
@@ -199,7 +194,7 @@ Check tool name matches exactly (case-sensitive).
 **Fix:**
 
 Always use absolute paths:
-```bash
+```sh
 # Wrong
 rhizome symbols src/main.rs
 
@@ -216,14 +211,14 @@ For MCP, client must pass absolute path in request.
 **Fix:**
 
 1. Check file is valid:
-   ```bash
+   ```sh
    # Syntax check
    rustc --crate-type lib src/file.rs  # For Rust
    python -m py_compile src/file.py    # For Python
    ```
 
 2. Check encoding:
-   ```bash
+   ```sh
    file src/file.rs
    # Should be "ASCII text" or "UTF-8 Unicode text"
    ```
@@ -243,26 +238,25 @@ For MCP, client must pass absolute path in request.
 **Fix:**
 
 1. Check if Hyphae is available:
-   ```bash
-   which hyphae
+   ```sh
+   command -v hyphae
    # Or check if MCP server for Hyphae is running
    ```
 
 2. Start Hyphae:
-   ```bash
+   ```sh
    hyphae serve  # Or however Hyphae is started
    ```
 
 3. Check IPC connectivity:
-   ```bash
-   # If using socket:
-   ls /tmp/hyphae.sock
+   ```sh
+   # If using a socket transport, inspect the configured socket path
 
    # If using stdio, verify MCP server is running
    ```
 
 4. Check logs:
-   ```bash
+   ```sh
    RUST_LOG=debug rhizome serve
    # Look for export-related errors
    ```
@@ -274,18 +268,18 @@ For MCP, client must pass absolute path in request.
 **Fix:**
 
 1. Check which files were exported:
-   ```bash
+   ```sh
    # Check Hyphae database
    hyphae query "SELECT COUNT(*) FROM symbols"
    ```
 
 2. Re-run export:
-   ```bash
+   ```sh
    rhizome export /path/to/project
    ```
 
 3. Or export subset of project:
-   ```bash
+   ```sh
    rhizome export /path/to/project/src
    ```
 
@@ -298,16 +292,16 @@ For MCP, client must pass absolute path in request.
 **Fix:**
 
 1. Check file exists and is readable:
-   ```bash
+   ```sh
    # Global config
-   cat ~/.config/rhizome/config.toml
+   cat "<platform config dir>/rhizome/config.toml"
 
    # Project config
    cat <project>/.rhizome/config.toml
    ```
 
 2. Validate TOML syntax:
-   ```bash
+   ```sh
    # Python
    python3 -c "import tomllib; tomllib.loads(open('config.toml').read())"
 
@@ -315,20 +309,20 @@ For MCP, client must pass absolute path in request.
    ```
 
 3. Check permissions:
-   ```bash
-   ls -la ~/.config/rhizome/config.toml
+   ```sh
+   ls -la "<platform config dir>/rhizome/config.toml"
    # Should be readable by your user
    ```
 
 4. Rhizome loads in this order:
    ```
-   1. Global: ~/.config/rhizome/config.toml
+   1. Global: <platform config dir>/rhizome/config.toml
    2. Project: <project>/.rhizome/config.toml (overrides global)
    3. Environment: RHIZOME_* variables (override both)
    ```
 
    To verify what's loaded:
-   ```bash
+   ```sh
    RUST_LOG=debug rhizome serve 2>&1 | grep -i config
    ```
 
@@ -350,15 +344,14 @@ For MCP, client must pass absolute path in request.
    - Language key like `rust` (not `Rust`)
 
 3. Test binary works:
-   ```bash
+   ```sh
    /opt/custom/rust-analyzer --version
    # Should print version, not error
    ```
 
 4. Reload config:
-   ```bash
-   # Kill and restart Rhizome
-   pkill rhizome
+   ```sh
+   # Restart Rhizome after saving the config
    rhizome serve
    ```
 
@@ -461,7 +454,7 @@ rhizome --version
 Include:
 1. `rhizome status` output
 2. `rhizome --version` output
-3. Relevant config files (`~/.config/rhizome/config.toml`, project `.rhizome/config.toml`)
+3. Relevant config files (`<platform config dir>/rhizome/config.toml`, project `.rhizome/config.toml`)
 4. Logs with `RUST_LOG=debug rhizome serve`
 5. Example file that reproduces issue
 6. Expected vs actual behavior

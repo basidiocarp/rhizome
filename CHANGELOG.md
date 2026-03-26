@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **More platform-neutral setup docs**: README and troubleshooting guidance now describe platform-resolved config and managed bin locations instead of assuming Unix-shaped paths and shell tools.
+- **Claude Code doctor hint reuse**: `rhizome doctor` now uses the same host-specific repair hint path for Claude Code that it already uses for other detected MCP hosts.
+
 ## [0.6.1] - 2026-03-26
 
 ### Added

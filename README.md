@@ -17,34 +17,34 @@ Built in Rust with a dual-backend architecture:
 
 ## Quick Start
 
-```bash
+```sh
 # Build
 cargo build --release
 
 # Generate MCP config guidance for detected hosts
-./target/release/rhizome init
+cargo run --release -- init
 
 # Print a paste-ready MCP snippet for one host
-./target/release/rhizome init --editor claude-code
-./target/release/rhizome init --editor codex
+cargo run --release -- init --editor claude-code
+cargo run --release -- init --editor codex
 
 # Check backend status and available LSP servers
-./target/release/rhizome status
+cargo run --release -- status
 
 # Manage LSP servers
-./target/release/rhizome lsp status
-./target/release/rhizome lsp install python
+cargo run --release -- lsp status
+cargo run --release -- lsp install python
 
 # Use directly from the CLI
-./target/release/rhizome symbols src/main.rs
-./target/release/rhizome structure src/lib.rs
+cargo run --release -- symbols src/main.rs
+cargo run --release -- structure src/lib.rs
 ```
 
 ### Add to Any MCP Client
 
 Works with Claude Code, Cursor, Windsurf, Cline, Continue, OpenCode, and any MCP-compatible tool.
 
-```bash
+```sh
 rhizome init
 # Shows detected hosts and the right MCP snippet shape for each one
 
@@ -55,7 +55,7 @@ rhizome init --editor codex
 # Prints only the Codex TOML snippet
 ```
 
-For Claude-family JSON MCP configs:
+For JSON MCP clients:
 
 ```json
 {
@@ -76,6 +76,8 @@ For Codex CLI TOML config:
 command = "rhizome"
 args = ["serve"]
 ```
+
+Rhizome uses platform-specific config and data directories. Use `rhizome status` to see the resolved managed bin directory on the current machine.
 
 ## Supported Languages
 

@@ -8,8 +8,13 @@ Rhizome loads configuration from two sources, with project config overriding glo
 
 | Scope | Path | Purpose |
 |-------|------|---------|
-| Global | `~/.config/rhizome/config.toml` | System-wide defaults for all projects |
+| Global | `<platform config dir>/rhizome/config.toml` | System-wide defaults for all projects |
 | Project | `<project_root>/.rhizome/config.toml` | Project-specific overrides |
+
+Typical global config locations:
+- macOS: `~/Library/Application Support/rhizome/config.toml`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/rhizome/config.toml`
+- Windows: `%APPDATA%\rhizome\config.toml`
 
 **Loading order:**
 1. Load global config
@@ -74,10 +79,10 @@ Keys are lowercase language names (match `Language::from_name()`):
 
 LSP server binary name or path.
 
-- **Name**: System looks for binary in PATH (including `~/.rhizome/bin/`)
+- **Name**: System looks for the binary in `PATH` and in Rhizome's managed bin directory
   ```toml
   server_binary = "rust-analyzer"
-  # Looks in: $PATH, ~/.rhizome/bin/
+  # Looks in: PATH, then the managed bin dir from [lsp].bin_dir
   ```
 
 - **Path**: Absolute path to binary
@@ -169,7 +174,7 @@ LSP-wide configuration.
 ```toml
 [lsp]
 disable_download = false             # Allow auto-install of servers
-bin_dir = "~/.rhizome/bin"           # Custom directory for managed binaries
+bin_dir = "<managed bin dir>"        # Custom directory for managed binaries
 ```
 
 #### disable_download
@@ -194,10 +199,11 @@ When disabled:
 
 Directory where auto-installed LSP servers are placed.
 
-- **Default**: `~/.rhizome/bin/`
+- **Default**: Rhizome's platform data dir, under `rhizome/bin`
 - **Type**: Path (can be absolute or relative to home)
 - **Must exist**: Rhizome creates it if missing
 - **Added to PATH**: Auto-installed binaries are in this dir
+- **Tip**: Run `rhizome status` to see the resolved managed bin dir on the current machine
 
 ```toml
 [lsp]
@@ -231,6 +237,8 @@ auto_export = false                  # Manual export only (via export_to_hyphae 
 
 Environment variables override config file settings (highest priority).
 
+Examples below use POSIX shell syntax. On PowerShell, set environment variables with `$env:NAME = "value"` and clear them with `Remove-Item Env:NAME`.
+
 | Variable | Type | Purpose | Example |
 |----------|------|---------|---------|
 | `RHIZOME_DISABLE_LSP_DOWNLOAD` | String | Disable auto-install (`1` or `true`) | `RHIZOME_DISABLE_LSP_DOWNLOAD=1` |
@@ -241,7 +249,7 @@ Environment variables override config file settings (highest priority).
 
 Disable automatic LSP server installation.
 
-```bash
+```sh
 # Disable auto-install
 export RHIZOME_DISABLE_LSP_DOWNLOAD=1
 rhizome serve
@@ -258,7 +266,7 @@ RHIZOME_DISABLE_LSP_DOWNLOAD=1 rhizome serve
 
 Override project root detection.
 
-```bash
+```sh
 # Use custom project root
 export RHIZOME_PROJECT=/opt/my-project
 rhizome serve
@@ -275,7 +283,7 @@ RHIZOME_PROJECT=/opt/my-project rhizome serve
 
 Set logging verbosity.
 
-```bash
+```sh
 # All Rhizome logs at debug level
 RUST_LOG=rhizome=debug rhizome serve
 
@@ -377,7 +385,7 @@ See [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md) for complete language server defaul
 Single global config for Rust + Python:
 
 ```toml
-# ~/.config/rhizome/config.toml
+# <platform config dir>/rhizome/config.toml
 [languages.python]
 server_binary = "pyright-langserver"
 ```
@@ -389,7 +397,7 @@ Rest defaults apply. Python uses custom binary, others use defaults.
 Full customization:
 
 ```toml
-# ~/.config/rhizome/config.toml
+# <platform config dir>/rhizome/config.toml
 
 [languages.rust]
 server_binary = "rust-analyzer"
@@ -419,7 +427,7 @@ enabled = false  # Skip Java
 
 [lsp]
 disable_download = false
-bin_dir = "~/.rhizome/bin"
+bin_dir = "<managed bin dir>"
 
 [export]
 auto_export = true
@@ -435,7 +443,7 @@ Project-specific config (overrides global):
 # Override global Rust config with custom binary
 [languages.rust]
 server_binary = "/opt/custom/rust-analyzer"
-server_args = ["--log-file", "/tmp/ra.log"]
+server_args = ["--log-file", "<path-to-log-file>"]
 
 # This project has no Python support
 [languages.python]
@@ -458,7 +466,7 @@ disable_download = true
 ```
 
 Or via environment:
-```bash
+```sh
 RHIZOME_DISABLE_LSP_DOWNLOAD=1 rhizome serve
 ```
 
@@ -482,29 +490,29 @@ server_args = ["--no-default-features"]  # Reduce memory
 ### Config not being loaded
 
 1. Check file exists and is readable:
-   ```bash
-   cat ~/.config/rhizome/config.toml
+   ```sh
+   cat "<platform config dir>/rhizome/config.toml"
    ```
 
 2. Validate TOML syntax:
-   ```bash
+   ```sh
    python3 -c "import tomllib; tomllib.loads(open('config.toml').read())"
    ```
 
 3. Check Rhizome is reading it:
-   ```bash
+   ```sh
    RUST_LOG=debug rhizome serve 2>&1 | grep config
    ```
 
 ### Project config not overriding global
 
 1. Verify project root is detected:
-   ```bash
+   ```sh
    RUST_LOG=debug rhizome serve 2>&1 | grep "project.root"
    ```
 
 2. Verify project config exists:
-   ```bash
+   ```sh
    cat <project>/.rhizome/config.toml
    ```
 
@@ -513,18 +521,17 @@ server_args = ["--no-default-features"]  # Reduce memory
 ### Environment variable not taking effect
 
 1. Verify variable is set:
-   ```bash
-   echo $RHIZOME_DISABLE_LSP_DOWNLOAD
+   ```sh
+   printenv RHIZOME_DISABLE_LSP_DOWNLOAD
    ```
 
 2. Verify it's exported (for subprocesses):
-   ```bash
+   ```sh
    export RHIZOME_DISABLE_LSP_DOWNLOAD=1
    ```
 
 3. Restart Rhizome after changing:
-   ```bash
-   pkill rhizome
+   ```sh
    RHIZOME_DISABLE_LSP_DOWNLOAD=1 rhizome serve
    ```
 
@@ -532,7 +539,7 @@ server_args = ["--no-default-features"]  # Reduce memory
 
 1. **Environment variables** (e.g., `RHIZOME_DISABLE_LSP_DOWNLOAD=1`)
 2. **Project config** (`<project>/.rhizome/config.toml`)
-3. **Global config** (`~/.config/rhizome/config.toml`)
+3. **Global config** (`<platform config dir>/rhizome/config.toml`)
 4. **Built-in defaults** (Language enum defaults)
 
 Example: If `server_binary = "custom-ra"` in project config, but `server_binary = "rust-analyzer"` in global config, the project value wins.

@@ -224,9 +224,10 @@ pub fn run(fix: bool) -> Result<()> {
                     if stdout.contains("rhizome") {
                         pass("Registered in Claude Code CLI runtime");
                     } else {
-                        warn(
-                            "Not registered in Claude Code CLI runtime — run: claude mcp add --scope user rhizome -- rhizome serve --expanded",
-                        );
+                        warn(&format!(
+                            "Not registered in Claude Code CLI runtime — {}",
+                            registration_repair_hint(Editor::ClaudeCode)
+                        ));
                         warnings += 1;
                     }
                 }
