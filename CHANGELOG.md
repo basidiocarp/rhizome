@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.1] - 2026-03-26
+
+### Added
+
+- **Host-aware MCP setup output**: `rhizome init` now supports `--editor <host>` and can print paste-ready JSON or TOML snippets for Claude Code, Codex CLI, Cursor-family editors, and other supported MCP hosts.
+- **Per-host doctor repair guidance**: `rhizome doctor` now gives host-specific next steps when MCP registration is missing, including the right `rhizome init --editor ...` command for each detected host.
+
+### Changed
+
+- **Platform-aware path resolution**: Rhizome now uses shared `spore` path/config helpers for global config loading, managed LSP bin directories, and path reporting instead of hand-rolled Unix-shaped logic.
+- **Windows-safe managed PATH**: LSP installer PATH augmentation now uses platform-safe path joining instead of hardcoded `:` separators.
+- **Multi-host MCP diagnostics**: `rhizome doctor` now inspects detected editor/host configs, including Codex TOML config, rather than only checking Claude Code CLI registration.
+- **Spore v0.4.3**: Rhizome now targets the current released `spore` tag.
+
+### Fixed
+
+- **Pip fallback portability**: Rhizome now retries Python package installation without `--break-system-packages` when that flag is unsupported, avoiding a Linux-specific failure mode on other platforms.
+
 ## [0.6.0] - 2026-03-23
 
 ### Added
