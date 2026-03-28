@@ -13,7 +13,7 @@ This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../ROAD
 - Rename preview via LSP workspace-edit summaries before applying changes.
 - Initial symbol impact summaries that group references by affected file and report local callers/callees plus same-name project symbols.
 - Capability-aware impact summaries that disclose heuristic confidence and scope on non-LSP backends.
-- Scoped workspace search caching with in-process reuse plus persistent on-disk index files and modified/deleted file invalidation.
+- Scoped workspace search caching with in-process reuse plus versioned persistent on-disk index files and modified/deleted file invalidation.
 - Scope-aware symbol identity in tree-sitter and LSP outputs so methods and nested symbols keep container context.
 - Expanded tree-sitter query coverage beyond the original small core set.
 - Existing rename and workspace-edit foundation, symbol move and copy MVP, and worktree-aware cache partitioning remain in place.

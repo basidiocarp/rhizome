@@ -26,6 +26,7 @@ use crate::symbols::extract_symbols;
 /// Key: (canonicalized path, file mtime). Capacity: 100 entries.
 type ParseCache = Mutex<LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>>;
 type WorkspaceCache = Mutex<LruCache<PathBuf, WorkspaceSymbolIndex>>;
+const WORKSPACE_INDEX_SCHEMA_VERSION: u32 = 1;
 
 fn shared_cache() -> &'static ParseCache {
     // Lazy-initialized static cache - created once per process lifetime
@@ -38,15 +39,32 @@ fn workspace_cache() -> &'static WorkspaceCache {
     CACHE.get_or_init(|| Mutex::new(LruCache::new(std::num::NonZeroUsize::new(16).unwrap())))
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct WorkspaceSymbolIndex {
+    #[serde(default = "workspace_index_schema_version")]
+    schema_version: u32,
     files: HashMap<String, IndexedFileSymbols>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct IndexedFileSymbols {
-    mtime_nanos: u128,
+    fingerprint: FileFingerprint,
     symbols: Vec<Symbol>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct FileFingerprint {
+    modified_nanos: u128,
+    size_bytes: u64,
+}
+
+impl Default for WorkspaceSymbolIndex {
+    fn default() -> Self {
+        Self {
+            schema_version: WORKSPACE_INDEX_SCHEMA_VERSION,
+            files: HashMap::new(),
+        }
+    }
 }
 
 /// ─────────────────────────────────────────────────────────────────────────
@@ -181,25 +199,25 @@ impl TreeSitterBackend {
                     continue;
                 }
             };
-            let mtime_nanos = metadata
-                .modified()
-                .ok()
-                .and_then(system_time_to_nanos)
-                .unwrap_or(0);
+            let fingerprint = file_fingerprint(&metadata);
 
             let is_stale = index
                 .files
                 .get(&canonical_path_str)
-                .is_none_or(|entry| entry.mtime_nanos != mtime_nanos);
+                .is_none_or(|entry| entry.fingerprint != fingerprint);
             if !is_stale {
                 continue;
             }
 
             match self.get_symbols(&file) {
                 Ok(symbols) => {
-                    index
-                        .files
-                        .insert(canonical_path_str, IndexedFileSymbols { mtime_nanos, symbols });
+                    index.files.insert(
+                        canonical_path_str,
+                        IndexedFileSymbols {
+                            fingerprint,
+                            symbols,
+                        },
+                    );
                     index_changed = true;
                 }
                 Err(_) => {
@@ -240,6 +258,7 @@ impl TreeSitterBackend {
 
         content
             .and_then(|text| serde_json::from_str::<WorkspaceSymbolIndex>(&text).ok())
+            .filter(|snapshot| snapshot.schema_version == WORKSPACE_INDEX_SCHEMA_VERSION)
             .unwrap_or_default()
     }
 
@@ -256,6 +275,21 @@ impl TreeSitterBackend {
 
 fn scoped_legacy_workspace_index_path(project_root: &Path) -> PathBuf {
     scoped_cache_dir(project_root).join("workspace-symbols.json")
+}
+
+fn workspace_index_schema_version() -> u32 {
+    WORKSPACE_INDEX_SCHEMA_VERSION
+}
+
+fn file_fingerprint(metadata: &std::fs::Metadata) -> FileFingerprint {
+    FileFingerprint {
+        modified_nanos: metadata
+            .modified()
+            .ok()
+            .and_then(system_time_to_nanos)
+            .unwrap_or(0),
+        size_bytes: metadata.len(),
+    }
 }
 
 fn system_time_to_nanos(time: SystemTime) -> Option<u128> {
@@ -1311,6 +1345,11 @@ mod tests {
         clear_workspace_cache();
 
         let persisted = TreeSitterBackend::load_workspace_index(temp_dir.path());
+        assert_eq!(
+            persisted.schema_version,
+            WORKSPACE_INDEX_SCHEMA_VERSION,
+            "Persisted index should carry the current schema version"
+        );
         let canonical_path = std::fs::canonicalize(&file)
             .expect("Should canonicalize indexed file")
             .to_string_lossy()
@@ -1323,6 +1362,13 @@ mod tests {
             cached.symbols.iter().any(|symbol| symbol.name == "persisted"),
             "Persisted index should retain serialized symbols"
         );
+        assert_eq!(
+            cached.fingerprint.size_bytes,
+            std::fs::metadata(&file)
+                .expect("Should stat source file")
+                .len(),
+            "Persisted index should retain the file size fingerprint"
+        );
 
         let reloaded = backend
             .search_symbols("persisted", temp_dir.path())
@@ -1330,6 +1376,32 @@ mod tests {
         assert!(
             reloaded.iter().any(|symbol| symbol.name == "persisted"),
             "Reloaded search should recover from the scoped disk index"
+        );
+        clear_workspace_cache();
+    }
+
+    #[test]
+    fn test_workspace_search_cache_ignores_mismatched_snapshot_schema() {
+        clear_workspace_cache();
+        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let cache_path = TreeSitterBackend::workspace_index_path(temp_dir.path());
+        std::fs::create_dir_all(cache_path.parent().expect("Cache path should have parent"))
+            .expect("Failed to create scoped cache dir");
+        std::fs::write(
+            &cache_path,
+            r#"{"schema_version":999,"files":{"demo.rs":{"fingerprint":{"modified_nanos":1,"size_bytes":1},"symbols":[]}}}"#,
+        )
+        .expect("Failed to write mismatched snapshot");
+
+        let loaded = TreeSitterBackend::load_workspace_index(temp_dir.path());
+        assert_eq!(
+            loaded.schema_version,
+            WORKSPACE_INDEX_SCHEMA_VERSION,
+            "Mismatched snapshot schema should fall back to the default version"
+        );
+        assert!(
+            loaded.files.is_empty(),
+            "Mismatched snapshot schema should not be trusted"
         );
         clear_workspace_cache();
     }
