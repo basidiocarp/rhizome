@@ -247,6 +247,7 @@ mod tests {
             name: name.into(),
             kind,
             location: make_location(),
+            scope_path: vec![],
             signature: None,
             doc_comment: None,
             children: vec![],

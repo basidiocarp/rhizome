@@ -123,13 +123,13 @@ All 32 languages have LSP server configs. 20+ have auto-install recipes (npm, pi
 
 | Tool | Description |
 |------|-------------|
-| `get_symbols` | List all symbols in a file |
+| `get_symbols` | List all symbols in a file, including qualified names and stable ids |
 | `get_structure` | Hierarchical symbol tree with nesting depth control |
 | `get_definition` | Full symbol definition including body |
 | `get_symbol_body` | Source code body of a specific symbol |
 | `search_symbols` | Find symbols by name pattern across the project |
 | `find_references` | Find all references to a symbol |
-| `analyze_impact` | Summarize likely blast radius, callers, callees, and same-name project symbols |
+| `analyze_impact` | Summarize likely blast radius, callers, callees, and scope-aware same-name project symbols |
 | `go_to_definition` | Jump from usage to definition |
 | `get_signature` | Signature only (no body) |
 | `get_imports` | All import/use statements |

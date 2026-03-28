@@ -432,6 +432,7 @@ mod tests {
         assert!(impl_sym.is_some(), "Should find impl Config with children");
 
         let impl_sym = impl_sym.unwrap();
+        assert_eq!(impl_sym.qualified_name(), "Config");
         let method_names: Vec<&str> = impl_sym.children.iter().map(|c| c.name.as_str()).collect();
         assert!(
             method_names.contains(&"new"),
@@ -447,6 +448,12 @@ mod tests {
                 child.kind,
                 SymbolKind::Method,
                 "{} should be a Method",
+                child.name
+            );
+            assert_eq!(
+                child.scope_path,
+                vec!["Config".to_string()],
+                "{} should keep its container scope",
                 child.name
             );
         }

@@ -405,6 +405,7 @@ mod tests {
                 column_start: 1,
                 column_end: 10,
             },
+            scope_path: vec![],
             signature: Some("fn demo()".into()),
             doc_comment: None,
             children: Vec::new(),

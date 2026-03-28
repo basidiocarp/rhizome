@@ -46,12 +46,25 @@ pub fn lsp_range_to_location(range: &lsp_types::Range, file_path: &str) -> Locat
 }
 
 pub fn lsp_symbol_to_symbol(sym: &lsp_types::DocumentSymbol, file_path: &str) -> Symbol {
+    lsp_symbol_to_symbol_with_scope(sym, file_path, &[])
+}
+
+fn lsp_symbol_to_symbol_with_scope(
+    sym: &lsp_types::DocumentSymbol,
+    file_path: &str,
+    scope_path: &[String],
+) -> Symbol {
+    let child_scope = {
+        let mut next = scope_path.to_vec();
+        next.push(sym.name.clone());
+        next
+    };
     let children = sym
         .children
         .as_ref()
         .map(|c| {
             c.iter()
-                .map(|child| lsp_symbol_to_symbol(child, file_path))
+                .map(|child| lsp_symbol_to_symbol_with_scope(child, file_path, &child_scope))
                 .collect()
         })
         .unwrap_or_default();
@@ -60,6 +73,7 @@ pub fn lsp_symbol_to_symbol(sym: &lsp_types::DocumentSymbol, file_path: &str) ->
         name: sym.name.clone(),
         kind: lsp_symbol_kind_to_symbol_kind(sym.kind),
         location: lsp_range_to_location(&sym.range, file_path),
+        scope_path: scope_path.to_vec(),
         signature: sym.detail.clone(),
         doc_comment: None,
         children,
@@ -76,6 +90,11 @@ pub fn lsp_symbol_info_to_symbol(sym: &lsp_types::SymbolInformation) -> Symbol {
         name: sym.name.clone(),
         kind: lsp_symbol_kind_to_symbol_kind(sym.kind),
         location: lsp_location_to_location(&sym.location),
+        scope_path: sym
+            .container_name
+            .clone()
+            .map(|container| vec![container])
+            .unwrap_or_default(),
         signature: sym.container_name.clone(),
         doc_comment: None,
         children: vec![],
@@ -308,6 +327,7 @@ mod tests {
 
         let symbol = lsp_symbol_to_symbol(&parent, "src/lib.rs");
         assert_eq!(symbol.name, "MyStruct");
+        assert_eq!(symbol.qualified_name(), "MyStruct");
         assert_eq!(symbol.kind, SymbolKind::Struct);
         assert_eq!(symbol.location.line_start, 1);
         assert_eq!(symbol.location.line_end, 6);
@@ -316,6 +336,8 @@ mod tests {
 
         let child_sym = &symbol.children[0];
         assert_eq!(child_sym.name, "field_a");
+        assert_eq!(child_sym.scope_path, vec!["MyStruct".to_string()]);
+        assert_eq!(child_sym.qualified_name(), "MyStruct::field_a");
         assert_eq!(child_sym.kind, SymbolKind::Field);
         assert_eq!(child_sym.signature, Some("u32".to_string()));
         assert!(child_sym.children.is_empty());

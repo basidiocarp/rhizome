@@ -4,6 +4,12 @@ use streaming_iterator::StreamingIterator;
 
 use crate::queries;
 
+fn extend_scope_path(scope_path: &[String], name: &str) -> Vec<String> {
+    let mut next = scope_path.to_vec();
+    next.push(name.to_string());
+    next
+}
+
 pub fn extract_symbols(
     tree: &tree_sitter::Tree,
     source: &[u8],
@@ -78,9 +84,10 @@ pub fn extract_symbols(
 
         let signature = extract_signature(node, source, language);
         let doc_comment = extract_doc_comment(node, source);
+        let scope_path = Vec::new();
 
         let children = if capture_kind == "impl_def" {
-            extract_impl_children(node, source, file_path)?
+            extract_impl_children(node, source, file_path, &extend_scope_path(&scope_path, &name_text))?
         } else {
             Vec::new()
         };
@@ -89,6 +96,7 @@ pub fn extract_symbols(
             name: name_text,
             kind,
             location,
+            scope_path,
             signature,
             doc_comment,
             children,
@@ -295,6 +303,7 @@ fn extract_symbols_generic(
                     column_start: child.start_position().column as u32,
                     column_end: child.end_position().column as u32,
                 },
+                scope_path: Vec::new(),
                 signature: first_line,
                 doc_comment: extract_doc_comment(child, source),
                 children: Vec::new(),
@@ -309,6 +318,12 @@ fn extract_symbols_generic(
                 if name.is_empty() {
                     continue;
                 }
+                let parent_name = extract_node_name(child, source);
+                let scope_path = if parent_name.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![parent_name]
+                };
 
                 let first_line = grandchild
                     .utf8_text(source)
@@ -325,6 +340,7 @@ fn extract_symbols_generic(
                         column_start: grandchild.start_position().column as u32,
                         column_end: grandchild.end_position().column as u32,
                     },
+                    scope_path,
                     signature: first_line,
                     doc_comment: extract_doc_comment(grandchild, source),
                     children: Vec::new(),
@@ -340,6 +356,7 @@ fn extract_impl_children(
     node: tree_sitter::Node,
     source: &[u8],
     file_path: &str,
+    scope_path: &[String],
 ) -> Result<Vec<Symbol>> {
     let mut methods = Vec::new();
 
@@ -367,6 +384,7 @@ fn extract_impl_children(
                             name,
                             kind: SymbolKind::Method,
                             location,
+                            scope_path: scope_path.to_vec(),
                             signature,
                             doc_comment,
                             children: Vec::new(),

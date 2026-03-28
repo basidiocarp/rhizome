@@ -475,6 +475,7 @@ mod tests {
                 column_start: 0,
                 column_end: 0,
             },
+            scope_path: vec![],
             signature: None,
             doc_comment: None,
             children: vec![],

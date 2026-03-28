@@ -327,6 +327,11 @@ impl CodeIntelligence for LspBackend {
                                             ws.kind,
                                         ),
                                         location,
+                                        scope_path: ws
+                                            .container_name
+                                            .clone()
+                                            .map(|container| vec![container])
+                                            .unwrap_or_default(),
                                         signature: ws.container_name.clone(),
                                         doc_comment: None,
                                         children: vec![],

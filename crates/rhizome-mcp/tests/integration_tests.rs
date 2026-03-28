@@ -275,6 +275,12 @@ fn test_analyze_impact() {
         "Should include project-wide same-name symbol matches: {text}"
     );
     assert!(
+        text.contains("\"qualified_name\": \"process\"")
+            && text.contains("\"stable_id\"")
+            && text.contains("\"exact_scope_matches\""),
+        "Should expose scope-aware symbol identity in impact output: {text}"
+    );
+    assert!(
         text.contains("\"risk_scope\": \"file\"")
             && text.contains("\"confidence\": \"heuristic\"")
             && text.contains("\"cross_file_references\": false"),

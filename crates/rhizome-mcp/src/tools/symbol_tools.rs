@@ -349,6 +349,8 @@ pub fn get_symbols(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value
 fn flatten_symbol(sym: &Symbol) -> Vec<Value> {
     let mut results = vec![json!({
         "name": sym.name,
+        "qualified_name": sym.qualified_name(),
+        "stable_id": sym.stable_id(),
         "kind": format!("{:?}", sym.kind),
         "location": {
             "file": &sym.location.file_path,
@@ -416,6 +418,8 @@ pub fn get_definition(backend: &dyn CodeIntelligence, args: &Value) -> Result<Va
             let body = read_symbol_body(path, &sym, full)?;
             let result = json!({
                 "name": sym.name,
+                "qualified_name": sym.qualified_name(),
+                "stable_id": sym.stable_id(),
                 "kind": format!("{:?}", sym.kind),
                 "signature": sym.signature,
                 "doc_comment": sym.doc_comment,
@@ -556,6 +560,7 @@ pub fn analyze_impact(
 
     let definition = backend.get_definition(path, &symbol_name)?;
     let definition_location = definition.as_ref().map(|symbol| &symbol.location);
+    let definition_qualified_name = definition.as_ref().map(Symbol::qualified_name);
     let references = backend
         .find_references(path, &pos)?
         .into_iter()
@@ -569,12 +574,29 @@ pub fn analyze_impact(
         .into_iter()
         .filter(|symbol| {
             symbol.name == symbol_name
-                && definition.as_ref().is_none_or(|definition_symbol| {
-                    symbol.location.file_path != definition_symbol.location.file_path
-                        || symbol.location.line_start != definition_symbol.location.line_start
-                        || symbol.location.column_start != definition_symbol.location.column_start
-                })
+                && definition
+                    .as_ref()
+                    .is_none_or(|definition_symbol| symbol.stable_id() != definition_symbol.stable_id())
         })
+        .collect::<Vec<_>>();
+    let exact_scope_matches = definition_qualified_name
+        .as_ref()
+        .map(|qualified_name| {
+            related_symbols
+                .iter()
+                .filter(|symbol| symbol.qualified_name() == *qualified_name)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let ambiguous_same_name_symbols = related_symbols
+        .iter()
+        .filter(|symbol| {
+            definition_qualified_name
+                .as_ref()
+                .is_none_or(|qualified_name| symbol.qualified_name() != *qualified_name)
+        })
+        .cloned()
         .collect::<Vec<_>>();
 
     let mut references_by_file: Vec<(String, usize)> = Vec::new();
@@ -627,13 +649,14 @@ pub fn analyze_impact(
     if has_test_touchpoints {
         risk_factors.push("touches tests".to_string());
     }
-    if !related_symbols.is_empty() {
-        risk_factors.push("same-name symbols elsewhere in project".to_string());
+    if !exact_scope_matches.is_empty() {
+        risk_factors.push("same scoped symbol elsewhere in project".to_string());
     }
     if !capabilities.cross_file_references {
         risk_factors.push("cross-file references unavailable in backend".to_string());
     }
-    if !related_symbols.is_empty() {
+    if !ambiguous_same_name_symbols.is_empty() {
+        risk_factors.push("same-name symbols elsewhere in project".to_string());
         risk_factors.push("related symbol matching is name-based".to_string());
     }
     let risk = if affected_files == 0 || (affected_files <= 1 && total_references <= 2) {
@@ -671,6 +694,8 @@ pub fn analyze_impact(
         "definition": definition.as_ref().map(|symbol| {
             json!({
                 "name": symbol.name,
+                "qualified_name": symbol.qualified_name(),
+                "stable_id": symbol.stable_id(),
                 "kind": format!("{:?}", symbol.kind),
                 "file": symbol.location.file_path,
                 "line_start": symbol.location.line_start,
@@ -696,11 +721,27 @@ pub fn analyze_impact(
         "local_callers": local_callers,
         "local_callees": local_callees,
         "has_test_touchpoints": has_test_touchpoints,
+        "exact_scope_matches": exact_scope_matches
+            .iter()
+            .map(|symbol| {
+                json!({
+                    "name": symbol.name,
+                    "qualified_name": symbol.qualified_name(),
+                    "stable_id": symbol.stable_id(),
+                    "kind": format!("{:?}", symbol.kind),
+                    "file": symbol.location.file_path,
+                    "line_start": symbol.location.line_start,
+                    "line_end": symbol.location.line_end,
+                })
+            })
+            .collect::<Vec<_>>(),
         "related_symbols": related_symbols
             .iter()
             .map(|symbol| {
                 json!({
                     "name": symbol.name,
+                    "qualified_name": symbol.qualified_name(),
+                    "stable_id": symbol.stable_id(),
                     "kind": format!("{:?}", symbol.kind),
                     "file": symbol.location.file_path,
                     "line_start": symbol.location.line_start,
@@ -819,6 +860,8 @@ pub fn go_to_definition(backend: &dyn CodeIntelligence, args: &Value) -> Result<
         Some(sym) => {
             let result = json!({
                 "name": sym.name,
+                "qualified_name": sym.qualified_name(),
+                "stable_id": sym.stable_id(),
                 "kind": format!("{:?}", sym.kind),
                 "file": &sym.location.file_path,
                 "line_start": sym.location.line_start,
@@ -1392,9 +1435,11 @@ pub fn get_diff_symbols(
         let mut matched_symbols = std::collections::HashSet::new();
         for &line in changed_lines {
             if let Some(sym) = find_innermost_scope(&symbols, line) {
-                if matched_symbols.insert(sym.name.clone()) {
+                if matched_symbols.insert(sym.stable_id()) {
                     results.push(json!({
                         "name": sym.name,
+                        "qualified_name": sym.qualified_name(),
+                        "stable_id": sym.stable_id(),
                         "kind": format!("{:?}", sym.kind),
                         "file": rel_path,
                         "line_start": sym.location.line_start,
@@ -1939,6 +1984,8 @@ pub fn get_symbol_body(backend: &dyn CodeIntelligence, args: &Value) -> Result<V
 
     let result = json!({
         "name": sym.name,
+        "qualified_name": sym.qualified_name(),
+        "stable_id": sym.stable_id(),
         "kind": format!("{:?}", sym.kind),
         "body": body,
     });
