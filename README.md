@@ -77,7 +77,7 @@ command = "rhizome"
 args = ["serve"]
 ```
 
-Rhizome uses platform-specific config and data directories. Use `rhizome status` to see the resolved managed bin directory on the current machine.
+Rhizome uses platform-specific config and data directories. Use `rhizome status` to see the resolved managed bin directory on the current machine. Project-scoped workspace symbol caches are stored under `.rhizome/` with worktree-aware partitioning.
 
 ## Supported Languages
 

@@ -6,7 +6,11 @@ pub fn global_config_path() -> PathBuf {
 }
 
 pub fn project_config_path(project_root: &Path) -> PathBuf {
-    project_root.join(".rhizome").join("config.toml")
+    project_state_dir(project_root).join("config.toml")
+}
+
+pub fn project_state_dir(project_root: &Path) -> PathBuf {
+    project_root.join(".rhizome")
 }
 
 pub fn managed_bin_dir() -> PathBuf {
@@ -37,6 +41,15 @@ mod tests {
         assert_eq!(
             project_config_path(root),
             PathBuf::from("/tmp/demo-project/.rhizome/config.toml")
+        );
+    }
+
+    #[test]
+    fn project_state_dir_uses_dot_rhizome_dir() {
+        let root = Path::new("/tmp/demo-project");
+        assert_eq!(
+            project_state_dir(root),
+            PathBuf::from("/tmp/demo-project/.rhizome")
         );
     }
 

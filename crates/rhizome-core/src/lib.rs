@@ -23,7 +23,9 @@ pub use graph::{CodeGraph, ConceptEdge, ConceptNode};
 pub use hyphae::ExportResult;
 pub use installer::{install_recipe, LspInstaller};
 pub use language::{Language, LanguageServerConfig};
-pub use paths::{augmented_path, global_config_path, managed_bin_dir, project_config_path};
+pub use paths::{
+    augmented_path, global_config_path, managed_bin_dir, project_config_path, project_state_dir,
+};
 pub use project_summary::{summarize_project, EntryPoint, ModuleSummary, ProjectSummary};
 pub use root_detector::detect_workspace_root;
 pub use symbol::{Location, Symbol, SymbolKind};

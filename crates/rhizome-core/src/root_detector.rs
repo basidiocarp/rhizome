@@ -171,7 +171,7 @@ fn detect_generic_root(start: &Path, language: &Language, stop_at: &Path) -> Pat
     let mut dir = start;
     loop {
         for marker in markers {
-            if dir.join(marker).exists() {
+            if dir_matches_marker(dir, marker) {
                 return dir.to_path_buf();
             }
         }
@@ -185,6 +185,25 @@ fn detect_generic_root(start: &Path, language: &Language, stop_at: &Path) -> Pat
         }
     }
     fallback_root(start, stop_at)
+}
+
+fn dir_matches_marker(dir: &Path, marker: &str) -> bool {
+    if let Some(suffix) = marker.strip_prefix("*.") {
+        return std::fs::read_dir(dir)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.ok())
+            .any(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext == suffix)
+            });
+    }
+
+    dir.join(marker).exists()
 }
 
 /// Walk up from `start` looking for a specific file, stopping at `stop_at`.
@@ -340,5 +359,33 @@ mod tests {
             &worktree_root,
         );
         assert_eq!(detected, worktree_root);
+    }
+
+    #[test]
+    fn haskell_root_detection_supports_cabal_wildcards() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        fs::write(root.join("demo.cabal"), "name: demo").unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        let file = root.join("src/Main.hs");
+        fs::write(&file, "main = putStrLn \"hi\"").unwrap();
+
+        let detected = detect_workspace_root(&file, &Language::Haskell, root);
+        assert_eq!(detected, root);
+    }
+
+    #[test]
+    fn ocaml_root_detection_supports_opam_wildcards() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        fs::write(root.join("demo.opam"), "opam-version: \"2.0\"").unwrap();
+        fs::create_dir_all(root.join("lib")).unwrap();
+        let file = root.join("lib/main.ml");
+        fs::write(&file, "let () = print_endline \"hi\"").unwrap();
+
+        let detected = detect_workspace_root(&file, &Language::OCaml, root);
+        assert_eq!(detected, root);
     }
 }

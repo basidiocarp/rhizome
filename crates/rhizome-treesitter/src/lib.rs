@@ -5,14 +5,16 @@ pub mod symbols;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ignore::WalkBuilder;
 use lru::LruCache;
 use rhizome_core::{
+    export_cache::{scoped_cache_dir, scoped_cache_path},
     BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Result,
     RhizomeError, Symbol, SymbolKind,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::parser::ParserPool;
 use crate::symbols::extract_symbols;
@@ -36,14 +38,14 @@ fn workspace_cache() -> &'static WorkspaceCache {
     CACHE.get_or_init(|| Mutex::new(LruCache::new(std::num::NonZeroUsize::new(16).unwrap())))
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct WorkspaceSymbolIndex {
-    files: HashMap<PathBuf, IndexedFileSymbols>,
+    files: HashMap<String, IndexedFileSymbols>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct IndexedFileSymbols {
-    mtime: SystemTime,
+    mtime_nanos: u128,
     symbols: Vec<Symbol>,
 }
 
@@ -153,31 +155,42 @@ impl TreeSitterBackend {
         let canonical_root = Self::canonical_project_root(project_root);
         let mut index = {
             let mut cache = workspace_cache().lock().unwrap_or_else(|p| p.into_inner());
-            cache.get(&canonical_root).cloned().unwrap_or_default()
+            cache.get(&canonical_root)
+                .cloned()
+                .unwrap_or_else(|| Self::load_workspace_index(project_root))
         };
+        let mut index_changed = false;
 
         let files = Self::supported_source_files(project_root);
         let current_paths = files
             .iter()
             .map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.clone()))
+            .map(|path| path.to_string_lossy().into_owned())
             .collect::<HashSet<_>>();
+        let original_len = index.files.len();
         index.files.retain(|path, _| current_paths.contains(path));
+        index_changed |= original_len != index.files.len();
 
         for file in files {
             let canonical_path = std::fs::canonicalize(&file).unwrap_or_else(|_| file.clone());
+            let canonical_path_str = canonical_path.to_string_lossy().into_owned();
             let metadata = match std::fs::metadata(&file) {
                 Ok(metadata) => metadata,
                 Err(_) => {
-                    index.files.remove(&canonical_path);
+                    index_changed |= index.files.remove(&canonical_path_str).is_some();
                     continue;
                 }
             };
-            let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+            let mtime_nanos = metadata
+                .modified()
+                .ok()
+                .and_then(system_time_to_nanos)
+                .unwrap_or(0);
 
             let is_stale = index
                 .files
-                .get(&canonical_path)
-                .is_none_or(|entry| entry.mtime != mtime);
+                .get(&canonical_path_str)
+                .is_none_or(|entry| entry.mtime_nanos != mtime_nanos);
             if !is_stale {
                 continue;
             }
@@ -186,10 +199,11 @@ impl TreeSitterBackend {
                 Ok(symbols) => {
                     index
                         .files
-                        .insert(canonical_path, IndexedFileSymbols { mtime, symbols });
+                        .insert(canonical_path_str, IndexedFileSymbols { mtime_nanos, symbols });
+                    index_changed = true;
                 }
                 Err(_) => {
-                    index.files.remove(&canonical_path);
+                    index_changed |= index.files.remove(&canonical_path_str).is_some();
                 }
             }
         }
@@ -197,6 +211,9 @@ impl TreeSitterBackend {
         {
             let mut cache = workspace_cache().lock().unwrap_or_else(|p| p.into_inner());
             cache.put(canonical_root, index.clone());
+        }
+        if index_changed {
+            let _ = Self::save_workspace_index(project_root, &index);
         }
 
         let pattern_lower = pattern.to_lowercase();
@@ -209,6 +226,48 @@ impl TreeSitterBackend {
 
         Ok(all_symbols)
     }
+
+    fn workspace_index_path(project_root: &Path) -> PathBuf {
+        scoped_cache_path(project_root, "workspace-symbols")
+    }
+
+    fn load_workspace_index(project_root: &Path) -> WorkspaceSymbolIndex {
+        let path = Self::workspace_index_path(project_root);
+        let legacy_path = scoped_legacy_workspace_index_path(project_root);
+        let content = std::fs::read_to_string(&path)
+            .or_else(|_| std::fs::read_to_string(&legacy_path))
+            .ok();
+
+        content
+            .and_then(|text| serde_json::from_str::<WorkspaceSymbolIndex>(&text).ok())
+            .unwrap_or_default()
+    }
+
+    fn save_workspace_index(project_root: &Path, index: &WorkspaceSymbolIndex) -> Result<()> {
+        let dir = scoped_cache_dir(project_root);
+        std::fs::create_dir_all(&dir)?;
+        let path = Self::workspace_index_path(project_root);
+        let json = serde_json::to_string_pretty(index)
+            .map_err(|error| RhizomeError::Other(format!("Failed to serialize workspace index: {error}")))?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+}
+
+fn scoped_legacy_workspace_index_path(project_root: &Path) -> PathBuf {
+    scoped_cache_dir(project_root).join("workspace-symbols.json")
+}
+
+fn system_time_to_nanos(time: SystemTime) -> Option<u128> {
+    time.duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_nanos())
+}
+
+#[cfg(test)]
+fn clear_workspace_cache() {
+    let mut cache = workspace_cache().lock().unwrap_or_else(|p| p.into_inner());
+    cache.clear();
 }
 
 impl Default for TreeSitterBackend {
@@ -1160,6 +1219,7 @@ mod tests {
         use std::fs::File;
         use std::io::Write;
 
+        clear_workspace_cache();
         let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
         let file = temp_dir.path().join("sample.rs");
         {
@@ -1201,10 +1261,12 @@ mod tests {
             refreshed.iter().any(|symbol| symbol.name == "beta"),
             "Workspace search cache should refresh beta results"
         );
+        clear_workspace_cache();
     }
 
     #[test]
     fn test_workspace_search_cache_drops_deleted_files() {
+        clear_workspace_cache();
         let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
         let file = temp_dir.path().join("delete_me.rs");
         std::fs::write(&file, "fn gone() {}\n").expect("Failed to write source file");
@@ -1224,5 +1286,51 @@ mod tests {
             refreshed.is_empty(),
             "Workspace search cache should drop deleted files: {refreshed:?}"
         );
+        clear_workspace_cache();
+    }
+
+    #[test]
+    fn test_workspace_search_cache_persists_to_scoped_disk_index() {
+        clear_workspace_cache();
+        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let file = temp_dir.path().join("persist.rs");
+        std::fs::write(&file, "fn persisted() {}\n").expect("Failed to write source file");
+
+        let backend = TreeSitterBackend::new();
+        let symbols = backend
+            .search_symbols("persisted", temp_dir.path())
+            .expect("Initial search should succeed");
+        assert_eq!(symbols.len(), 1, "Should find persisted symbol");
+
+        let cache_path = TreeSitterBackend::workspace_index_path(temp_dir.path());
+        assert!(
+            cache_path.exists(),
+            "Workspace search should persist a scoped index file"
+        );
+
+        clear_workspace_cache();
+
+        let persisted = TreeSitterBackend::load_workspace_index(temp_dir.path());
+        let canonical_path = std::fs::canonicalize(&file)
+            .expect("Should canonicalize indexed file")
+            .to_string_lossy()
+            .into_owned();
+        let cached = persisted
+            .files
+            .get(&canonical_path)
+            .expect("Persisted index should contain the source file");
+        assert!(
+            cached.symbols.iter().any(|symbol| symbol.name == "persisted"),
+            "Persisted index should retain serialized symbols"
+        );
+
+        let reloaded = backend
+            .search_symbols("persisted", temp_dir.path())
+            .expect("Search should succeed after in-process cache reset");
+        assert!(
+            reloaded.iter().any(|symbol| symbol.name == "persisted"),
+            "Reloaded search should recover from the scoped disk index"
+        );
+        clear_workspace_cache();
     }
 }

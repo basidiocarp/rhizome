@@ -6,6 +6,21 @@ use std::time::UNIX_EPOCH;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+use crate::paths::project_state_dir;
+
+pub fn scoped_cache_dir(project_root: &Path) -> PathBuf {
+    project_state_dir(project_root)
+}
+
+pub fn scoped_cache_path(project_root: &Path, prefix: &str) -> PathBuf {
+    let dir = scoped_cache_dir(project_root);
+    let scope = cache_scope(project_root);
+    dir.join(format!("{prefix}-{scope}.json"))
+}
+
+pub fn scoped_legacy_cache_path(project_root: &Path, file_name: &str) -> PathBuf {
+    scoped_cache_dir(project_root).join(file_name)
+}
 
 /// Mtime-based file change cache for incremental exports.
 ///
@@ -30,14 +45,12 @@ impl ExportCache {
     /// The cache is scoped by project path plus git metadata so separate
     /// worktrees or branch checkouts do not share the same export state.
     pub fn cache_path(project_root: &Path) -> std::path::PathBuf {
-        let dir = project_root.join(".rhizome");
-        let scope = cache_scope(project_root);
-        dir.join(format!("cache-{scope}.json"))
+        scoped_cache_path(project_root, "cache")
     }
 
     /// Legacy cache path used before context-aware partitioning.
     pub fn legacy_cache_path(project_root: &Path) -> std::path::PathBuf {
-        project_root.join(".rhizome").join("cache.json")
+        scoped_legacy_cache_path(project_root, "cache.json")
     }
 
     /// Loads cache from the scoped path under `project_root`.
@@ -64,7 +77,7 @@ impl ExportCache {
     /// Saves cache to the scoped path under `project_root`.
     /// Creates the `.rhizome/` directory if it doesn't exist.
     pub fn save(&self, project_root: &Path) -> Result<()> {
-        let dir = project_root.join(".rhizome");
+        let dir = scoped_cache_dir(project_root);
         std::fs::create_dir_all(&dir)?;
         let path = Self::cache_path(project_root);
         let json = serde_json::to_string_pretty(self)?;
@@ -117,9 +130,11 @@ impl Default for ExportCache {
 
 fn cache_scope(project_root: &Path) -> String {
     let mut hasher = DefaultHasher::new();
-    project_root.to_string_lossy().hash(&mut hasher);
+    let normalized_root =
+        std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
+    normalized_root.to_string_lossy().hash(&mut hasher);
 
-    if let Some(git_marker) = find_git_marker(project_root) {
+    if let Some(git_marker) = find_git_marker(&normalized_root) {
         if let Some((git_dir, head)) = git_context(&git_marker) {
             git_dir.hash(&mut hasher);
             head.hash(&mut hasher);
@@ -377,5 +392,19 @@ mod tests {
         let path2 = ExportCache::cache_path(&project_root2);
 
         assert_ne!(path1, path2);
+    }
+
+    #[test]
+    fn cache_path_normalizes_project_root_aliases() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("repo");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::write(root.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let direct = ExportCache::cache_path(&root);
+        let aliased = ExportCache::cache_path(&root.join("."));
+
+        assert_eq!(direct, aliased);
     }
 }
