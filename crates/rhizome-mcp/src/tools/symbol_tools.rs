@@ -77,6 +77,19 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
             }),
         },
         ToolSchema {
+            name: "analyze_impact".into(),
+            description: "Estimate change impact for the symbol at a given position".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "line": { "type": "number", "description": "Line number (0-based)" },
+                    "column": { "type": "number", "description": "Column number (0-based)" }
+                },
+                "required": ["file", "line", "column"]
+            }),
+        },
+        ToolSchema {
             name: "go_to_definition".into(),
             description: "Find the definition of the symbol at a given position".into(),
             input_schema: json!({
@@ -513,6 +526,116 @@ pub fn find_references(backend: &dyn CodeIntelligence, args: &Value) -> Result<V
 
     let text = serde_json::to_string_pretty(&formatted)?;
     Ok(tool_response(&text))
+}
+
+/// Estimate the local/project impact of changing the symbol at a given position.
+pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+    let file = required_str(args, "file")?;
+    let line = required_u32(args, "line")?;
+    let column = required_u32(args, "column")?;
+
+    let path = Path::new(file);
+    let pos = Position { line, column };
+    let source = std::fs::read_to_string(path)?;
+    let lines: Vec<&str> = source.lines().collect();
+    let line_idx = line as usize;
+
+    if line_idx >= lines.len() {
+        return Ok(tool_response("Position is beyond end of file"));
+    }
+
+    let symbol_name = extract_identifier_at(lines[line_idx], column as usize);
+    if symbol_name.is_empty() {
+        return Ok(tool_response("No identifier at the given position"));
+    }
+
+    let definition = backend.get_definition(path, &symbol_name)?;
+    let definition_location = definition.as_ref().map(|symbol| &symbol.location);
+    let references = backend
+        .find_references(path, &pos)?
+        .into_iter()
+        .filter(|loc| !is_definition_location(definition_location, loc))
+        .collect::<Vec<_>>();
+
+    let mut references_by_file: Vec<(String, usize)> = Vec::new();
+    for location in &references {
+        if let Some((_, count)) = references_by_file
+            .iter_mut()
+            .find(|(file_path, _)| file_path == &location.file_path)
+        {
+            *count += 1;
+        } else {
+            references_by_file.push((location.file_path.clone(), 1));
+        }
+    }
+    references_by_file.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let affected_files = references_by_file.len();
+    let total_references = references.len();
+    let risk = if affected_files == 0 || (affected_files <= 1 && total_references <= 2) {
+        "low"
+    } else if affected_files <= 3 && total_references <= 6 {
+        "medium"
+    } else {
+        "high"
+    };
+
+    let summary = if total_references == 0 {
+        format!(
+            "Changing {symbol_name} has no additional references in the current analysis scope."
+        )
+    } else {
+        format!(
+            "Changing {symbol_name} affects {total_references} reference(s) across {affected_files} file(s)."
+        )
+    };
+
+    let result = json!({
+        "symbol": symbol_name,
+        "definition": definition.as_ref().map(|symbol| {
+            json!({
+                "name": symbol.name,
+                "kind": format!("{:?}", symbol.kind),
+                "file": symbol.location.file_path,
+                "line_start": symbol.location.line_start,
+                "line_end": symbol.location.line_end,
+                "column_start": symbol.location.column_start,
+                "column_end": symbol.location.column_end,
+                "signature": symbol.signature,
+            })
+        }),
+        "summary": summary,
+        "risk": risk,
+        "affected_files": affected_files,
+        "total_references": total_references,
+        "references_by_file": references_by_file
+            .into_iter()
+            .map(|(file_path, count)| {
+                json!({
+                    "file": file_path,
+                    "count": count,
+                })
+            })
+            .collect::<Vec<_>>(),
+    });
+
+    Ok(tool_response(&serde_json::to_string_pretty(&result)?))
+}
+
+fn is_definition_location(
+    definition: Option<&rhizome_core::Location>,
+    candidate: &rhizome_core::Location,
+) -> bool {
+    match definition {
+        Some(location) => {
+            location.file_path == candidate.file_path
+                && location.line_start == candidate.line_start
+                && location.line_end == candidate.line_end
+                && location.column_start == candidate.column_start
+                && location.column_end == candidate.column_end
+        }
+        None => false,
+    }
 }
 
 /// Find the definition of the symbol at a given position.

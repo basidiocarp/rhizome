@@ -22,10 +22,10 @@ fn make_dispatcher() -> ToolDispatcher {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_list_tools_returns_37_tools() {
+fn test_list_tools_returns_38_tools() {
     let dispatcher = make_dispatcher();
     let tools = dispatcher.list_tools();
-    assert_eq!(tools.len(), 37, "Expected 37 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 38, "Expected 38 tools, got {}", tools.len());
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"get_symbols"));
@@ -33,6 +33,7 @@ fn test_list_tools_returns_37_tools() {
     assert!(names.contains(&"get_definition"));
     assert!(names.contains(&"search_symbols"));
     assert!(names.contains(&"find_references"));
+    assert!(names.contains(&"analyze_impact"));
     assert!(names.contains(&"go_to_definition"));
     assert!(names.contains(&"get_signature"));
     assert!(names.contains(&"get_imports"));
@@ -243,6 +244,27 @@ fn test_find_references() {
     assert!(
         text.contains("line_start"),
         "Should return reference locations: {text}"
+    );
+}
+
+#[test]
+fn test_analyze_impact() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "analyze_impact",
+            json!({ "file": fixture_path("sample.rs"), "line": 2, "column": 11 }),
+        )
+        .expect("analyze_impact should succeed");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("\"symbol\": \"Config\""),
+        "Should analyze Config: {text}"
+    );
+    assert!(
+        text.contains("\"summary\"") && text.contains("\"references_by_file\""),
+        "Should include impact summary and grouped references: {text}"
     );
 }
 
@@ -928,7 +950,7 @@ fn test_unified_mode_tools_list_returns_one_tool() {
 }
 
 #[test]
-fn test_expanded_mode_tools_list_returns_37_tools() {
+fn test_expanded_mode_tools_list_returns_38_tools() {
     let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let server = rhizome_mcp::McpServer::new(project_root, false);
 
@@ -947,8 +969,8 @@ fn test_expanded_mode_tools_list_returns_37_tools() {
         .expect("Should have tools array");
     assert_eq!(
         tools.len(),
-        37,
-        "Expanded mode should return 37 tools, got {}",
+        38,
+        "Expanded mode should return 38 tools, got {}",
         tools.len()
     );
 }

@@ -102,6 +102,15 @@ impl ToolDispatcher {
                     |lsp, a| symbol_tools::find_references(lsp, a),
                 )
             }
+            "analyze_impact" => {
+                let ts = &self.treesitter;
+                self.dispatch_auto(
+                    name,
+                    &args,
+                    |a| symbol_tools::analyze_impact(ts, a),
+                    |lsp, a| symbol_tools::analyze_impact(lsp, a),
+                )
+            }
             "get_diagnostics" => {
                 let ts = &self.treesitter;
                 self.dispatch_auto(
