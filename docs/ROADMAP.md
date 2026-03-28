@@ -11,7 +11,7 @@ This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../ROAD
 - Export-to-Hyphae memoir and code-graph path.
 - Export reliability improvements for path resolution, cache recovery, and explicit partial-failure reporting.
 - Rename preview via LSP workspace-edit summaries before applying changes.
-- Initial symbol impact summaries that group references by affected file and report local callers/callees.
+- Initial symbol impact summaries that group references by affected file and report local callers/callees plus same-name project symbols.
 - Expanded tree-sitter query coverage beyond the original small core set.
 - Existing rename and workspace-edit foundation, symbol move and copy MVP, and worktree-aware cache partitioning remain in place.
 

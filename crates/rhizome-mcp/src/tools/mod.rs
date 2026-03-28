@@ -107,8 +107,8 @@ impl ToolDispatcher {
                 self.dispatch_auto(
                     name,
                     &args,
-                    |a| symbol_tools::analyze_impact(ts, a),
-                    |lsp, a| symbol_tools::analyze_impact(lsp, a),
+                    |a| symbol_tools::analyze_impact(ts, a, &self.project_root),
+                    |lsp, a| symbol_tools::analyze_impact(lsp, a, &self.project_root),
                 )
             }
             "get_diagnostics" => {

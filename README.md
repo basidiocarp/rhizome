@@ -129,7 +129,7 @@ All 32 languages have LSP server configs. 20+ have auto-install recipes (npm, pi
 | `get_symbol_body` | Source code body of a specific symbol |
 | `search_symbols` | Find symbols by name pattern across the project |
 | `find_references` | Find all references to a symbol |
-| `analyze_impact` | Summarize likely blast radius, callers, and callees for a symbol |
+| `analyze_impact` | Summarize likely blast radius, callers, callees, and same-name project symbols |
 | `go_to_definition` | Jump from usage to definition |
 | `get_signature` | Signature only (no body) |
 | `get_imports` | All import/use statements |

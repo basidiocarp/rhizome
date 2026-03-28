@@ -530,7 +530,11 @@ pub fn find_references(backend: &dyn CodeIntelligence, args: &Value) -> Result<V
 }
 
 /// Estimate the local/project impact of changing the symbol at a given position.
-pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn analyze_impact(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let line = required_u32(args, "line")?;
     let column = required_u32(args, "column")?;
@@ -559,6 +563,18 @@ pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Va
         .collect::<Vec<_>>();
     let symbols = backend.get_symbols(path)?;
     let dependency_map = build_dependency_map(&symbols, &lines);
+    let related_symbols = backend
+        .search_symbols(&symbol_name, project_root)?
+        .into_iter()
+        .filter(|symbol| {
+            symbol.name == symbol_name
+                && definition.as_ref().is_none_or(|definition_symbol| {
+                    symbol.location.file_path != definition_symbol.location.file_path
+                        || symbol.location.line_start != definition_symbol.location.line_start
+                        || symbol.location.column_start != definition_symbol.location.column_start
+                })
+        })
+        .collect::<Vec<_>>();
 
     let mut references_by_file: Vec<(String, usize)> = Vec::new();
     for location in &references {
@@ -610,6 +626,9 @@ pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Va
     if has_test_touchpoints {
         risk_factors.push("touches tests".to_string());
     }
+    if !related_symbols.is_empty() {
+        risk_factors.push("same-name symbols elsewhere in project".to_string());
+    }
     let risk = if affected_files == 0 || (affected_files <= 1 && total_references <= 2) {
         "low"
     } else if affected_files <= 3 && total_references <= 6 {
@@ -652,6 +671,18 @@ pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Va
         "local_callers": local_callers,
         "local_callees": local_callees,
         "has_test_touchpoints": has_test_touchpoints,
+        "related_symbols": related_symbols
+            .iter()
+            .map(|symbol| {
+                json!({
+                    "name": symbol.name,
+                    "kind": format!("{:?}", symbol.kind),
+                    "file": symbol.location.file_path,
+                    "line_start": symbol.location.line_start,
+                    "line_end": symbol.location.line_end,
+                })
+            })
+            .collect::<Vec<_>>(),
         "references_by_file": references_by_file
             .into_iter()
             .map(|(file_path, count)| {

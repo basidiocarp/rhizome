@@ -270,6 +270,10 @@ fn test_analyze_impact() {
         text.contains("\"local_callers\"") && text.contains("\"test_process\""),
         "Should include local caller information: {text}"
     );
+    assert!(
+        text.contains("\"related_symbols\"") && text.contains("sample.py"),
+        "Should include project-wide same-name symbol matches: {text}"
+    );
 }
 
 // ---------------------------------------------------------------------------
