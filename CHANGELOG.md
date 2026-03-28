@@ -2,10 +2,25 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-03-27
+
+### Added
+
+- **Rename preview and impact analysis**: `rename_symbol` now supports dry-run preview, and `analyze_impact` summarizes grouped references, callers, callees, tests, and disclosed backend confidence.
+- **Scope-aware symbol identity**: Rhizome now emits `qualified_name` and `stable_id` metadata so nested symbols and methods keep container context across tree-sitter and LSP paths.
+- **Persistent workspace symbol snapshots**: Tree-sitter workspace search now persists scoped on-disk symbol indexes under `.rhizome/`, improving repeat query performance across process restarts.
+
 ### Changed
 
-- **More platform-neutral setup docs**: README and troubleshooting guidance now describe platform-resolved config and managed bin locations instead of assuming Unix-shaped paths and shell tools.
-- **Claude Code doctor hint reuse**: `rhizome doctor` now uses the same host-specific repair hint path for Claude Code that it already uses for other detected MCP hosts.
+- **Workspace cache hardening**: Persistent workspace snapshots now use schema versioning plus stronger file fingerprints instead of trusting timestamps alone.
+- **Scoped project state paths**: Project-local cache/config state now flows through shared `.rhizome/` path helpers instead of ad hoc joins.
+- **Roadmap and README refresh**: Rhizome docs now describe the current impact-analysis and workspace-index direction more accurately.
+
+### Fixed
+
+- **Hyphae export resilience**: Export now resolves relative roots against the project root, reports partial failures more clearly, and tolerates unreadable cache state better.
+- **Wildcard root markers**: Haskell `*.cabal` and OCaml `*.opam` root detection now actually works during workspace discovery.
+- **Worktree-aware symbol cache invalidation**: Workspace snapshots now preserve worktree/branch scoping and refresh correctly for modified or deleted files.
 
 ## [0.6.1] - 2026-03-26
 
