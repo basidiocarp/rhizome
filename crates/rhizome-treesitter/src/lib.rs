@@ -2,6 +2,7 @@ pub mod parser;
 pub mod queries;
 pub mod symbols;
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
@@ -22,11 +23,28 @@ use crate::symbols::extract_symbols;
 /// Thread-safe LRU cache for parsed trees, shared across backend instances.
 /// Key: (canonicalized path, file mtime). Capacity: 100 entries.
 type ParseCache = Mutex<LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>>;
+type WorkspaceCache = Mutex<LruCache<PathBuf, WorkspaceSymbolIndex>>;
 
 fn shared_cache() -> &'static ParseCache {
     // Lazy-initialized static cache - created once per process lifetime
     static CACHE: std::sync::OnceLock<ParseCache> = std::sync::OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(LruCache::new(std::num::NonZeroUsize::new(100).unwrap())))
+}
+
+fn workspace_cache() -> &'static WorkspaceCache {
+    static CACHE: std::sync::OnceLock<WorkspaceCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(LruCache::new(std::num::NonZeroUsize::new(16).unwrap())))
+}
+
+#[derive(Clone, Debug, Default)]
+struct WorkspaceSymbolIndex {
+    files: HashMap<PathBuf, IndexedFileSymbols>,
+}
+
+#[derive(Clone, Debug)]
+struct IndexedFileSymbols {
+    mtime: SystemTime,
+    symbols: Vec<Symbol>,
 }
 
 /// ─────────────────────────────────────────────────────────────────────────
@@ -94,6 +112,103 @@ impl TreeSitterBackend {
 
         Ok((tree, source, language))
     }
+
+    fn canonical_project_root(project_root: &Path) -> PathBuf {
+        std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf())
+    }
+
+    fn supported_source_files(project_root: &Path) -> Vec<PathBuf> {
+        let walker = WalkBuilder::new(project_root)
+            .hidden(true)
+            .git_ignore(true)
+            .build();
+
+        let mut files = Vec::new();
+        for entry in walker {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            if Self::detect_language(path).is_err() {
+                continue;
+            }
+
+            files.push(path.to_path_buf());
+        }
+
+        files
+    }
+
+    fn search_symbols_with_workspace_cache(
+        &self,
+        pattern: &str,
+        project_root: &Path,
+    ) -> Result<Vec<Symbol>> {
+        let canonical_root = Self::canonical_project_root(project_root);
+        let mut index = {
+            let mut cache = workspace_cache().lock().unwrap_or_else(|p| p.into_inner());
+            cache.get(&canonical_root).cloned().unwrap_or_default()
+        };
+
+        let files = Self::supported_source_files(project_root);
+        let current_paths = files
+            .iter()
+            .map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.clone()))
+            .collect::<HashSet<_>>();
+        index.files.retain(|path, _| current_paths.contains(path));
+
+        for file in files {
+            let canonical_path = std::fs::canonicalize(&file).unwrap_or_else(|_| file.clone());
+            let metadata = match std::fs::metadata(&file) {
+                Ok(metadata) => metadata,
+                Err(_) => {
+                    index.files.remove(&canonical_path);
+                    continue;
+                }
+            };
+            let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+
+            let is_stale = index
+                .files
+                .get(&canonical_path)
+                .is_none_or(|entry| entry.mtime != mtime);
+            if !is_stale {
+                continue;
+            }
+
+            match self.get_symbols(&file) {
+                Ok(symbols) => {
+                    index
+                        .files
+                        .insert(canonical_path, IndexedFileSymbols { mtime, symbols });
+                }
+                Err(_) => {
+                    index.files.remove(&canonical_path);
+                }
+            }
+        }
+
+        {
+            let mut cache = workspace_cache().lock().unwrap_or_else(|p| p.into_inner());
+            cache.put(canonical_root, index.clone());
+        }
+
+        let pattern_lower = pattern.to_lowercase();
+        let mut all_symbols = Vec::new();
+        for indexed in index.files.values() {
+            for sym in &indexed.symbols {
+                collect_matching_symbols(sym, &pattern_lower, &mut all_symbols);
+            }
+        }
+
+        Ok(all_symbols)
+    }
 }
 
 impl Default for TreeSitterBackend {
@@ -157,40 +272,7 @@ impl CodeIntelligence for TreeSitterBackend {
     }
 
     fn search_symbols(&self, pattern: &str, project_root: &Path) -> Result<Vec<Symbol>> {
-        let pattern_lower = pattern.to_lowercase();
-        let mut all_symbols = Vec::new();
-
-        let walker = WalkBuilder::new(project_root)
-            .hidden(true)
-            .git_ignore(true)
-            .build();
-
-        for entry in walker {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-
-            if Self::detect_language(path).is_err() {
-                continue;
-            }
-
-            match self.get_symbols(path) {
-                Ok(syms) => {
-                    for sym in syms {
-                        collect_matching_symbols(&sym, &pattern_lower, &mut all_symbols);
-                    }
-                }
-                Err(_) => continue,
-            }
-        }
-
-        Ok(all_symbols)
+        self.search_symbols_with_workspace_cache(pattern, project_root)
     }
 
     fn get_imports(&self, file: &Path) -> Result<Vec<Symbol>> {
@@ -1064,5 +1146,76 @@ mod tests {
 
         // Clean up
         let _ = std::fs::remove_file(test_file);
+    }
+
+    #[test]
+    fn test_workspace_search_cache_refreshes_modified_file() {
+        use std::fs::File;
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let file = temp_dir.path().join("sample.rs");
+        {
+            let mut handle = File::create(&file).expect("Failed to create source file");
+            handle
+                .write_all(b"fn alpha() {}\n")
+                .expect("Failed to write initial source");
+        }
+
+        let backend = TreeSitterBackend::new();
+        let symbols = backend
+            .search_symbols("alpha", temp_dir.path())
+            .expect("Initial search should succeed");
+        assert!(
+            symbols.iter().any(|symbol| symbol.name == "alpha"),
+            "Initial cached search should find alpha"
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        {
+            let mut handle = File::create(&file).expect("Failed to rewrite source file");
+            handle
+                .write_all(b"fn beta() {}\n")
+                .expect("Failed to write updated source");
+        }
+
+        let stale = backend
+            .search_symbols("alpha", temp_dir.path())
+            .expect("Follow-up search should succeed");
+        assert!(
+            stale.is_empty(),
+            "Workspace search cache should drop stale alpha results: {stale:?}"
+        );
+
+        let refreshed = backend
+            .search_symbols("beta", temp_dir.path())
+            .expect("Updated search should succeed");
+        assert!(
+            refreshed.iter().any(|symbol| symbol.name == "beta"),
+            "Workspace search cache should refresh beta results"
+        );
+    }
+
+    #[test]
+    fn test_workspace_search_cache_drops_deleted_files() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let file = temp_dir.path().join("delete_me.rs");
+        std::fs::write(&file, "fn gone() {}\n").expect("Failed to write source file");
+
+        let backend = TreeSitterBackend::new();
+        let symbols = backend
+            .search_symbols("gone", temp_dir.path())
+            .expect("Initial search should succeed");
+        assert_eq!(symbols.len(), 1, "Should find symbol before deletion");
+
+        std::fs::remove_file(&file).expect("Failed to delete source file");
+
+        let refreshed = backend
+            .search_symbols("gone", temp_dir.path())
+            .expect("Search after deletion should succeed");
+        assert!(
+            refreshed.is_empty(),
+            "Workspace search cache should drop deleted files: {refreshed:?}"
+        );
     }
 }

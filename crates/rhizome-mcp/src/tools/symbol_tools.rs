@@ -561,6 +561,7 @@ pub fn analyze_impact(
         .into_iter()
         .filter(|loc| !is_definition_location(definition_location, loc))
         .collect::<Vec<_>>();
+    let capabilities = backend.capabilities();
     let symbols = backend.get_symbols(path)?;
     let dependency_map = build_dependency_map(&symbols, &lines);
     let related_symbols = backend
@@ -629,6 +630,12 @@ pub fn analyze_impact(
     if !related_symbols.is_empty() {
         risk_factors.push("same-name symbols elsewhere in project".to_string());
     }
+    if !capabilities.cross_file_references {
+        risk_factors.push("cross-file references unavailable in backend".to_string());
+    }
+    if !related_symbols.is_empty() {
+        risk_factors.push("related symbol matching is name-based".to_string());
+    }
     let risk = if affected_files == 0 || (affected_files <= 1 && total_references <= 2) {
         "low"
     } else if affected_files <= 3 && total_references <= 6 {
@@ -636,14 +643,24 @@ pub fn analyze_impact(
     } else {
         "high"
     };
+    let risk_scope = if capabilities.cross_file_references {
+        "project"
+    } else {
+        "file"
+    };
+    let confidence = if !capabilities.cross_file_references || !related_symbols.is_empty() {
+        "heuristic"
+    } else {
+        "strong"
+    };
 
     let summary = if total_references == 0 && local_callers.is_empty() {
         format!(
-            "Changing {symbol_name} has no additional references in the current analysis scope."
+            "Changing {symbol_name} has no additional references in the current {risk_scope}-level analysis scope."
         )
     } else {
         format!(
-            "Changing {symbol_name} affects {total_references} reference(s) across {affected_files} file(s), with {} local caller(s) and {} local callee(s).",
+            "Changing {symbol_name} affects {total_references} reference(s) across {affected_files} file(s), with {} local caller(s) and {} local callee(s), based on {risk_scope}-level analysis.",
             local_callers.len(),
             local_callees.len()
         )
@@ -665,7 +682,15 @@ pub fn analyze_impact(
         }),
         "summary": summary,
         "risk": risk,
+        "risk_scope": risk_scope,
+        "confidence": confidence,
         "risk_factors": risk_factors,
+        "backend_capabilities": {
+            "cross_file_references": capabilities.cross_file_references,
+            "rename": capabilities.rename,
+            "type_info": capabilities.type_info,
+            "diagnostics": capabilities.diagnostics,
+        },
         "affected_files": affected_files,
         "total_references": total_references,
         "local_callers": local_callers,

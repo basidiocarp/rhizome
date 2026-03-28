@@ -274,6 +274,12 @@ fn test_analyze_impact() {
         text.contains("\"related_symbols\"") && text.contains("sample.py"),
         "Should include project-wide same-name symbol matches: {text}"
     );
+    assert!(
+        text.contains("\"risk_scope\": \"file\"")
+            && text.contains("\"confidence\": \"heuristic\"")
+            && text.contains("\"cross_file_references\": false"),
+        "Should disclose tree-sitter impact limitations: {text}"
+    );
 }
 
 // ---------------------------------------------------------------------------

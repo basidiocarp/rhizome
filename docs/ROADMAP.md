@@ -12,6 +12,8 @@ This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../ROAD
 - Export reliability improvements for path resolution, cache recovery, and explicit partial-failure reporting.
 - Rename preview via LSP workspace-edit summaries before applying changes.
 - Initial symbol impact summaries that group references by affected file and report local callers/callees plus same-name project symbols.
+- Capability-aware impact summaries that disclose heuristic confidence and scope on non-LSP backends.
+- In-process workspace search caching with modified/deleted file invalidation.
 - Expanded tree-sitter query coverage beyond the original small core set.
 - Existing rename and workspace-edit foundation, symbol move and copy MVP, and worktree-aware cache partitioning remain in place.
 
@@ -23,7 +25,7 @@ Expand change-impact analysis beyond grouped references into cross-file call gra
 
 ### Workspace index
 
-Add a persistent workspace index or daemon for larger repos so repeated queries stop paying full parse cost.
+Move from the current in-process workspace search cache to a persistent index or daemon for larger repos so repeated queries stop paying full scan cost.
 
 ### Refactor preview
 
