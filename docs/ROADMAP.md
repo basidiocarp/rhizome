@@ -9,6 +9,7 @@ This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../ROAD
 - Shared path handling and Windows-safe managed binary and PATH behavior.
 - Project-level summarize workflow.
 - Export-to-Hyphae memoir and code-graph path.
+- Export reliability improvements for path resolution, cache recovery, and explicit partial-failure reporting.
 - Expanded tree-sitter query coverage beyond the original small core set.
 - Existing rename and workspace-edit foundation, symbol move and copy MVP, and worktree-aware cache partitioning remain in place.
 
@@ -25,10 +26,6 @@ Add a persistent workspace index or daemon for larger repos so repeated queries 
 ### Refactor preview
 
 Add dry-run and preview flows before applying rename or edit operations.
-
-### Export reliability
-
-Keep the `rhizome` to `hyphae` export path reliable and boring in both tests and real usage.
 
 ## Later
 

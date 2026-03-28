@@ -182,7 +182,7 @@ All edit tools validate paths stay within the project root (path traversal preve
 
 | Tool | Description |
 |------|-------------|
-| `export_to_hyphae` | Export code graph as knowledge memoir |
+| `export_to_hyphae` | Export code graph as knowledge memoir with cache-aware export summaries |
 
 ## Backend Auto-Selection
 
