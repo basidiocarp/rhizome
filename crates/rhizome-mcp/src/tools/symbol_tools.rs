@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -556,6 +557,8 @@ pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Va
         .into_iter()
         .filter(|loc| !is_definition_location(definition_location, loc))
         .collect::<Vec<_>>();
+    let symbols = backend.get_symbols(path)?;
+    let dependency_map = build_dependency_map(&symbols, &lines);
 
     let mut references_by_file: Vec<(String, usize)> = Vec::new();
     for location in &references {
@@ -572,6 +575,41 @@ pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Va
 
     let affected_files = references_by_file.len();
     let total_references = references.len();
+    let local_callees = dependency_map
+        .get(&symbol_name)
+        .cloned()
+        .unwrap_or_default();
+    let mut local_callers = dependency_map
+        .iter()
+        .filter_map(|(caller, callees)| {
+            if callees.iter().any(|callee| callee == &symbol_name) {
+                Some(caller.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    local_callers.sort();
+    let has_test_touchpoints = references_by_file
+        .iter()
+        .any(|(file_path, _)| file_path.contains("test"))
+        || local_callers.iter().any(|caller| caller.contains("test"));
+    let mut risk_factors = Vec::new();
+    if affected_files > 1 {
+        risk_factors.push("cross-file references".to_string());
+    }
+    if total_references > 5 {
+        risk_factors.push("many references".to_string());
+    }
+    if !local_callers.is_empty() {
+        risk_factors.push("has local callers".to_string());
+    }
+    if !local_callees.is_empty() {
+        risk_factors.push("has downstream local callees".to_string());
+    }
+    if has_test_touchpoints {
+        risk_factors.push("touches tests".to_string());
+    }
     let risk = if affected_files == 0 || (affected_files <= 1 && total_references <= 2) {
         "low"
     } else if affected_files <= 3 && total_references <= 6 {
@@ -580,13 +618,15 @@ pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Va
         "high"
     };
 
-    let summary = if total_references == 0 {
+    let summary = if total_references == 0 && local_callers.is_empty() {
         format!(
             "Changing {symbol_name} has no additional references in the current analysis scope."
         )
     } else {
         format!(
-            "Changing {symbol_name} affects {total_references} reference(s) across {affected_files} file(s)."
+            "Changing {symbol_name} affects {total_references} reference(s) across {affected_files} file(s), with {} local caller(s) and {} local callee(s).",
+            local_callers.len(),
+            local_callees.len()
         )
     };
 
@@ -606,8 +646,12 @@ pub fn analyze_impact(backend: &dyn CodeIntelligence, args: &Value) -> Result<Va
         }),
         "summary": summary,
         "risk": risk,
+        "risk_factors": risk_factors,
         "affected_files": affected_files,
         "total_references": total_references,
+        "local_callers": local_callers,
+        "local_callees": local_callees,
+        "has_test_touchpoints": has_test_touchpoints,
         "references_by_file": references_by_file
             .into_iter()
             .map(|(file_path, count)| {
@@ -636,6 +680,48 @@ fn is_definition_location(
         }
         None => false,
     }
+}
+
+fn build_dependency_map(
+    symbols: &[Symbol],
+    source_lines: &[&str],
+) -> BTreeMap<String, Vec<String>> {
+    let mut functions: Vec<(&str, usize, usize)> = Vec::new();
+    collect_function_ranges(symbols, &mut functions);
+    let function_names: Vec<&str> = functions.iter().map(|(name, _, _)| *name).collect();
+    let mut deps: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    for &(name, start, end) in &functions {
+        let mut calls = Vec::new();
+        let end = end.min(source_lines.len().saturating_sub(1));
+        for line_idx in start..=end {
+            if line_idx >= source_lines.len() {
+                break;
+            }
+            let line = source_lines[line_idx];
+            for &target in &function_names {
+                if target == name {
+                    continue;
+                }
+                if let Some(pos) = line.find(target) {
+                    let after = pos + target.len();
+                    let rest = line[after..].trim_start();
+                    if rest.starts_with('(') {
+                        let before_ok = pos == 0 || !is_ident_char(line.as_bytes()[pos - 1]);
+                        let after_ok = after >= line.len()
+                            || !line.as_bytes()[after].is_ascii_alphanumeric()
+                                && line.as_bytes()[after] != b'_';
+                        if before_ok && after_ok && !calls.iter().any(|call| call == target) {
+                            calls.push(target.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        deps.insert(name.to_string(), calls);
+    }
+
+    deps
 }
 
 /// Find the definition of the symbol at a given position.
@@ -1523,47 +1609,10 @@ pub fn get_dependencies(backend: &dyn CodeIntelligence, args: &Value) -> Result<
     let symbols = backend.get_symbols(path)?;
     let source = std::fs::read_to_string(path)?;
     let source_lines: Vec<&str> = source.lines().collect();
-
-    // Collect all function/method names with their line ranges
-    let mut functions: Vec<(&str, usize, usize)> = Vec::new();
-    collect_function_ranges(&symbols, &mut functions);
-
-    let function_names: Vec<&str> = functions.iter().map(|(name, _, _)| *name).collect();
-
-    let mut deps: serde_json::Map<String, Value> = serde_json::Map::new();
-
-    for &(name, start, end) in &functions {
-        let mut calls = Vec::new();
-        let end = end.min(source_lines.len().saturating_sub(1));
-        for line_idx in start..=end {
-            if line_idx >= source_lines.len() {
-                break;
-            }
-            let line = source_lines[line_idx];
-            for &target in &function_names {
-                if target == name {
-                    continue;
-                }
-                // Look for the target name followed by '(' in this line
-                if let Some(pos) = line.find(target) {
-                    let after = pos + target.len();
-                    // Check there's a '(' after (possibly with whitespace)
-                    let rest = line[after..].trim_start();
-                    if rest.starts_with('(') {
-                        // Also check it's not part of a larger identifier
-                        let before_ok = pos == 0 || !is_ident_char(line.as_bytes()[pos - 1]);
-                        let after_ok = after >= line.len()
-                            || !line.as_bytes()[after].is_ascii_alphanumeric()
-                                && line.as_bytes()[after] != b'_';
-                        if before_ok && after_ok && !calls.contains(&target.to_string()) {
-                            calls.push(target.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        deps.insert(name.to_string(), json!(calls));
-    }
+    let deps = build_dependency_map(&symbols, &source_lines)
+        .into_iter()
+        .map(|(name, calls)| (name, json!(calls)))
+        .collect::<serde_json::Map<String, Value>>();
 
     let text = serde_json::to_string_pretty(&Value::Object(deps))?;
     Ok(tool_response(&text))

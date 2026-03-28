@@ -253,18 +253,22 @@ fn test_analyze_impact() {
     let result = dispatcher
         .call_tool(
             "analyze_impact",
-            json!({ "file": fixture_path("sample.rs"), "line": 2, "column": 11 }),
+            json!({ "file": fixture_path("sample.rs"), "line": 19, "column": 8 }),
         )
         .expect("analyze_impact should succeed");
 
     let text = extract_text(&result);
     assert!(
-        text.contains("\"symbol\": \"Config\""),
-        "Should analyze Config: {text}"
+        text.contains("\"symbol\": \"process\""),
+        "Should analyze process: {text}"
     );
     assert!(
         text.contains("\"summary\"") && text.contains("\"references_by_file\""),
         "Should include impact summary and grouped references: {text}"
+    );
+    assert!(
+        text.contains("\"local_callers\"") && text.contains("\"test_process\""),
+        "Should include local caller information: {text}"
     );
 }
 
