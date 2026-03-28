@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -14,6 +15,13 @@ use crate::convert::uri_to_file_path;
 pub struct ApplyResult {
     pub files_modified: usize,
     pub edits_applied: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PreviewResult {
+    pub files_modified: usize,
+    pub edits_applied: usize,
+    pub affected_paths: Vec<String>,
 }
 
 pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
@@ -50,6 +58,45 @@ pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
     Ok(result)
 }
 
+pub fn summarize_workspace_edit(edit: &WorkspaceEdit) -> Result<PreviewResult> {
+    let mut result = ApplyResult::default();
+    let mut affected_paths = BTreeSet::new();
+
+    if let Some(changes) = &edit.changes {
+        for (uri, edits) in changes {
+            summarize_text_edits_to_uri(uri, edits, &mut result, &mut affected_paths)?;
+        }
+    }
+
+    if let Some(document_changes) = &edit.document_changes {
+        match document_changes {
+            DocumentChanges::Edits(edits) => {
+                for edit in edits {
+                    summarize_text_document_edit(edit, &mut result, &mut affected_paths)?;
+                }
+            }
+            DocumentChanges::Operations(ops) => {
+                for op in ops {
+                    match op {
+                        DocumentChangeOperation::Edit(edit) => {
+                            summarize_text_document_edit(edit, &mut result, &mut affected_paths)?;
+                        }
+                        DocumentChangeOperation::Op(resource_op) => {
+                            summarize_resource_op(resource_op, &mut result, &mut affected_paths)?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(PreviewResult {
+        files_modified: result.files_modified,
+        edits_applied: result.edits_applied,
+        affected_paths: affected_paths.into_iter().collect(),
+    })
+}
+
 fn apply_text_document_edit(edit: &TextDocumentEdit, result: &mut ApplyResult) -> Result<()> {
     let uri = &edit.text_document.uri;
     let edits: Vec<TextEdit> = edit
@@ -63,9 +110,39 @@ fn apply_text_document_edit(edit: &TextDocumentEdit, result: &mut ApplyResult) -
     apply_text_edits_to_uri(uri, &edits, result)
 }
 
+fn summarize_text_document_edit(
+    edit: &TextDocumentEdit,
+    result: &mut ApplyResult,
+    affected_paths: &mut BTreeSet<String>,
+) -> Result<()> {
+    let uri = &edit.text_document.uri;
+    let edits: Vec<TextEdit> = edit
+        .edits
+        .iter()
+        .map(|edit| match edit {
+            OneOf::Left(text_edit) => text_edit.clone(),
+            OneOf::Right(annotated) => annotated.text_edit.clone(),
+        })
+        .collect();
+    summarize_text_edits_to_uri(uri, &edits, result, affected_paths)
+}
+
 fn apply_text_edits_to_uri(uri: &Uri, edits: &[TextEdit], result: &mut ApplyResult) -> Result<()> {
     let path = PathBuf::from(uri_to_file_path(uri));
     apply_text_edits(&path, edits)?;
+    result.files_modified += 1;
+    result.edits_applied += edits.len();
+    Ok(())
+}
+
+fn summarize_text_edits_to_uri(
+    uri: &Uri,
+    edits: &[TextEdit],
+    result: &mut ApplyResult,
+    affected_paths: &mut BTreeSet<String>,
+) -> Result<()> {
+    let path = uri_to_file_path(uri);
+    affected_paths.insert(path);
     result.files_modified += 1;
     result.edits_applied += edits.len();
     Ok(())
@@ -181,6 +258,29 @@ fn apply_resource_op(op: &ResourceOp, result: &mut ApplyResult) -> Result<()> {
                 fs::remove_file(&path)
                     .with_context(|| format!("removing file {}", path.display()))?;
             }
+            result.files_modified += 1;
+        }
+    }
+    Ok(())
+}
+
+fn summarize_resource_op(
+    op: &ResourceOp,
+    result: &mut ApplyResult,
+    affected_paths: &mut BTreeSet<String>,
+) -> Result<()> {
+    match op {
+        ResourceOp::Create(create) => {
+            affected_paths.insert(uri_to_file_path(&create.uri));
+            result.files_modified += 1;
+        }
+        ResourceOp::Rename(rename) => {
+            affected_paths.insert(uri_to_file_path(&rename.old_uri));
+            affected_paths.insert(uri_to_file_path(&rename.new_uri));
+            result.files_modified += 1;
+        }
+        ResourceOp::Delete(delete) => {
+            affected_paths.insert(uri_to_file_path(&delete.uri));
             result.files_modified += 1;
         }
     }
@@ -384,5 +484,55 @@ mod tests {
         assert_eq!(result.files_modified, 1);
         assert_eq!(result.edits_applied, 1);
         assert_eq!(fs::read_to_string(&file).unwrap(), "pub fn created() {}\n");
+    }
+
+    #[test]
+    fn summarize_workspace_edit_reports_targets_without_writing_files() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("main.rs");
+        fs::write(&file, "fn main() {}\n").unwrap();
+
+        let uri = path_to_lsp_uri(&file).unwrap();
+        let mut changes = HashMap::new();
+        changes.insert(
+            uri,
+            vec![TextEdit::new(range(0, 3, 0, 7), "start".to_string())],
+        );
+
+        let preview = summarize_workspace_edit(&WorkspaceEdit::new(changes)).unwrap();
+        assert_eq!(preview.files_modified, 1);
+        assert_eq!(preview.edits_applied, 1);
+        assert_eq!(preview.affected_paths, vec![file.display().to_string()]);
+        assert_eq!(fs::read_to_string(&file).unwrap(), "fn main() {}\n");
+    }
+
+    #[test]
+    fn summarize_workspace_edit_tracks_rename_targets() {
+        let dir = TempDir::new().unwrap();
+        let old_path = dir.path().join("old.rs");
+        let new_path = dir.path().join("new.rs");
+        let edit = WorkspaceEdit {
+            changes: None,
+            document_changes: Some(DocumentChanges::Operations(vec![
+                DocumentChangeOperation::Op(ResourceOp::Rename(lsp_types::RenameFile {
+                    old_uri: path_to_lsp_uri(&old_path).unwrap(),
+                    new_uri: path_to_lsp_uri(&new_path).unwrap(),
+                    options: None,
+                    annotation_id: None,
+                })),
+            ])),
+            change_annotations: None,
+        };
+
+        let preview = summarize_workspace_edit(&edit).unwrap();
+        assert_eq!(preview.files_modified, 1);
+        assert_eq!(preview.edits_applied, 0);
+        assert_eq!(
+            preview.affected_paths,
+            vec![
+                new_path.display().to_string(),
+                old_path.display().to_string()
+            ]
+        );
     }
 }

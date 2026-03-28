@@ -174,7 +174,7 @@ All edit tools validate paths stay within the project root (path traversal preve
 
 | Tool | Description |
 |------|-------------|
-| `rename_symbol` | Project-wide refactor rename |
+| `rename_symbol` | Project-wide refactor rename with optional dry-run preview |
 | `get_diagnostics` | Compiler errors and warnings |
 | `get_hover_info` | Type information and docs |
 

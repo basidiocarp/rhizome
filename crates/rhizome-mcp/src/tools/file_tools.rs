@@ -21,7 +21,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                     "file": { "type": "string", "description": "Path to the source file" },
                     "line": { "type": "number", "description": "Line number (0-based)" },
                     "column": { "type": "number", "description": "Column number (0-based)" },
-                    "new_name": { "type": "string", "description": "New name for the symbol" }
+                    "new_name": { "type": "string", "description": "New name for the symbol" },
+                    "preview": {
+                        "type": "boolean",
+                        "description": "When true, return a dry-run preview instead of applying edits"
+                    }
                 },
                 "required": ["file", "line", "column", "new_name"]
             }),
@@ -82,6 +86,10 @@ pub fn rename_symbol(
                 .get("new_name")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing required parameter: new_name"))?;
+            let preview = args
+                .get("preview")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
 
             let path = Path::new(file);
             let ext = path
@@ -96,16 +104,26 @@ pub fn rename_symbol(
                 column: column as u32,
             };
 
-            match lsp_backend.rename_with_root(path, &position, new_name, &workspace_root) {
-                Ok(result) => Ok(tool_response(&format!(
-                    "Renamed symbol at {}:{}:{} to {}.\nfiles_modified: {}\nedits_applied: {}",
-                    path.display(),
-                    line,
-                    column,
-                    new_name,
-                    result.files_modified,
-                    result.edits_applied
-                ))),
+            match if preview {
+                lsp_backend
+                    .preview_rename_with_root(path, &position, new_name, &workspace_root)
+                    .map(|result| rename_preview_response(path, line, column, new_name, &result))
+            } else {
+                lsp_backend
+                    .rename_with_root(path, &position, new_name, &workspace_root)
+                    .map(|result| {
+                        tool_response(&format!(
+                            "Renamed symbol at {}:{}:{} to {}.\nfiles_modified: {}\nedits_applied: {}",
+                            path.display(),
+                            line,
+                            column,
+                            new_name,
+                            result.files_modified,
+                            result.edits_applied
+                        ))
+                    })
+            } {
+                Ok(result) => Ok(result),
                 Err(err) => Ok(tool_error(&format!("rename failed: {err}"))),
             }
         }
@@ -183,4 +201,47 @@ fn lsp_required_error(tool_name: &str) -> Value {
     };
 
     tool_error(suggestion)
+}
+
+fn rename_preview_response(
+    path: &Path,
+    line: u64,
+    column: u64,
+    new_name: &str,
+    preview: &rhizome_lsp::edit::PreviewResult,
+) -> Value {
+    let paths = if preview.affected_paths.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\naffected_paths:\n{}",
+            preview
+                .affected_paths
+                .iter()
+                .map(|path| format!("- {path}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
+    json!({
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "Preview rename at {}:{}:{} to {}.\nfiles_modified: {}\nedits_applied: {}{}",
+                path.display(),
+                line,
+                column,
+                new_name,
+                preview.files_modified,
+                preview.edits_applied,
+                paths
+            )
+        }],
+        "preview": {
+            "files_modified": preview.files_modified,
+            "edits_applied": preview.edits_applied,
+            "affected_paths": preview.affected_paths,
+        }
+    })
 }

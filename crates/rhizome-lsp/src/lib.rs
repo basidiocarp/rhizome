@@ -17,7 +17,7 @@ use crate::convert::{
     lsp_diagnostic_to_diagnostic, lsp_location_to_location, lsp_symbol_info_to_symbol,
     lsp_symbol_to_symbol,
 };
-use crate::edit::{apply_workspace_edit, ApplyResult};
+use crate::edit::{apply_workspace_edit, summarize_workspace_edit, ApplyResult, PreviewResult};
 use crate::manager::LanguageServerManager;
 
 /// LSP-backed code intelligence. Wraps async LSP calls behind the sync
@@ -178,6 +178,45 @@ impl LspBackend {
             })?;
 
             apply_workspace_edit(&edit).map_err(|e| RhizomeError::LspError(e.to_string()))
+        })
+    }
+
+    /// Request an LSP rename and return a summary without applying the workspace edit.
+    pub fn preview_rename_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        new_name: &str,
+        workspace_root: &Path,
+    ) -> Result<PreviewResult> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let new_name = new_name.to_string();
+        let lsp_pos = lsp_types::Position {
+            line: position.line,
+            character: position.column,
+        };
+
+        self.handle.block_on(async {
+            let lang = detect_language(&file)?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+
+            let edit = client
+                .rename(&file, lsp_pos, &new_name)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+
+            let edit = edit.ok_or_else(|| {
+                RhizomeError::LspError(
+                    "language server returned no workspace edit for rename".into(),
+                )
+            })?;
+
+            summarize_workspace_edit(&edit).map_err(|e| RhizomeError::LspError(e.to_string()))
         })
     }
 }

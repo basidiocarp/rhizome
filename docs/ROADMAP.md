@@ -10,6 +10,7 @@ This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../ROAD
 - Project-level summarize workflow.
 - Export-to-Hyphae memoir and code-graph path.
 - Export reliability improvements for path resolution, cache recovery, and explicit partial-failure reporting.
+- Rename preview via LSP workspace-edit summaries before applying changes.
 - Expanded tree-sitter query coverage beyond the original small core set.
 - Existing rename and workspace-edit foundation, symbol move and copy MVP, and worktree-aware cache partitioning remain in place.
 
@@ -25,7 +26,7 @@ Add a persistent workspace index or daemon for larger repos so repeated queries 
 
 ### Refactor preview
 
-Add dry-run and preview flows before applying rename or edit operations.
+Expand dry-run and preview flows beyond rename so edit operations are safer before applying changes.
 
 ## Later
 
