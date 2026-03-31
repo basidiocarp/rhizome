@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-31
+
+### Added
+
+- **Broader export language coverage**: Hyphae export now follows Rhizome's broader language map instead of truncating code-graph export to a narrow extension subset.
+
+### Changed
+
+- **Canonical export identity**: Hyphae export now derives project and worktree identity from canonical roots and emits the published `code-graph-v1` envelope with explicit schema versioning.
+- **Stricter contract handling**: Doctor and export paths now validate the real Hyphae import contract and stop relying on older compatibility shims such as unscoped cache fallback.
+
+### Fixed
+
+- **Auto-export resilience**: Background export now retries with backoff and escalates persistent failures at warning level instead of failing silently after one attempt.
+- **Doctor signal quality**: Hyphae health checks now probe the actual import path, respect ignore-aware language scanning, and report more realistic export readiness.
+
 ## [0.6.2] - 2026-03-27
 
 ### Added

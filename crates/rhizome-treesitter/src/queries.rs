@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::OnceLock;
 
 use anyhow::{anyhow, Result};
@@ -215,6 +216,7 @@ static RUST_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::n
 static PYTHON_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static JS_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static TS_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+static TSX_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static GO_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static JAVA_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static C_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
@@ -233,80 +235,107 @@ fn compile_query(lang: &tree_sitter::Language, source: &str) -> Result<tree_sitt
     tree_sitter::Query::new(lang, source).map_err(|e| format!("{e}"))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum QueryDialect {
+    Language(Language),
+    TypeScriptTsx,
+}
+
 pub fn get_query(lang: &Language) -> Result<&'static tree_sitter::Query> {
-    let result = match lang {
-        Language::Rust => {
+    get_query_for_file(lang, "")
+}
+
+pub fn get_query_for_file(lang: &Language, file_path: &str) -> Result<&'static tree_sitter::Query> {
+    let dialect = dialect_for_file(lang, file_path);
+    let result = match dialect {
+        QueryDialect::Language(Language::Rust) => {
             let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
             RUST_COMPILED.get_or_init(|| compile_query(&ts_lang, RUST_QUERY))
         }
-        Language::Python => {
+        QueryDialect::Language(Language::Python) => {
             let ts_lang: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
             PYTHON_COMPILED.get_or_init(|| compile_query(&ts_lang, PYTHON_QUERY))
         }
-        Language::JavaScript => {
+        QueryDialect::Language(Language::JavaScript) => {
             let ts_lang: tree_sitter::Language = tree_sitter_javascript::LANGUAGE.into();
             JS_COMPILED.get_or_init(|| compile_query(&ts_lang, JAVASCRIPT_QUERY))
         }
-        Language::TypeScript => {
+        QueryDialect::Language(Language::TypeScript) => {
             let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
             TS_COMPILED.get_or_init(|| compile_query(&ts_lang, TYPESCRIPT_QUERY))
         }
-        Language::Go => {
+        QueryDialect::TypeScriptTsx => {
+            let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TSX.into();
+            TSX_COMPILED.get_or_init(|| compile_query(&ts_lang, TYPESCRIPT_QUERY))
+        }
+        QueryDialect::Language(Language::Go) => {
             let ts_lang: tree_sitter::Language = tree_sitter_go::LANGUAGE.into();
             GO_COMPILED.get_or_init(|| compile_query(&ts_lang, GO_QUERY))
         }
-        Language::Java => {
+        QueryDialect::Language(Language::Java) => {
             let ts_lang: tree_sitter::Language = tree_sitter_java::LANGUAGE.into();
             JAVA_COMPILED.get_or_init(|| compile_query(&ts_lang, JAVA_QUERY))
         }
-        Language::C => {
+        QueryDialect::Language(Language::C) => {
             let ts_lang: tree_sitter::Language = tree_sitter_c::LANGUAGE.into();
             C_COMPILED.get_or_init(|| compile_query(&ts_lang, C_QUERY))
         }
-        Language::Cpp => {
+        QueryDialect::Language(Language::Cpp) => {
             let ts_lang: tree_sitter::Language = tree_sitter_cpp::LANGUAGE.into();
             CPP_COMPILED.get_or_init(|| compile_query(&ts_lang, CPP_QUERY))
         }
-        Language::Ruby => {
+        QueryDialect::Language(Language::Ruby) => {
             let ts_lang: tree_sitter::Language = tree_sitter_ruby::LANGUAGE.into();
             RUBY_COMPILED.get_or_init(|| compile_query(&ts_lang, RUBY_QUERY))
         }
-        Language::Php => {
+        QueryDialect::Language(Language::Php) => {
             let ts_lang: tree_sitter::Language = tree_sitter_php::LANGUAGE_PHP.into();
             PHP_COMPILED.get_or_init(|| compile_query(&ts_lang, PHP_QUERY))
         }
-        Language::Bash => {
+        QueryDialect::Language(Language::Bash) => {
             let ts_lang: tree_sitter::Language = tree_sitter_bash::LANGUAGE.into();
             BASH_COMPILED.get_or_init(|| compile_query(&ts_lang, BASH_QUERY))
         }
-        Language::CSharp => {
+        QueryDialect::Language(Language::CSharp) => {
             let ts_lang: tree_sitter::Language = tree_sitter_c_sharp::LANGUAGE.into();
             CSHARP_COMPILED.get_or_init(|| compile_query(&ts_lang, CSHARP_QUERY))
         }
-        Language::Elixir => {
+        QueryDialect::Language(Language::Elixir) => {
             let ts_lang: tree_sitter::Language = tree_sitter_elixir::LANGUAGE.into();
             ELIXIR_COMPILED.get_or_init(|| compile_query(&ts_lang, ELIXIR_QUERY))
         }
-        Language::Lua => {
+        QueryDialect::Language(Language::Lua) => {
             let ts_lang: tree_sitter::Language = tree_sitter_lua::LANGUAGE.into();
             LUA_COMPILED.get_or_init(|| compile_query(&ts_lang, LUA_QUERY))
         }
-        Language::Swift => {
+        QueryDialect::Language(Language::Swift) => {
             let ts_lang: tree_sitter::Language = tree_sitter_swift::LANGUAGE.into();
             SWIFT_COMPILED.get_or_init(|| compile_query(&ts_lang, SWIFT_QUERY))
         }
-        Language::Zig => {
+        QueryDialect::Language(Language::Zig) => {
             let ts_lang: tree_sitter::Language = tree_sitter_zig::LANGUAGE.into();
             ZIG_COMPILED.get_or_init(|| compile_query(&ts_lang, ZIG_QUERY))
         }
-        Language::Haskell => {
+        QueryDialect::Language(Language::Haskell) => {
             let ts_lang: tree_sitter::Language = tree_sitter_haskell::LANGUAGE.into();
             HASKELL_COMPILED.get_or_init(|| compile_query(&ts_lang, HASKELL_QUERY))
         }
-        _ => return Err(anyhow!("Unsupported language: {:?}", lang)),
+        QueryDialect::Language(lang) => return Err(anyhow!("Unsupported language: {:?}", lang)),
     };
 
     result
         .as_ref()
         .map_err(|e| anyhow!("Query compilation failed: {}", e))
+}
+
+fn dialect_for_file(lang: &Language, file_path: &str) -> QueryDialect {
+    match (
+        lang,
+        Path::new(file_path)
+            .extension()
+            .and_then(|extension| extension.to_str()),
+    ) {
+        (Language::TypeScript, Some("tsx")) => QueryDialect::TypeScriptTsx,
+        _ => QueryDialect::Language(lang.clone()),
+    }
 }

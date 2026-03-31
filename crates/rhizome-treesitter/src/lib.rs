@@ -119,7 +119,7 @@ impl TreeSitterBackend {
         let source = std::fs::read(file)?;
         let parser = self
             .parser_pool
-            .get_parser(&language)
+            .get_parser_for_file(&language, file)
             .map_err(|e| RhizomeError::Other(format!("Failed to get parser: {}", e)))?;
         let tree = parser.parse(&source, None).ok_or_else(|| {
             RhizomeError::ParseError(format!("Failed to parse: {}", file.display()))
@@ -173,7 +173,8 @@ impl TreeSitterBackend {
         let canonical_root = Self::canonical_project_root(project_root);
         let mut index = {
             let mut cache = workspace_cache().lock().unwrap_or_else(|p| p.into_inner());
-            cache.get(&canonical_root)
+            cache
+                .get(&canonical_root)
                 .cloned()
                 .unwrap_or_else(|| Self::load_workspace_index(project_root))
         };
@@ -266,8 +267,9 @@ impl TreeSitterBackend {
         let dir = scoped_cache_dir(project_root);
         std::fs::create_dir_all(&dir)?;
         let path = Self::workspace_index_path(project_root);
-        let json = serde_json::to_string_pretty(index)
-            .map_err(|error| RhizomeError::Other(format!("Failed to serialize workspace index: {error}")))?;
+        let json = serde_json::to_string_pretty(index).map_err(|error| {
+            RhizomeError::Other(format!("Failed to serialize workspace index: {error}"))
+        })?;
         std::fs::write(path, json)?;
         Ok(())
     }
@@ -755,6 +757,29 @@ mod tests {
             symbols.len() >= 30,
             "Large file should have at least 30 top-level symbols, found {}",
             symbols.len()
+        );
+    }
+
+    #[test]
+    fn test_parse_tsx_symbols() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("component.tsx");
+        std::fs::write(
+            &path,
+            r#"
+export function Component() {
+    return <div>Hello</div>;
+}
+"#,
+        )
+        .expect("write tsx fixture");
+
+        let backend = TreeSitterBackend::new();
+        let symbols = backend.get_symbols(&path).expect("Failed");
+
+        assert!(
+            symbols.iter().any(|symbol| symbol.name == "Component"),
+            "Expected Component function symbol in TSX file, got: {symbols:?}"
         );
     }
 
@@ -1346,8 +1371,7 @@ mod tests {
 
         let persisted = TreeSitterBackend::load_workspace_index(temp_dir.path());
         assert_eq!(
-            persisted.schema_version,
-            WORKSPACE_INDEX_SCHEMA_VERSION,
+            persisted.schema_version, WORKSPACE_INDEX_SCHEMA_VERSION,
             "Persisted index should carry the current schema version"
         );
         let canonical_path = std::fs::canonicalize(&file)
@@ -1359,7 +1383,10 @@ mod tests {
             .get(&canonical_path)
             .expect("Persisted index should contain the source file");
         assert!(
-            cached.symbols.iter().any(|symbol| symbol.name == "persisted"),
+            cached
+                .symbols
+                .iter()
+                .any(|symbol| symbol.name == "persisted"),
             "Persisted index should retain serialized symbols"
         );
         assert_eq!(
@@ -1395,8 +1422,7 @@ mod tests {
 
         let loaded = TreeSitterBackend::load_workspace_index(temp_dir.path());
         assert_eq!(
-            loaded.schema_version,
-            WORKSPACE_INDEX_SCHEMA_VERSION,
+            loaded.schema_version, WORKSPACE_INDEX_SCHEMA_VERSION,
             "Mismatched snapshot schema should fall back to the default version"
         );
         assert!(

@@ -109,7 +109,7 @@ enum Commands {
     },
     /// Diagnose common issues with the rhizome installation
     Doctor {
-        /// Attempt to fix detected issues
+        /// Attempt to rebuild the export cache if it is missing
         #[arg(long)]
         fix: bool,
     },
@@ -133,32 +133,67 @@ enum Commands {
 enum LspAction {
     /// Show LSP server status for all languages
     Status {
+        /// Workspace/project root path
+        #[arg(long, short)]
+        project: Option<PathBuf>,
         #[arg(long)]
         json: bool,
     },
     /// Install LSP server for a language
     Install {
+        /// Workspace/project root path
+        #[arg(long, short)]
+        project: Option<PathBuf>,
         /// Language name (e.g. rust, python, typescript)
         language: String,
     },
 }
 
 fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
-    if let Some(root) = hint {
-        return root;
-    }
+    let root = hint
+        .or_else(|| std::env::var_os("RHIZOME_PROJECT").map(PathBuf::from))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    std::fs::canonicalize(&root).unwrap_or(root)
+}
 
-    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    loop {
-        if dir.join(".git").exists() {
-            return dir;
-        }
-        if !dir.pop() {
-            break;
-        }
+fn tree_sitter_status_label(active: bool) -> &'static str {
+    if active {
+        "active"
+    } else {
+        "n/a"
     }
+}
 
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+fn print_status_table(title: &str, statuses: &[rhizome_core::LanguageStatus]) {
+    println!("{title}");
+    println!("{}\n", "=".repeat(title.len()));
+    println!(
+        "{:<14} {:<14} {:<30} Status",
+        "Language", "Tree-Sitter", "LSP Server"
+    );
+    println!(
+        "{:<14} {:<14} {:<30} ------",
+        "--------", "-----------", "----------"
+    );
+
+    for s in statuses {
+        let status = if s.lsp_available {
+            match &s.lsp_path {
+                Some(p) => format!("available ({})", p.display()),
+                None => "available".into(),
+            }
+        } else {
+            "not found".into()
+        };
+
+        println!(
+            "{:<14} {:<14} {:<30} {}",
+            s.language.to_string(),
+            tree_sitter_status_label(s.tree_sitter),
+            s.lsp_binary,
+            status,
+        );
+    }
 }
 
 fn symbol_kind_label(kind: &SymbolKind) -> &'static str {
@@ -371,36 +406,7 @@ fn cmd_status(project: Option<PathBuf>) -> Result<()> {
     let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
     let mut selector = rhizome_core::BackendSelector::new(config);
     let statuses = selector.status();
-
-    println!("Rhizome Backend Status");
-    println!("======================\n");
-    println!(
-        "{:<14} {:<14} {:<30} Status",
-        "Language", "Tree-Sitter", "LSP Server"
-    );
-    println!(
-        "{:<14} {:<14} {:<30} ------",
-        "--------", "-----------", "----------"
-    );
-
-    for s in &statuses {
-        let status = if s.lsp_available {
-            match &s.lsp_path {
-                Some(p) => format!("available ({})", p.display()),
-                None => "available".into(),
-            }
-        } else {
-            "not found".into()
-        };
-
-        println!(
-            "{:<14} {:<14} {:<30} {}",
-            s.language.to_string(),
-            "active",
-            s.lsp_binary,
-            status,
-        );
-    }
+    print_status_table("Rhizome Backend Status", &statuses);
 
     let installer = selector.installer();
     println!("\nBackend selection: tree-sitter (default) -> auto-upgrade to LSP when needed");
@@ -435,12 +441,13 @@ fn cmd_summarize(project: Option<PathBuf>, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_lsp_status(json_output: bool) -> Result<()> {
+fn cmd_lsp_status(project: Option<PathBuf>, json_output: bool) -> Result<()> {
     // ─────────────────────────────────────────────────────────────────────────────
     // Load configuration and get status
     // ─────────────────────────────────────────────────────────────────────────────
 
-    let config = rhizome_core::RhizomeConfig::default();
+    let project_root = detect_project_root(project);
+    let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
     let mut selector = rhizome_core::BackendSelector::new(config);
     let statuses = selector.status();
 
@@ -449,61 +456,30 @@ fn cmd_lsp_status(json_output: bool) -> Result<()> {
             .context("Failed to serialize status to JSON")?;
         println!("{json}");
     } else {
-        // ─────────────────────────────────────────────────────────────────────────────
-        // Print table format
-        // ─────────────────────────────────────────────────────────────────────────────
-
-        println!("Rhizome LSP Status");
-        println!("==================\n");
-        println!(
-            "{:<14} {:<14} {:<30} Status",
-            "Language", "Tree-Sitter", "LSP Server"
-        );
-        println!(
-            "{:<14} {:<14} {:<30} ------",
-            "--------", "-----------", "----------"
-        );
-
-        for s in &statuses {
-            let status = if s.lsp_available {
-                match &s.lsp_path {
-                    Some(p) => format!("available ({})", p.display()),
-                    None => "available".into(),
-                }
-            } else {
-                "not found".into()
-            };
-
-            println!(
-                "{:<14} {:<14} {:<30} {}",
-                s.language.to_string(),
-                "active",
-                s.lsp_binary,
-                status,
-            );
-        }
+        print_status_table("Rhizome LSP Status", &statuses);
     }
 
     Ok(())
 }
 
-fn cmd_lsp_install(language_name: &str) -> Result<()> {
+fn cmd_lsp_install(project: Option<PathBuf>, language_name: &str) -> Result<()> {
     // ─────────────────────────────────────────────────────────────────────────────
     // Parse language name and get configuration
     // ─────────────────────────────────────────────────────────────────────────────
 
     let language = Language::from_name(language_name)
         .with_context(|| format!("Unknown language: {language_name}"))?;
+    let project_root = detect_project_root(project);
+    let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
 
-    let server_config = language
-        .default_server_config()
+    let server_config = resolve_lsp_install_server_config(&config, &language)
         .with_context(|| format!("No LSP server available for {}", language))?;
 
     println!("Installing LSP server for {}...", language);
     println!("Server binary: {}", server_config.binary);
 
     // Explicit install command should never be disabled
-    let installer = rhizome_core::LspInstaller::new(None, false);
+    let installer = rhizome_core::LspInstaller::new(config.lsp.bin_dir.clone(), false);
 
     match installer.ensure_server(&language, &server_config.binary) {
         Ok(Some(path)) => {
@@ -520,6 +496,15 @@ fn cmd_lsp_install(language_name: &str) -> Result<()> {
             anyhow::bail!("Failed to install LSP server: {e}");
         }
     }
+}
+
+fn resolve_lsp_install_server_config(
+    config: &rhizome_core::RhizomeConfig,
+    language: &Language,
+) -> Option<rhizome_core::LanguageServerConfig> {
+    config
+        .get_server_config(language)
+        .or_else(|| language.default_server_config())
 }
 
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
@@ -560,8 +545,8 @@ async fn main() -> Result<()> {
         Commands::Doctor { fix } => doctor::run(fix),
         Commands::Summarize { project, json } => cmd_summarize(project, json),
         Commands::Lsp { action } => match action {
-            LspAction::Status { json } => cmd_lsp_status(json),
-            LspAction::Install { language } => cmd_lsp_install(&language),
+            LspAction::Status { project, json } => cmd_lsp_status(project, json),
+            LspAction::Install { project, language } => cmd_lsp_install(project, &language),
         },
     }
 }
@@ -569,6 +554,7 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn render_editor_snippet_uses_json_key_for_claude_code() {
@@ -582,5 +568,40 @@ mod tests {
         let snippet = render_editor_snippet(editors::Editor::CodexCli).unwrap();
         let value = toml::Value::Table(toml::from_str::<toml::Table>(&snippet).unwrap());
         assert!(value["mcp_servers"]["rhizome"].is_table());
+    }
+
+    #[test]
+    fn detect_project_root_keeps_nested_project_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        let nested_root = repo_root.join("packages/app");
+
+        fs::create_dir_all(&nested_root).unwrap();
+        fs::create_dir_all(repo_root.join(".git")).unwrap();
+
+        let detected = detect_project_root(Some(nested_root.clone()));
+
+        assert_eq!(detected, nested_root.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_lsp_install_server_config_ignores_disabled_runtime_gate() {
+        let config = rhizome_core::RhizomeConfig {
+            languages: std::collections::HashMap::from([(
+                "rust".to_string(),
+                rhizome_core::config::LanguageConfig {
+                    server_binary: None,
+                    server_args: None,
+                    enabled: Some(false),
+                    initialization_options: None,
+                },
+            )]),
+            ..Default::default()
+        };
+
+        let config = resolve_lsp_install_server_config(&config, &Language::Rust)
+            .expect("explicit install should still resolve a server");
+
+        assert_eq!(config.binary, "rust-analyzer");
     }
 }

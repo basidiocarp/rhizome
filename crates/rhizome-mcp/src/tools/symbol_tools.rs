@@ -574,9 +574,9 @@ pub fn analyze_impact(
         .into_iter()
         .filter(|symbol| {
             symbol.name == symbol_name
-                && definition
-                    .as_ref()
-                    .is_none_or(|definition_symbol| symbol.stable_id() != definition_symbol.stable_id())
+                && definition.as_ref().is_none_or(|definition_symbol| {
+                    symbol.stable_id() != definition_symbol.stable_id()
+                })
         })
         .collect::<Vec<_>>();
     let exact_scope_matches = definition_qualified_name

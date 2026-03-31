@@ -5,21 +5,17 @@ use ignore::WalkBuilder;
 use rhizome_core::export_cache::ExportCache;
 use rhizome_core::graph::{build_graph, merge_graphs, CodeGraph};
 use rhizome_core::hyphae;
-use rhizome_core::CodeIntelligence;
+use rhizome_core::{derive_export_identity, CodeIntelligence, Language};
 use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::{tool_error, ToolSchema};
 
-/// Supported file extensions for code graph export.
-const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "rs", "py", "js", "ts", "go", "java", "c", "cpp", "cc", "cxx", "rb",
-];
-
 fn is_supported_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|ext| SUPPORTED_EXTENSIONS.contains(&ext))
+        .and_then(Language::from_extension)
+        .is_some_and(|language| language.tree_sitter_supported())
 }
 
 #[derive(Debug, Serialize)]
@@ -270,18 +266,13 @@ pub fn export_to_hyphae(
         ));
     }
 
-    let project_name = project_root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("project");
-
-    let memoir_name = format!("code:{project_name}");
+    let identity = derive_export_identity(project_root);
     let mut prepared = collect_export(
         backend,
         project_root,
         &export_root,
-        project_name,
-        &memoir_name,
+        &identity.project,
+        &identity.memoir_name,
     );
 
     if prepared.summary.files_processed == 0 {
@@ -295,7 +286,7 @@ pub fn export_to_hyphae(
     let merged = merge_graphs(prepared.graphs);
     let graph_json = serde_json::to_value(&merged)?;
 
-    match hyphae::export_graph(&graph_json, &memoir_name) {
+    match hyphae::export_graph(&graph_json, &identity) {
         Ok(result) => {
             let mut cache = prepared.cache;
             for path in &prepared.processed_paths {
@@ -461,6 +452,116 @@ mod tests {
         assert_eq!(prepared.summary.files_processed, 1);
         assert_eq!(prepared.summary.files_skipped_cached, 1);
         assert_eq!(prepared.processed_paths, vec![fresh_file]);
+    }
+
+    #[test]
+    fn collect_export_includes_tree_sitter_supported_languages_beyond_old_allowlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let supported_files = [
+            dir.path().join("component.tsx"),
+            dir.path().join("types.pyi"),
+            dir.path().join("script.zsh"),
+        ];
+        let unsupported_files = [dir.path().join("lock.tf"), dir.path().join("notes.md")];
+
+        for file in supported_files.iter().chain(unsupported_files.iter()) {
+            std::fs::write(file, "sample").unwrap();
+        }
+
+        let backend = MockBackend::new(HashMap::new());
+        let prepared = collect_export(&backend, dir.path(), dir.path(), "demo", "code:demo");
+
+        assert_eq!(prepared.summary.status, "exported");
+        assert_eq!(prepared.summary.supported_files, supported_files.len());
+        assert_eq!(prepared.summary.files_processed, supported_files.len());
+        assert_eq!(prepared.summary.files_failed, 0);
+
+        let processed_paths: Vec<PathBuf> = prepared.processed_paths;
+        for file in &supported_files {
+            assert!(processed_paths.contains(file));
+        }
+        for file in &unsupported_files {
+            assert!(!processed_paths.contains(file));
+        }
+    }
+
+    #[test]
+    fn is_supported_extension_matches_tree_sitter_backed_languages() {
+        for name in [
+            "demo.rs",
+            "demo.py",
+            "demo.pyi",
+            "demo.js",
+            "demo.jsx",
+            "demo.mjs",
+            "demo.cjs",
+            "demo.ts",
+            "demo.tsx",
+            "demo.mts",
+            "demo.cts",
+            "demo.go",
+            "demo.java",
+            "demo.c",
+            "demo.h",
+            "demo.cpp",
+            "demo.cxx",
+            "demo.cc",
+            "demo.hpp",
+            "demo.hxx",
+            "demo.hh",
+            "demo.rb",
+            "demo.rake",
+            "demo.gemspec",
+            "demo.ru",
+            "demo.ex",
+            "demo.exs",
+            "demo.zig",
+            "demo.cs",
+            "demo.swift",
+            "demo.php",
+            "demo.hs",
+            "demo.lhs",
+            "demo.sh",
+            "demo.bash",
+            "demo.zsh",
+            "demo.ksh",
+            "demo.lua",
+        ] {
+            assert!(
+                is_supported_extension(Path::new(name)),
+                "{name} should be exportable"
+            );
+        }
+
+        for name in [
+            "demo.tf",
+            "demo.kt",
+            "demo.dart",
+            "demo.fs",
+            "demo.fsi",
+            "demo.fsx",
+            "demo.fsscript",
+            "demo.clj",
+            "demo.cljs",
+            "demo.cljc",
+            "demo.edn",
+            "demo.ml",
+            "demo.mli",
+            "demo.jl",
+            "demo.nix",
+            "demo.gleam",
+            "demo.vue",
+            "demo.svelte",
+            "demo.astro",
+            "demo.prisma",
+            "demo.typ",
+            "demo.yaml",
+        ] {
+            assert!(
+                !is_supported_extension(Path::new(name)),
+                "{name} should not be exportable"
+            );
+        }
     }
 
     #[test]

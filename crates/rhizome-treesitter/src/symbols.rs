@@ -17,7 +17,7 @@ pub fn extract_symbols(
     language: &Language,
 ) -> Result<Vec<Symbol>> {
     // Try language-specific query first, fall back to generic AST walk
-    let query = match queries::get_query(language) {
+    let query = match queries::get_query_for_file(language, file_path) {
         Ok(q) => q,
         Err(_) => return extract_symbols_generic(tree, source, file_path),
     };
@@ -87,7 +87,12 @@ pub fn extract_symbols(
         let scope_path = Vec::new();
 
         let children = if capture_kind == "impl_def" {
-            extract_impl_children(node, source, file_path, &extend_scope_path(&scope_path, &name_text))?
+            extract_impl_children(
+                node,
+                source,
+                file_path,
+                &extend_scope_path(&scope_path, &name_text),
+            )?
         } else {
             Vec::new()
         };

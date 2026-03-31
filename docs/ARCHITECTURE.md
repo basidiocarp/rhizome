@@ -139,13 +139,13 @@ Example Rust query:
 (import_statement) @import
 ```
 
-**8 languages with generic fallback** (no grammar, uses AST walker):
-- Bash, C#, Elixir, Lua, Swift, Zig, Haskell, TOML
+**7 additional languages with built-in tree-sitter extraction**:
+- Bash, C#, Elixir, Lua, Swift, Zig, Haskell
 
 Generic fallback walks the tree and matches common node types: `function_definition`, `class_declaration`, `method`, `import`, etc.
 
-**14 languages LSP-only** (no tree-sitter parser):
-- Kotlin, Dart, Clojure, OCaml, Julia, Nix, Gleam, Vue, Svelte, Astro, Prisma, Typst, YAML, Others
+**15 languages LSP-only** (no tree-sitter parser):
+- Terraform, F#, Kotlin, Dart, Clojure, OCaml, Julia, Nix, Gleam, Vue, Svelte, Astro, Prisma, Typst, YAML
 
 For LSP-only languages, tools requiring tree-sitter (e.g., `get_symbols`) either:
 - Use the generic fallback if a parser can be loaded

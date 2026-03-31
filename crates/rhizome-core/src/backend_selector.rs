@@ -64,8 +64,10 @@ pub struct BackendSelector {
 
 impl BackendSelector {
     pub fn new(config: RhizomeConfig) -> Self {
-        let installer =
-            LspInstaller::from_env(config.lsp.disable_download, config.lsp.bin_dir.clone());
+        let installer = LspInstaller::from_env(
+            config.lsp.disable_download.unwrap_or(false),
+            config.lsp.bin_dir.clone(),
+        );
         Self {
             config,
             installer,
@@ -84,13 +86,14 @@ impl BackendSelector {
         match requirement {
             BackendRequirement::TreeSitter => ResolvedBackend::TreeSitter,
             BackendRequirement::RequiresLsp => {
+                let install_bin_dir = self.installer.bin_dir().to_path_buf();
                 let probe = self.probe_language(language);
                 if probe.available {
                     ResolvedBackend::Lsp
                 } else {
                     ResolvedBackend::LspUnavailable {
                         binary: probe.binary.clone(),
-                        install_hint: install_hint(&probe.binary),
+                        install_hint: install_hint(&probe.binary, &install_bin_dir),
                     }
                 }
             }
@@ -113,7 +116,8 @@ impl BackendSelector {
                 let probe = find_server(lang, &self.config, &self.installer);
                 LanguageStatus {
                     language: lang.clone(),
-                    tree_sitter: true,
+                    tree_sitter: lang.tree_sitter_supported()
+                        && self.config.is_language_enabled(lang),
                     lsp_binary: probe.binary.clone(),
                     lsp_available: probe.available,
                     lsp_path: probe.path.clone(),
@@ -124,7 +128,11 @@ impl BackendSelector {
 
     /// Probe a language, attempting auto-install if not found.
     fn probe_language(&mut self, language: &Language) -> &ServerProbe {
-        if !self.cache.contains_key(language) {
+        let refresh_probe = self
+            .cache
+            .get(language)
+            .is_none_or(|probe| !probe.available);
+        if refresh_probe {
             let probe = probe_server(language, &self.config, &self.installer);
             self.cache.insert(language.clone(), probe);
         }
@@ -196,9 +204,7 @@ fn find_server(
     config: &RhizomeConfig,
     installer: &LspInstaller,
 ) -> ServerProbe {
-    let server_config = config
-        .get_server_config(language)
-        .or_else(|| language.default_server_config());
+    let server_config = config.get_server_config(language);
 
     let binary = match &server_config {
         Some(cfg) => cfg.binary.clone(),
@@ -232,9 +238,7 @@ fn probe_server(
     config: &RhizomeConfig,
     installer: &LspInstaller,
 ) -> ServerProbe {
-    let server_config = config
-        .get_server_config(language)
-        .or_else(|| language.default_server_config());
+    let server_config = config.get_server_config(language);
 
     let binary = match &server_config {
         Some(cfg) => cfg.binary.clone(),
@@ -270,18 +274,13 @@ fn probe_server(
     }
 }
 
-fn install_hint(binary: &str) -> String {
-    match crate::installer::install_recipe(binary) {
-        Some(recipe) => {
-            let cmd = format!("{} {}", recipe.manager, recipe.args.join(" "));
-            format!(
-                "{binary} not found. Manual install: {cmd}. \
-                 Auto-install may have failed — check RHIZOME_DISABLE_LSP_DOWNLOAD \
-                 and package manager availability."
-            )
-        }
-        None => format!("{binary} not found. No auto-install recipe available — install manually."),
-    }
+fn install_hint(binary: &str, bin_dir: &std::path::Path) -> String {
+    let cmd = crate::installer::manual_install_hint(binary, bin_dir);
+    format!(
+        "{binary} not found. Manual install: {cmd}. \
+         Auto-install may have failed — check RHIZOME_DISABLE_LSP_DOWNLOAD \
+         and package manager availability."
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -414,6 +413,40 @@ mod tests {
         assert!(names.contains(&"Elixir".to_string()));
         assert!(names.contains(&"PHP".to_string()));
         assert!(names.contains(&"C#".to_string()));
+        let yaml = statuses
+            .iter()
+            .find(|status| status.language == Language::Yaml)
+            .unwrap();
+        assert!(!yaml.tree_sitter);
+        let terraform = statuses
+            .iter()
+            .find(|status| status.language == Language::Terraform)
+            .unwrap();
+        assert!(!terraform.tree_sitter);
+    }
+
+    #[test]
+    fn disabled_language_does_not_fall_back_to_default_server() {
+        let config = RhizomeConfig {
+            languages: std::collections::HashMap::from([(
+                "java".to_string(),
+                crate::config::LanguageConfig {
+                    server_binary: None,
+                    server_args: None,
+                    enabled: Some(false),
+                    initialization_options: None,
+                },
+            )]),
+            ..Default::default()
+        };
+        let mut selector = BackendSelector::new(config);
+        let statuses = selector.status();
+        let java = statuses
+            .iter()
+            .find(|status| status.language == Language::Java)
+            .unwrap();
+        assert_eq!(java.lsp_binary, "(none)");
+        assert!(!java.tree_sitter);
     }
 
     #[test]

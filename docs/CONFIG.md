@@ -87,7 +87,7 @@ LSP server binary name or path.
 
 - **Path**: Absolute path to binary
   ```toml
-  server_binary = "/opt/custom/rust-analyzer"
+  server_binary = "<absolute path to rust-analyzer>"
   # Uses exact path
   ```
 
@@ -207,7 +207,7 @@ Directory where auto-installed LSP servers are placed.
 
 ```toml
 [lsp]
-bin_dir = "/opt/rhizome/bin"         # Custom location
+bin_dir = "<custom bin dir>"         # Custom location
 ```
 
 ### [export]
@@ -268,11 +268,11 @@ Override project root detection.
 
 ```sh
 # Use custom project root
-export RHIZOME_PROJECT=/opt/my-project
+export RHIZOME_PROJECT=/path/to/project
 rhizome serve
 
 # Or inline
-RHIZOME_PROJECT=/opt/my-project rhizome serve
+RHIZOME_PROJECT=/path/to/project rhizome serve
 ```
 
 - **Type**: Absolute path
@@ -442,7 +442,7 @@ Project-specific config (overrides global):
 
 # Override global Rust config with custom binary
 [languages.rust]
-server_binary = "/opt/custom/rust-analyzer"
+server_binary = "<absolute path to rust-analyzer>"
 server_args = ["--log-file", "<path-to-log-file>"]
 
 # This project has no Python support
@@ -450,7 +450,7 @@ server_args = ["--log-file", "<path-to-log-file>"]
 enabled = false
 
 [lsp]
-bin_dir = "/opt/rhizome-bin"
+bin_dir = "<custom bin dir>"
 ```
 
 Global Python config still applies (not overridden), but Rust uses custom binary and Python is disabled.

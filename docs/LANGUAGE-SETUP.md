@@ -10,7 +10,7 @@ How to get Rhizome working with your language. Three paths: out-of-the-box (tree
 rhizome status
 ```
 
-Shows language support + LSP server status. Green = ready. Yellow = need to install server.
+Shows a status table with `Tree-Sitter`, `LSP Server`, and `Status` columns. `Tree-Sitter` is `active` for languages with built-in tree-sitter support and `n/a` for LSP-only languages. `Status` is `available (...)` when the LSP binary is found and `not found` when it is missing.
 
 ## Path 1: Out-of-the-Box Languages (Tree-Sitter)
 
@@ -35,9 +35,8 @@ These languages work immediately with zero setup:
 | Swift | All tree-sitter tools (dedicated query) | Yes, full support |
 | Zig | All tree-sitter tools (dedicated query) | Yes, full support |
 | Haskell | All tree-sitter tools (dedicated query) | Yes, full support |
-| TOML | Basic symbol extraction (generic fallback) | Limited |
 
-"Full support" = precise symbol extraction via dedicated query patterns. "Limited" = generic fallback extracts functions, classes, imports.
+"Full support" = precise symbol extraction via dedicated query patterns or built-in tree-sitter extraction.
 
 **What's the difference?**
 
@@ -46,12 +45,12 @@ These languages work immediately with zero setup:
 
 ## Path 2: LSP Languages (Auto-Install)
 
-For these languages, Rhizome auto-installs the LSP server on first use:
+For these languages, Rhizome has a built-in LSP server mapping. Some support auto-install on first use and others require manual setup:
 
 | Language | LSP Server | Install Via | Auto-Install | Note |
 |----------|-----------|-------------|--------------|------|
 | Rust | rust-analyzer | rustup | Yes | `rustup component add rust-analyzer` |
-| Python | pyright-langserver | pipx/pip | Yes | Installs to `~/.rhizome/bin/` |
+| Python | pyright-langserver | pipx/pip | Yes | Installs to Rhizome's managed bin dir |
 | JavaScript | typescript-language-server | npm | Yes | Includes TypeScript |
 | TypeScript | typescript-language-server | npm | Yes | Includes JavaScript |
 | Go | gopls | go | Yes | `go install golang.org/x/tools/gopls@latest` |
@@ -87,8 +86,8 @@ When you call a tool that requires LSP (e.g., `rename_symbol`):
    - Look up install recipe (e.g., `rustup component add rust-analyzer`)
    - Check if package manager is available (e.g., `rustup`)
    - If yes, run install command
-   - If yes, binary placed in `~/.rhizome/bin/` (added to PATH)
-4. If install fails or disabled, error with install hint
+   - If yes, binary is placed in the managed bin dir (added to PATH)
+4. If install fails or is disabled, LSP-required tools return an install hint and LSP-preferred tools fall back to tree-sitter
 
 **Example: First time calling rename_symbol on Rust**
 
@@ -112,7 +111,7 @@ Set environment variable before starting Rhizome:
 export RHIZOME_DISABLE_LSP_DOWNLOAD=1
 
 # Or in config
-~/.config/rhizome/config.toml:
+<platform config dir>/rhizome/config.toml:
 [lsp]
 disable_download = true
 ```
@@ -128,17 +127,17 @@ After install, verify server works:
 which rust-analyzer
 which pyright-langserver
 
-# Check ~/.rhizome/bin/ for auto-installed binaries
-ls -la ~/.rhizome/bin/
+# Check the managed bin dir reported by `rhizome status`
+ls -la "<managed bin dir>"
 
 # Run rhizome status
 rhizome status
 ```
 
 **Status output** shows per-language:
-- ✓ Tree-sitter available: Yes/No
-- ✓ LSP binary: Name (e.g., rust-analyzer)
-- ✓ LSP available: Yes/No / Path to binary
+- `Tree-Sitter`: `active` or `n/a`
+- `LSP Server`: binary name
+- `Status`: `available (<path>)` or `not found`
 
 ## Path 3: Custom LSP Configuration
 
@@ -146,12 +145,12 @@ For languages where auto-install doesn't work, manually configure the server.
 
 ### Edit Config
 
-**Global config**: `~/.config/rhizome/config.toml`
+**Global config**: `<platform config dir>/rhizome/config.toml`
 
 ```toml
 [languages.java]
 server_binary = "jdtls"
-server_args = ["-configuration", "/path/to/config", "-data", "/tmp/jdtls"]
+server_args = ["-configuration", "/path/to/config", "-data", "<workspace dir>"]
 enabled = true
 ```
 
@@ -159,12 +158,12 @@ enabled = true
 
 ```toml
 [languages.rust]
-server_binary = "/opt/custom/rust-analyzer"
-server_args = ["--log-file", "/tmp/ra.log"]
+server_binary = "<absolute path to rust-analyzer>"
+server_args = ["--log-file", "<log file path>"]
 enabled = true
 
 [lsp]
-bin_dir = "/opt/rhizome/bin"  # Where auto-install places servers
+bin_dir = "<managed bin dir>"  # Where auto-install places servers
 disable_download = true        # Disable auto-install for this project
 ```
 
@@ -177,7 +176,7 @@ disable_download = true        # Disable auto-install for this project
 | `[languages.<lang>].enabled` | Boolean | true | Enable/disable language entirely |
 | `[languages.<lang>].initialization_options` | JSON | None | Custom LSP init options (language-specific) |
 | `[lsp].disable_download` | Boolean | false | Disable auto-install of missing servers |
-| `[lsp].bin_dir` | Path | `~/.rhizome/bin/` | Directory where auto-installed servers go |
+| `[lsp].bin_dir` | Path | `<managed bin dir>` | Directory where auto-installed servers go |
 | `[export].auto_export` | Boolean | true | Auto-export symbols to Hyphae on startup |
 
 ### Custom Server: Java (JDTLS)
@@ -188,8 +187,8 @@ JDTLS requires manual setup:
 2. Install JDTLS:
 
 ```bash
-mkdir -p ~/jdtls
-cd ~/jdtls
+mkdir -p <jdtls workspace dir>
+cd <jdtls workspace dir>
 git clone https://github.com/eclipse/eclipse.jdt.ls.git
 cd eclipse.jdt.ls
 ./mvnw clean package -DskipTests=true
@@ -199,7 +198,7 @@ cd eclipse.jdt.ls
 3. Create config:
 
 ```toml
-# ~/.config/rhizome/config.toml
+# <platform config dir>/rhizome/config.toml
 [languages.java]
 server_binary = "java"
 server_args = [
@@ -212,8 +211,8 @@ server_args = [
     "-noverify",
     "-Xmx1G",
     "-jar", "/path/to/jdtls/org.eclipse.jdt.ls.product/target/repository/plugins/org.eclipse.jdt.ls.core_VERSION.jar",
-    "-configuration", "/path/to/jdtls/org.eclipse.jdt.ls.product/target/repository/config_linux",
-    "-data", "/tmp/eclipse-workspace"
+    "-configuration", "<platform-specific jdtls config dir>",
+    "-data", "<workspace dir>"
 ]
 enabled = true
 ```
@@ -237,7 +236,7 @@ brew install llvm
 apt-get install clangd  # or similar for your distro
 
 # Add to config if not auto-detected
-# ~/.config/rhizome/config.toml
+# <platform config dir>/rhizome/config.toml
 [languages.c]
 server_binary = "clangd"
 enabled = true
@@ -252,7 +251,7 @@ enabled = true
 If a language is causing issues, disable it entirely:
 
 ```toml
-# ~/.config/rhizome/config.toml
+# <platform config dir>/rhizome/config.toml
 [languages.java]
 enabled = false
 ```
@@ -306,8 +305,8 @@ Check logs and increase verbosity:
 RUST_LOG=debug rhizome serve
 
 # Check LSP server logs (server-specific)
-# Example Rust: /tmp/ra.log
-cat /tmp/ra.log
+# Example Rust: inspect the configured log file path
+cat "<configured log file path>"
 ```
 
 ### Tool works with tree-sitter but not LSP
@@ -330,6 +329,6 @@ Example: `get_symbols` works, but `rename_symbol` fails. Check:
 1. **Check status**: `rhizome status`
 2. **For LSP-only languages**: Set up custom config (see Path 3)
 3. **Test a tool**: `rhizome symbols <file>`
-4. **Export to Hyphae**: `rhizome export <project>`
+4. **Export to Hyphae**: `rhizome export --project <project>`
 
 See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for common issues and fixes.

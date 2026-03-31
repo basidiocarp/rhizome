@@ -34,7 +34,7 @@ Tree-sitter only supports 10 languages with precise query patterns (Rust, Python
 1. Verify server is running:
    ```sh
    rhizome status
-   # Look for: LSP binary: <name>, LSP available: Yes
+   # Look for a populated LSP Server value and Status: available (<path>)
    ```
 
 2. Check server logs (language-specific):
@@ -63,12 +63,12 @@ See [LANGUAGE-SETUP.md: Path 2](./LANGUAGE-SETUP.md#path-2-lsp-languages-auto-in
 Quick check:
 ```sh
 rhizome status
-# Confirms whether the binary is available and prints the managed bin dir
+# Confirms the resolved LSP server name and whether it is available
 ```
 
 ## LSP Server Auto-Install Issues
 
-### Symptom: Auto-install fails silently, server still missing
+### Symptom: Auto-install fails, server still missing
 
 **Diagnosis**: Package manager not found, or install recipe error.
 
@@ -77,7 +77,7 @@ rhizome status
 1. Look up recipe by server binary name (e.g., `rust-analyzer` → `rustup component add`)
 2. Check if the package manager exists on `PATH`
 3. If yes, run install command
-4. If any step fails, return None and tool gets tree-sitter fallback
+4. If install fails, LSP-required tools return an install hint and LSP-preferred tools fall back to tree-sitter
 
 **Fix:**
 
@@ -158,7 +158,7 @@ unset RHIZOME_DISABLE_LSP_DOWNLOAD
 
 List all tools:
 ```sh
-rhizome list-tools
+rhizome --help
 ```
 
 Check tool name matches exactly (case-sensitive).
@@ -275,13 +275,10 @@ For MCP, client must pass absolute path in request.
 
 2. Re-run export:
    ```sh
-   rhizome export /path/to/project
+   rhizome export --project /path/to/project
    ```
 
-3. Or export subset of project:
-   ```sh
-   rhizome export /path/to/project/src
-   ```
+3. To export a subset, use the MCP `export_to_hyphae` tool with an explicit path.
 
 ## Configuration Issues
 
@@ -335,7 +332,7 @@ For MCP, client must pass absolute path in request.
 1. Verify config:
    ```toml
    [languages.rust]
-   server_binary = "/opt/custom/rust-analyzer"
+   server_binary = "<absolute path to rust-analyzer>"
    ```
 
 2. Check key names are correct:
@@ -345,7 +342,7 @@ For MCP, client must pass absolute path in request.
 
 3. Test binary works:
    ```sh
-   /opt/custom/rust-analyzer --version
+   "<absolute path to rust-analyzer>" --version
    # Should print version, not error
    ```
 
@@ -470,7 +467,7 @@ Include:
 | "Cannot initialize LSP: connection timeout" | Server not responding | Kill and restart server |
 | "Project root not detected" | Wrong markers or path | Check language root markers |
 | "File not found: /path/to/file" | Relative path passed instead of absolute | Use absolute path |
-| "Tool not found: <name>" | Misspelled tool name | Run `rhizome list-tools` to verify |
+| "Tool not found: <name>" | Misspelled tool name | Run `rhizome --help` to verify available commands |
 | "Export failed: Hyphae unavailable" | Hyphae not running | Start Hyphae, check connection |
 | "Configuration parse error" | Invalid TOML syntax | Validate TOML, fix syntax |
 

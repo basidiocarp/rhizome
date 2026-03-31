@@ -19,11 +19,11 @@ How Rhizome is organized and how data flows.
 - Core trait: CodeIntelligence
 - Tool call flow: request → backend selection → execution → response
 - Backend selection logic: RequiresLsp, PrefersLsp, TreeSitter
-- Tree-sitter backend: query patterns, 10 languages with precision, 8 with fallback
+- Tree-sitter backend: built-in support for 17 languages
 - LSP backend: multi-client design, per-project-root servers
 - Root detection: language-specific markers (Cargo.toml, package.json, go.mod, etc.)
 - Configuration loading and merging
-- MCP tools: 26 tools across 4 categories
+- MCP tools: 38 tools across 4 categories
 - Hyphae integration
 
 ### [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md) — Getting Languages Working
@@ -37,8 +37,8 @@ Practical guide: "How do I make language X work with Rhizome?"
 - You want to override default server configuration
 
 **Key sections:**
-- Path 1: Out-of-the-box languages (18 with tree-sitter, zero setup)
-- Path 2: LSP languages (32, auto-install on first use)
+- Path 1: Out-of-the-box languages (17 with tree-sitter, zero setup)
+- Path 2: LSP languages (32 built-in server mappings, auto-install where supported)
 - Path 3: Custom LSP configuration (TOML overrides)
 - How auto-install works (recipe lookup → package manager check → install)
 - Disable auto-install: RHIZOME_DISABLE_LSP_DOWNLOAD env var or config
@@ -106,7 +106,7 @@ rhizome status
 ```
 
 Shows all 32 languages with:
-- ✓ Tree-sitter available (Yes/No)
+- ✓ Tree-sitter status (`active` or `n/a`)
 - ✓ LSP binary name
 - ✓ LSP available (Yes/No / path)
 
@@ -120,7 +120,7 @@ See [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md#path-1-out-of-the-box-languages-tree
 | **Setup** | Zero, built-in | Auto-install or manual |
 | **Precision** | High (language-specific query patterns) | Complete (full language support) |
 | **Tools supported** | Symbol extraction, structure | Everything: definitions, references, rename, hover |
-| **Languages** | 10 with patterns, 8 with fallback | 32 (one per language) |
+| **Languages** | 17 with built-in tree-sitter support | 32 (one per language) |
 | **No runtime deps** | Yes | Requires language server binary |
 
 See [ARCHITECTURE.md: Backend Selection Logic](./ARCHITECTURE.md#backend-selection-logic) for which tools use which backend.

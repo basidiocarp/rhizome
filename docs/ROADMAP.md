@@ -38,6 +38,10 @@ Expand dry-run and preview flows beyond rename so edit operations are safer befo
 
 Expand project summaries from symbol listings into higher-level architectural overviews.
 
+### Utility-backed LSP support
+
+Support non-language-specific LSP servers such as Biome and other workspace utilities when they provide repo-wide diagnostics, formatting, or edit intelligence that tree-sitter alone cannot cover cleanly.
+
 ### Contributor tooling
 
 Add clearer contributor tooling and docs for expanding tree-sitter language and query coverage.

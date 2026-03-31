@@ -8,6 +8,34 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 use crate::paths::project_state_dir;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportIdentity {
+    pub project: String,
+    pub memoir_name: String,
+    pub project_root: String,
+    pub worktree_id: Option<String>,
+}
+
+pub fn derive_export_identity(project_root: &Path) -> ExportIdentity {
+    let canonical_root = canonical_project_root(project_root);
+    let project = canonical_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("project")
+        .to_string();
+    let worktree_id = find_git_marker(&canonical_root)
+        .and_then(|git_marker| git_context(&git_marker))
+        .map(|context| context.worktree_id());
+
+    ExportIdentity {
+        memoir_name: format!("code:{project}"),
+        project,
+        project_root: canonical_root.to_string_lossy().into_owned(),
+        worktree_id,
+    }
+}
+
 pub fn scoped_cache_dir(project_root: &Path) -> PathBuf {
     project_state_dir(project_root)
 }
@@ -16,10 +44,6 @@ pub fn scoped_cache_path(project_root: &Path, prefix: &str) -> PathBuf {
     let dir = scoped_cache_dir(project_root);
     let scope = cache_scope(project_root);
     dir.join(format!("{prefix}-{scope}.json"))
-}
-
-pub fn scoped_legacy_cache_path(project_root: &Path, file_name: &str) -> PathBuf {
-    scoped_cache_dir(project_root).join(file_name)
 }
 
 /// Mtime-based file change cache for incremental exports.
@@ -48,25 +72,12 @@ impl ExportCache {
         scoped_cache_path(project_root, "cache")
     }
 
-    /// Legacy cache path used before context-aware partitioning.
-    pub fn legacy_cache_path(project_root: &Path) -> std::path::PathBuf {
-        scoped_legacy_cache_path(project_root, "cache.json")
-    }
-
     /// Loads cache from the scoped path under `project_root`.
-    /// Falls back to the legacy cache path for backward compatibility.
     /// Returns an empty cache if neither file exists.
     pub fn load(project_root: &Path) -> Result<Self> {
         let scoped = Self::cache_path(project_root);
         if scoped.exists() {
             let content = std::fs::read_to_string(&scoped)?;
-            let cache: Self = serde_json::from_str(&content)?;
-            return Ok(cache);
-        }
-
-        let legacy = Self::legacy_cache_path(project_root);
-        if legacy.exists() {
-            let content = std::fs::read_to_string(&legacy)?;
             let cache: Self = serde_json::from_str(&content)?;
             return Ok(cache);
         }
@@ -128,16 +139,19 @@ impl Default for ExportCache {
     }
 }
 
+fn canonical_project_root(project_root: &Path) -> PathBuf {
+    std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf())
+}
+
 fn cache_scope(project_root: &Path) -> String {
     let mut hasher = DefaultHasher::new();
-    let normalized_root =
-        std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
+    let normalized_root = canonical_project_root(project_root);
     normalized_root.to_string_lossy().hash(&mut hasher);
 
     if let Some(git_marker) = find_git_marker(&normalized_root) {
-        if let Some((git_dir, head)) = git_context(&git_marker) {
-            git_dir.hash(&mut hasher);
-            head.hash(&mut hasher);
+        if let Some(context) = git_context(&git_marker) {
+            context.git_dir.to_string_lossy().hash(&mut hasher);
+            context.head.hash(&mut hasher);
         }
     }
 
@@ -166,14 +180,35 @@ fn find_git_marker(start: &Path) -> Option<PathBuf> {
     None
 }
 
-fn git_context(git_marker: &Path) -> Option<(String, String)> {
+struct GitContext {
+    git_dir: PathBuf,
+    head: String,
+}
+
+impl GitContext {
+    fn worktree_id(&self) -> String {
+        match (
+            self.git_dir.file_name().and_then(|name| name.to_str()),
+            self.git_dir
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .and_then(|name| name.to_str()),
+        ) {
+            (Some(".git"), _) => "main".to_string(),
+            (Some(name), Some("worktrees")) => name.to_string(),
+            _ => self.git_dir.to_string_lossy().into_owned(),
+        }
+    }
+}
+
+fn git_context(git_marker: &Path) -> Option<GitContext> {
     if git_marker.is_dir() {
         let git_dir = git_marker
             .canonicalize()
             .ok()
             .unwrap_or_else(|| git_marker.to_path_buf());
         let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
-        return Some((git_dir.to_string_lossy().into_owned(), head));
+        return Some(GitContext { git_dir, head });
     }
 
     let git_file = std::fs::read_to_string(git_marker).ok()?;
@@ -185,7 +220,7 @@ fn git_context(git_marker: &Path) -> Option<(String, String)> {
     };
     let git_dir = git_dir_path.canonicalize().ok().unwrap_or(git_dir_path);
     let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
-    Some((git_dir.to_string_lossy().into_owned(), head))
+    Some(GitContext { git_dir, head })
 }
 
 #[cfg(test)]
@@ -281,18 +316,18 @@ mod tests {
     }
 
     #[test]
-    fn load_falls_back_to_legacy_cache_path() {
+    fn load_ignores_legacy_cache_path() {
         let dir = tempfile::tempdir().unwrap();
         let cache = ExportCache {
             files: HashMap::from([("src/main.rs".to_string(), 42)]),
         };
 
-        let legacy = ExportCache::legacy_cache_path(dir.path());
+        let legacy = dir.path().join(".rhizome/cache.json");
         fs::create_dir_all(legacy.parent().unwrap()).unwrap();
         fs::write(&legacy, serde_json::to_string_pretty(&cache).unwrap()).unwrap();
 
         let loaded = ExportCache::load(dir.path()).unwrap();
-        assert_eq!(loaded.files["src/main.rs"], 42);
+        assert!(loaded.files.is_empty());
     }
 
     #[test]
@@ -406,5 +441,53 @@ mod tests {
         let aliased = ExportCache::cache_path(&root.join("."));
 
         assert_eq!(direct, aliased);
+    }
+
+    #[test]
+    fn export_identity_uses_canonical_project_root_and_project_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("repo");
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::write(root.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let identity = derive_export_identity(&root.join("."));
+        let canonical_root = root.canonicalize().unwrap();
+
+        assert_eq!(identity.project, "repo");
+        assert_eq!(identity.memoir_name, "code:repo");
+        assert_eq!(identity.project_root, canonical_root.to_string_lossy());
+        assert_eq!(identity.worktree_id.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn export_identity_uses_linked_worktree_name_for_nested_project_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        let worktree_root = dir.path().join("wt-alpha");
+        let project_root = worktree_root.join("packages/app");
+
+        fs::create_dir_all(&project_root).unwrap();
+        fs::create_dir_all(repo_root.join(".git/worktrees/wt-alpha")).unwrap();
+        fs::write(
+            repo_root.join(".git/worktrees/wt-alpha/HEAD"),
+            "ref: refs/heads/feature\n",
+        )
+        .unwrap();
+        fs::write(
+            worktree_root.join(".git"),
+            "gitdir: ../repo/.git/worktrees/wt-alpha\n",
+        )
+        .unwrap();
+
+        let identity = derive_export_identity(&project_root);
+        let canonical_project_root = project_root.canonicalize().unwrap();
+
+        assert_eq!(identity.project, "app");
+        assert_eq!(identity.memoir_name, "code:app");
+        assert_eq!(
+            identity.project_root,
+            canonical_project_root.to_string_lossy()
+        );
+        assert_eq!(identity.worktree_id.as_deref(), Some("wt-alpha"));
     }
 }

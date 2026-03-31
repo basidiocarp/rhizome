@@ -41,6 +41,44 @@ pub enum InstallStrategy {
     DotnetToolPath,
 }
 
+impl InstallRecipe {
+    pub fn manual_install_command(&self, bin_dir: &Path) -> String {
+        let mut parts = vec![self.manager.to_string()];
+
+        match self.strategy {
+            InstallStrategy::NpmPrefix => {
+                parts.push("install".to_string());
+                parts.push("--prefix".to_string());
+                parts.push(bin_dir.display().to_string());
+                parts.extend(self.args.iter().skip(1).map(|arg| arg.to_string()));
+            }
+            InstallStrategy::GemBinDir => {
+                parts.extend(self.args.iter().map(|arg| arg.to_string()));
+                parts.push("--bindir".to_string());
+                parts.push(bin_dir.display().to_string());
+            }
+            InstallStrategy::BinEnv => {
+                if let Some(env_key) = self.bin_env {
+                    parts = vec![
+                        format!("{env_key}={}", bin_dir.display()),
+                        self.manager.to_string(),
+                    ];
+                }
+                parts.extend(self.args.iter().map(|arg| arg.to_string()));
+            }
+            InstallStrategy::DotnetToolPath => {
+                parts.extend(self.args.iter().map(|arg| arg.to_string()));
+                parts.push(bin_dir.display().to_string());
+            }
+            InstallStrategy::PipxOrPip | InstallStrategy::ManagerOwned => {
+                parts.extend(self.args.iter().map(|arg| arg.to_string()));
+            }
+        }
+
+        parts.join(" ")
+    }
+}
+
 /// Look up the install recipe for a given server binary name.
 /// Returns `None` for binaries we don't know how to install.
 pub fn install_recipe(binary_name: &str) -> Option<InstallRecipe> {
@@ -286,6 +324,13 @@ impl Language {
     }
 }
 
+pub fn manual_install_hint(binary_name: &str, bin_dir: &Path) -> String {
+    match install_recipe(binary_name) {
+        Some(recipe) => recipe.manual_install_command(bin_dir),
+        None => "install with your preferred package manager".to_string(),
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LspInstaller
 // ─────────────────────────────────────────────────────────────────────────────
@@ -424,12 +469,22 @@ impl LspInstaller {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!("Failed to install {binary_name}: {stderr}");
-            return Ok(None);
+            let install_cmd = recipe.manual_install_command(&self.bin_dir);
+            return Err(RhizomeError::Other(format!(
+                "Failed to install {binary_name} via {install_cmd}: {}",
+                stderr.trim()
+            )));
         }
 
         info!("Successfully installed {binary_name}");
-        Ok(self.find_binary(binary_name))
+        self.find_binary(binary_name)
+            .ok_or_else(|| {
+                RhizomeError::Other(format!(
+                    "{binary_name} installed successfully but was not found in {}",
+                    self.augmented_path().as_os_str().to_string_lossy()
+                ))
+            })
+            .map(Some)
     }
 
     /// Python fallback: try pip if pipx is not available.
@@ -451,6 +506,12 @@ impl LspInstaller {
 
         // Extract the package name from the pipx args (e.g. ["install", "pyright"] → "pyright")
         let package = recipe.args.last().unwrap_or(&binary_name);
+        let prefix_dir = self.bin_dir.parent().ok_or_else(|| {
+            RhizomeError::Other(format!(
+                "Cannot derive pip install prefix from managed bin dir {}",
+                self.bin_dir.display()
+            ))
+        })?;
 
         std::fs::create_dir_all(&self.bin_dir).map_err(|e| {
             RhizomeError::Other(format!("Failed to create rhizome bin directory: {}", e))
@@ -458,24 +519,42 @@ impl LspInstaller {
 
         info!("Installing LSP server: {binary_name} via {pip}");
 
-        let output = run_pip_install(pip, package).map_err(|e| {
+        let output = run_pip_install(pip, package, prefix_dir).map_err(|e| {
             RhizomeError::Other(format!("Failed to run {pip} for {binary_name}: {}", e))
         })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!("Failed to install {binary_name} via {pip}: {stderr}");
-            return Ok(None);
+            return Err(RhizomeError::Other(format!(
+                "Failed to install {binary_name} via {pip} into {}: {}",
+                prefix_dir.display(),
+                stderr.trim()
+            )));
         }
 
         info!("Successfully installed {binary_name} via {pip}");
-        Ok(self.find_binary(binary_name))
+        self.find_binary(binary_name)
+            .ok_or_else(|| {
+                RhizomeError::Other(format!(
+                    "{binary_name} installed via {pip} but was not found in {}",
+                    self.augmented_path().as_os_str().to_string_lossy()
+                ))
+            })
+            .map(Some)
     }
 }
 
-fn run_pip_install(pip: &str, package: &str) -> std::io::Result<std::process::Output> {
+fn run_pip_install(
+    pip: &str,
+    package: &str,
+    prefix_dir: &Path,
+) -> std::io::Result<std::process::Output> {
     let output = Command::new(pip)
-        .args(["install", "--break-system-packages", package])
+        .arg("install")
+        .arg("--prefix")
+        .arg(prefix_dir)
+        .arg("--break-system-packages")
+        .arg(package)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output()?;
@@ -489,7 +568,10 @@ fn run_pip_install(pip: &str, package: &str) -> std::io::Result<std::process::Ou
         || stderr.contains("unrecognized arguments: --break-system-packages")
     {
         return Command::new(pip)
-            .args(["install", package])
+            .arg("install")
+            .arg("--prefix")
+            .arg(prefix_dir)
+            .arg(package)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output();
@@ -598,7 +680,7 @@ mod tests {
         perms.set_mode(0o755);
         std::fs::set_permissions(&script, perms).unwrap();
 
-        let output = run_pip_install(script.to_str().unwrap(), "demo-package").unwrap();
+        let output = run_pip_install(script.to_str().unwrap(), "demo-package", dir.path()).unwrap();
         assert!(output.status.success());
     }
 }

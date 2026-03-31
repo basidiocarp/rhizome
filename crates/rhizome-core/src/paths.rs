@@ -17,8 +17,16 @@ pub fn managed_bin_dir() -> PathBuf {
     spore::paths::data_dir("rhizome").join("bin")
 }
 
+pub fn managed_node_bin_dir(bin_dir: &Path) -> PathBuf {
+    bin_dir.join("node_modules").join(".bin")
+}
+
 pub fn augmented_path(bin_dir: &Path) -> OsString {
     let mut paths = vec![bin_dir.to_path_buf()];
+    let node_bin_dir = managed_node_bin_dir(bin_dir);
+    if node_bin_dir.exists() {
+        paths.push(node_bin_dir);
+    }
     paths.extend(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     ));
@@ -64,5 +72,14 @@ mod tests {
         let path = augmented_path(bin_dir);
         let mut split = std::env::split_paths(&path);
         assert_eq!(split.next(), Some(bin_dir.to_path_buf()));
+    }
+
+    #[test]
+    fn managed_node_bin_dir_appends_node_modules_bin() {
+        let bin_dir = Path::new("/tmp/rhizome-bin");
+        assert_eq!(
+            managed_node_bin_dir(bin_dir),
+            PathBuf::from("/tmp/rhizome-bin/node_modules/.bin")
+        );
     }
 }

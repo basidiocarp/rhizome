@@ -38,6 +38,29 @@ pub enum Language {
 }
 
 impl Language {
+    pub fn tree_sitter_supported(&self) -> bool {
+        matches!(
+            self,
+            Language::Rust
+                | Language::Python
+                | Language::JavaScript
+                | Language::TypeScript
+                | Language::Go
+                | Language::Java
+                | Language::C
+                | Language::Cpp
+                | Language::Ruby
+                | Language::Elixir
+                | Language::Zig
+                | Language::CSharp
+                | Language::Swift
+                | Language::Php
+                | Language::Haskell
+                | Language::Bash
+                | Language::Lua
+        )
+    }
+
     pub fn from_extension(ext: &str) -> Option<Language> {
         match ext {
             "rs" => Some(Language::Rust),

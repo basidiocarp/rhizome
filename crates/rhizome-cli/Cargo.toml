@@ -1,6 +1,6 @@
 [package]
 name = "rhizome-cli"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 authors = ["William Newton"]
 description = "Rhizome - Code intelligence MCP server with tree-sitter and LSP backends"
@@ -28,6 +28,7 @@ toml = "1.0"
 ureq = "3"
 tempfile = "3"
 which = "7"
+ignore = "0.4"
 
 # cargo-deb configuration
 [package.metadata.deb]

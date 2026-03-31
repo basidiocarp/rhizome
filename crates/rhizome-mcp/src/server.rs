@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use serde_json::{json, Value};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::tools::ToolDispatcher;
 
@@ -95,6 +95,32 @@ impl McpServer {
             info!("rhizome: starting auto-export to hyphae");
             let backend = rhizome_treesitter::TreeSitterBackend::new();
             let args = serde_json::json!({});
+            let backoff_seconds = [1_u64, 4, 16];
+
+            for (attempt_idx, delay_seconds) in backoff_seconds.iter().copied().enumerate() {
+                match crate::tools::export_tools::export_to_hyphae(&backend, &args, &project_root) {
+                    Ok(result) => {
+                        if let Some(text) = result
+                            .get("content")
+                            .and_then(|c| c.as_array())
+                            .and_then(|a| a.first())
+                            .and_then(|o| o.get("text"))
+                            .and_then(|t| t.as_str())
+                        {
+                            info!("rhizome: hyphae auto-export complete: {text}");
+                        }
+                        return;
+                    }
+                    Err(error) => {
+                        debug!(
+                            "rhizome: hyphae auto-export attempt {} failed: {error}",
+                            attempt_idx + 1
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
+                    }
+                }
+            }
+
             match crate::tools::export_tools::export_to_hyphae(&backend, &args, &project_root) {
                 Ok(result) => {
                     if let Some(text) = result
@@ -107,8 +133,8 @@ impl McpServer {
                         info!("rhizome: hyphae auto-export complete: {text}");
                     }
                 }
-                Err(e) => {
-                    debug!("rhizome: hyphae auto-export failed: {e}");
+                Err(error) => {
+                    warn!("rhizome: hyphae auto-export failed after 4 attempts: {error}");
                 }
             }
         });
@@ -179,7 +205,6 @@ impl McpServer {
                         "ref1": { "type": "string", "description": "Git ref for diff start" },
                         "ref2": { "type": "string", "description": "Git ref for diff end" },
                         "tags": { "type": "array", "items": { "type": "string" }, "description": "Annotation tags to search for" },
-                        "memoir": { "type": "string", "description": "Override memoir name for export" },
                         "new_body": { "type": "string", "description": "New content for replace_symbol_body" },
                         "content": { "type": "string", "description": "Content for insert/replace/create operations" },
                         "source_file": { "type": "string", "description": "Path to the source file for copy_symbol or move_symbol" },

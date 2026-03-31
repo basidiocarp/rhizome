@@ -13,27 +13,23 @@ pub struct LanguageConfig {
     /// Arguments to pass to the language server
     pub server_args: Option<Vec<String>>,
     /// Whether this language is enabled
-    #[serde(default = "default_true")]
-    pub enabled: bool,
+    #[serde(default)]
+    pub enabled: Option<bool>,
     /// Custom initialization options for the LSP server
     pub initialization_options: Option<serde_json::Value>,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// Export configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportConfig {
     /// Whether to automatically export to Hyphae on MCP server startup
-    #[serde(default = "default_true")]
-    pub auto_export: bool,
+    #[serde(default)]
+    pub auto_export: Option<bool>,
 }
 
 impl Default for ExportConfig {
     fn default() -> Self {
-        Self { auto_export: true }
+        Self { auto_export: None }
     }
 }
 
@@ -42,7 +38,7 @@ impl Default for ExportConfig {
 pub struct LspConfig {
     /// Disable automatic LSP server installation (default: false)
     #[serde(default)]
-    pub disable_download: bool,
+    pub disable_download: Option<bool>,
     /// Custom directory for managed LSP binaries.
     pub bin_dir: Option<std::path::PathBuf>,
 }
@@ -72,25 +68,41 @@ impl RhizomeConfig {
     /// Merge two configs. `project` values override `global`.
     fn merge(global: Self, project: Self) -> Self {
         let mut languages = global.languages;
-        for (lang, config) in project.languages {
-            languages.insert(lang, config);
+        for (lang, project_config) in project.languages {
+            if let Some(global_config) = languages.remove(&lang) {
+                languages.insert(
+                    lang,
+                    LanguageConfig {
+                        server_binary: project_config.server_binary.or(global_config.server_binary),
+                        server_args: project_config.server_args.or(global_config.server_args),
+                        enabled: project_config.enabled.or(global_config.enabled),
+                        initialization_options: project_config
+                            .initialization_options
+                            .or(global_config.initialization_options),
+                    },
+                );
+            } else {
+                languages.insert(lang, project_config);
+            }
         }
-        // Project LSP config overrides global, field by field
+
         let lsp = LspConfig {
-            disable_download: project.lsp.disable_download || global.lsp.disable_download,
+            disable_download: project.lsp.disable_download.or(global.lsp.disable_download),
             bin_dir: project.lsp.bin_dir.or(global.lsp.bin_dir),
         };
 
         Self {
             languages,
-            export: project.export,
+            export: ExportConfig {
+                auto_export: project.export.auto_export.or(global.export.auto_export),
+            },
             lsp,
         }
     }
 
     /// Check if auto-export is enabled
     pub fn auto_export(&self) -> bool {
-        self.export.auto_export
+        self.export.auto_export.unwrap_or(true)
     }
 
     /// Get the effective LanguageServerConfig for a language,
@@ -104,7 +116,7 @@ impl RhizomeConfig {
 
         match self.languages.get(&lang_key) {
             Some(override_config) => {
-                if !override_config.enabled {
+                if override_config.enabled == Some(false) {
                     return None;
                 }
                 Some(crate::LanguageServerConfig {
@@ -135,7 +147,7 @@ impl RhizomeConfig {
         let lang_key = language_to_config_key(language);
         self.languages
             .get(&lang_key)
-            .map(|c| c.enabled)
+            .and_then(|c| c.enabled)
             .unwrap_or(true)
     }
 
@@ -246,11 +258,11 @@ mod tests {
             rust.server_args.as_deref(),
             Some(&["--log-file".to_string(), "/tmp/ra.log".to_string()][..])
         );
-        assert!(rust.enabled);
+        assert_eq!(rust.enabled, Some(true));
 
         let python = &config.languages["python"];
         assert_eq!(python.server_binary.as_deref(), Some("pylsp"));
-        assert!(python.enabled);
+        assert_eq!(python.enabled, Some(true));
     }
 
     #[test]
@@ -262,7 +274,7 @@ mod tests {
                     LanguageConfig {
                         server_binary: Some("rust-analyzer".to_string()),
                         server_args: None,
-                        enabled: true,
+                        enabled: Some(true),
                         initialization_options: None,
                     },
                 ),
@@ -271,7 +283,7 @@ mod tests {
                     LanguageConfig {
                         server_binary: Some("pyright-langserver".to_string()),
                         server_args: None,
-                        enabled: true,
+                        enabled: Some(true),
                         initialization_options: None,
                     },
                 ),
@@ -285,7 +297,7 @@ mod tests {
                 LanguageConfig {
                     server_binary: Some("custom-ra".to_string()),
                     server_args: Some(vec!["--custom".to_string()]),
-                    enabled: true,
+                    enabled: Some(true),
                     initialization_options: None,
                 },
             )]),
@@ -309,6 +321,64 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_preserves_global_language_fields_when_project_only_overrides_one_field() {
+        let global = RhizomeConfig {
+            languages: HashMap::from([(
+                "rust".to_string(),
+                LanguageConfig {
+                    server_binary: Some("/opt/global/rust-analyzer".to_string()),
+                    server_args: Some(vec!["--global".to_string()]),
+                    enabled: Some(true),
+                    initialization_options: Some(serde_json::json!({"global": true})),
+                },
+            )]),
+            export: ExportConfig {
+                auto_export: Some(false),
+            },
+            lsp: LspConfig {
+                disable_download: Some(true),
+                bin_dir: Some("/opt/global-bin".into()),
+            },
+        };
+
+        let project = RhizomeConfig {
+            languages: HashMap::from([(
+                "rust".to_string(),
+                LanguageConfig {
+                    server_binary: None,
+                    server_args: Some(vec!["--project".to_string()]),
+                    enabled: None,
+                    initialization_options: None,
+                },
+            )]),
+            export: ExportConfig { auto_export: None },
+            lsp: LspConfig {
+                disable_download: Some(false),
+                bin_dir: None,
+            },
+        };
+
+        let merged = RhizomeConfig::merge(global, project);
+        let rust = &merged.languages["rust"];
+        assert_eq!(
+            rust.server_binary.as_deref(),
+            Some("/opt/global/rust-analyzer")
+        );
+        assert_eq!(
+            rust.server_args.as_deref(),
+            Some(&["--project".to_string()][..])
+        );
+        assert_eq!(rust.enabled, Some(true));
+        assert_eq!(
+            rust.initialization_options,
+            Some(serde_json::json!({"global": true}))
+        );
+        assert!(!merged.auto_export());
+        assert_eq!(merged.lsp.disable_download, Some(false));
+        assert_eq!(merged.lsp.bin_dir, Some("/opt/global-bin".into()));
+    }
+
+    #[test]
     fn test_disabled_language() {
         let config = RhizomeConfig {
             languages: HashMap::from([(
@@ -316,7 +386,7 @@ mod tests {
                 LanguageConfig {
                     server_binary: None,
                     server_args: None,
-                    enabled: false,
+                    enabled: Some(false),
                     initialization_options: None,
                 },
             )]),
@@ -335,7 +405,7 @@ mod tests {
                 LanguageConfig {
                     server_binary: Some("/opt/bin/ra-custom".to_string()),
                     server_args: None,
-                    enabled: true,
+                    enabled: Some(true),
                     initialization_options: None,
                 },
             )]),
@@ -392,7 +462,7 @@ mod tests {
                 LanguageConfig {
                     server_binary: None,
                     server_args: None,
-                    enabled: true,
+                    enabled: Some(true),
                     initialization_options: Some(init_opts.clone()),
                 },
             )]),
@@ -428,7 +498,7 @@ mod tests {
         "#;
 
         let config: RhizomeConfig = toml::from_str(toml_str).unwrap();
-        assert!(config.languages["rust"].enabled);
+        assert_eq!(config.languages["rust"].enabled, None);
     }
 
     #[test]
