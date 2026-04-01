@@ -1,7 +1,7 @@
 [package]
 name = "rhizome-cli"
 version = "0.7.2"
-edition = "2021"
+edition = "2024"
 authors = ["William Newton"]
 description = "Rhizome - Code intelligence MCP server with tree-sitter and LSP backends"
 license = "MIT"
