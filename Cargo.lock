@@ -1202,8 +1202,8 @@ dependencies = [
 
 [[package]]
 name = "spore"
-version = "0.4.6"
-source = "git+https://github.com/basidiocarp/spore?tag=v0.4.6#f6a12506876ce74d69f47c16c952a7822aec977b"
+version = "0.4.7"
+source = "git+https://github.com/basidiocarp/spore?tag=v0.4.7#e6d3c6db78663702efe14561fdafa6abfc536001"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1212,7 +1212,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
- "toml 0.8.23",
+ "toml 1.0.6+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "ureq",
