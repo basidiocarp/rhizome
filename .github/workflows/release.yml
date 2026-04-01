@@ -54,24 +54,86 @@ jobs:
         with:
           tool: cross
 
+      - name: Configure macOS SDK
+        if: startsWith(matrix.target, 'x86_64-apple') || startsWith(matrix.target, 'aarch64-apple')
+        run: |
+          set -euo pipefail
+          for app in \
+            /Applications/Xcode_16.3.app \
+            /Applications/Xcode_16.2.app \
+            /Applications/Xcode_16.1.app \
+            /Applications/Xcode_15.4.app
+          do
+            if [ -d "$app/Contents/Developer" ]; then
+              sudo xcode-select -s "$app/Contents/Developer"
+              break
+            fi
+          done
+          echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
+          xcode-select -p
+          xcodebuild -version
+          clang --version
+
       - name: Build
         run: |
+          set -euo pipefail
           if [ "${{ matrix.cross }}" = "true" ]; then
             cross build --release --target ${{ matrix.target }}
+          elif [[ "${{ matrix.target }}" == *apple-darwin ]]; then
+            export CARGO_BUILD_JOBS=1
+            export CC_ENABLE_DEBUG_OUTPUT=1
+            cargo build --release --target ${{ matrix.target }} -vv 2>&1 | tee build-${{ matrix.target }}.log
           else
             cargo build --release --target ${{ matrix.target }}
           fi
         shell: bash
 
+      - name: Inspect macOS build diagnostics
+        if: startsWith(matrix.target, 'x86_64-apple') || startsWith(matrix.target, 'aarch64-apple')
+        run: |
+          set -euo pipefail
+          LOG=build-${{ matrix.target }}.log
+          echo "--- SDK ---"
+          xcrun --sdk macosx --show-sdk-path
+          echo "--- Relevant compiler lines ---"
+          grep -E 'running: .*clang|running: .*cc|cargo:warning=' "$LOG" | sed -n '1,120p' || true
+        shell: bash
+
+      - name: Re-sign binary (macOS)
+        if: startsWith(matrix.target, 'x86_64-apple') || startsWith(matrix.target, 'aarch64-apple')
+        run: |
+          set -euo pipefail
+          BINARY=target/${{ matrix.target }}/release/rhizome
+          codesign --force --sign - "$BINARY"
+          codesign -dv "$BINARY" 2>&1
+        shell: bash
+
       - name: Smoke test (macOS native)
         if: startsWith(matrix.target, 'x86_64-apple') || startsWith(matrix.target, 'aarch64-apple')
         run: |
+          set -euo pipefail
           BINARY=target/${{ matrix.target }}/release/rhizome
           echo "--- L0: version check ---"
-          ./$BINARY --version
-          echo "--- L1: functional check (symbols) ---"
-          ./$BINARY symbols crates/rhizome-cli/src/main.rs 2>/dev/null || true
+          "$BINARY" --version
+          echo "--- L1: tree-sitter smoke (symbols) ---"
+          "$BINARY" symbols crates/rhizome-cli/src/main.rs 2>&1 | tee smoke-${{ matrix.target }}.log
+          grep -q 'fn main' smoke-${{ matrix.target }}.log
+          echo "--- L2: MCP initialize ---"
+          printf '%s' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"release-smoke","version":"0.1"}}}' \
+            | "$BINARY" serve --expanded 2>&1 | tee -a smoke-${{ matrix.target }}.log
+          grep -q 'protocolVersion' smoke-${{ matrix.target }}.log
         shell: bash
+
+      - name: Upload macOS diagnostics
+        if: failure() && (startsWith(matrix.target, 'x86_64-apple') || startsWith(matrix.target, 'aarch64-apple'))
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: rhizome-${{ matrix.target }}-diagnostics
+          path: |
+            build-${{ matrix.target }}.log
+            smoke-${{ matrix.target }}.log
 
       - name: Package (unix)
         if: matrix.archive == 'tar.gz'

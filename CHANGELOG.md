@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-04-01
+
+### Fixed
+
+- **Release-gating for macOS binaries**: Apple release builds now fail on tree-sitter smoke-test or MCP initialize regressions instead of publishing artifacts after advisory-only checks.
+- **macOS build diagnostics**: Release workflows now emit verbose native compiler logs, pin the SDK and deployment target, re-sign the binary, and upload diagnostics when the Apple build path fails.
+
 ## [0.7.0] - 2026-03-31
 
 ### Added
