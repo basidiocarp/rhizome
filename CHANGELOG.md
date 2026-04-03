@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Reorganized documentation: moved INTERNALS.md to docs/, updated architecture, language setup, and README docs
+
 ## [0.7.2] - 2026-04-01
 
 ### Fixed

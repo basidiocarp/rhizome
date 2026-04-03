@@ -1,6 +1,6 @@
 # Rhizome Internals
 
-This document explains how Rhizome works under the hood: crate layout, request flow, backend selection, symbol extraction, LSP management, and file editing.
+Crate layout, request flow, backend selection, symbol extraction, LSP management, and file editing—how Rhizome works under the hood.
 
 ## Crate Layout
 
@@ -183,10 +183,7 @@ Rhizome exports code graphs to Hyphae via the `spore` IPC library for incrementa
 4. Serialize graph to JSON-RPC calls (create memoir, add concepts, add links)
 5. Cache result in Hyphae memoirs under `code:{project}` namespace
 
-**Benefits:**
-- Code context available to agents during recall
-- Code changes detected (memoir updated_at) trigger refresh hints
-- Monorepo support: per-root code graphs
+This makes code context available to agents during recall, exposes code changes (via memoir `updated_at`) as refresh hints, and supports monorepos with per-root code graphs.
 
 ---
 
@@ -321,6 +318,3 @@ tree_sitter_query = "custom.scm"  # Override query pattern
 server_binary = "rust-analyzer"   # Override server binary
 ```
 
----
-
-**Summary**: Rhizome's architecture optimizes for speed (tree-sitter) with precision (LSP) when needed. The backend selector auto-chooses per tool, the parser pool reduces latency, and auto-install removes setup friction. Multi-client LSP support handles monorepos, and path validation secures file editing.

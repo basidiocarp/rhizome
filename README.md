@@ -45,6 +45,10 @@ cargo run --release -- structure src/lib.rs
 Works with Claude Code, Cursor, Windsurf, Cline, Continue, OpenCode, and any MCP-compatible tool.
 
 ```sh
+# Recommended: full ecosystem setup
+stipe init
+
+# Alternative: rhizome-only config generation
 rhizome init
 # Shows detected hosts and the right MCP snippet shape for each one
 

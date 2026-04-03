@@ -1,6 +1,6 @@
 # Language Setup Guide
 
-How to get Rhizome working with your language. Three paths: out-of-the-box (tree-sitter), LSP with auto-install, or manual LSP configuration.
+Three paths to get Rhizome working with your language: out-of-the-box tree-sitter (zero setup), LSP with auto-install, or manual LSP configuration.
 
 ## Quick Start
 
@@ -36,16 +36,11 @@ These languages work immediately with zero setup:
 | Zig | All tree-sitter tools (dedicated query) | Yes, full support |
 | Haskell | All tree-sitter tools (dedicated query) | Yes, full support |
 
-"Full support" = precise symbol extraction via dedicated query patterns or built-in tree-sitter extraction.
-
-**What's the difference?**
-
-- **Query patterns** (full): Language-specific grammar rules extract exact symbol locations, kinds, signatures
-- **Generic fallback** (limited): Walks AST, matches common node types (function_definition, class_declaration)
+"Full support" means precise symbol extraction via dedicated query patterns or built-in tree-sitter extraction. Query patterns use language-specific grammar rules to extract exact symbol locations, kinds, and signatures. The generic fallback walks the AST and matches common node types like `function_definition` and `class_declaration`—useful, but less precise.
 
 ## Path 2: LSP Languages (Auto-Install)
 
-For these languages, Rhizome has a built-in LSP server mapping. Some support auto-install on first use and others require manual setup:
+Rhizome has a built-in LSP server mapping for each of these languages. Some support auto-install on first use; others require manual setup:
 
 | Language | LSP Server | Install Via | Auto-Install | Note |
 |----------|-----------|-------------|--------------|------|
@@ -141,7 +136,7 @@ rhizome status
 
 ## Path 3: Custom LSP Configuration
 
-For languages where auto-install doesn't work, manually configure the server.
+When auto-install doesn't work, configure the server manually.
 
 ### Edit Config
 

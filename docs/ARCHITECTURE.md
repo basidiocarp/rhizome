@@ -1,6 +1,6 @@
 # Rhizome Architecture
 
-Rhizome is a code intelligence MCP server with a 5-crate workspace design. Two code backends (tree-sitter and LSP) are selected per tool call. This document describes the architecture and data flow.
+Rhizome is a code intelligence MCP server with a 5-crate workspace design. Two backends—tree-sitter and LSP—are selected per tool call. This document describes the architecture and data flow.
 
 ## Workspace Structure
 
@@ -18,7 +18,7 @@ rhizome-cli           Clap-based CLI entry point
             └─ rhizome-core  Domain types, traits, backends
 ```
 
-All five crates compile into a single binary. `rhizome-core` is the foundation; other crates implement the `CodeIntelligence` trait.
+All five crates compile into a single binary. `rhizome-core` is the foundation; the other crates implement the `CodeIntelligence` trait.
 
 ## Core Trait: CodeIntelligence
 
@@ -36,7 +36,7 @@ pub trait CodeIntelligence {
 }
 ```
 
-Both tree-sitter and LSP backends implement this fully. The tool dispatcher selects which backend to use for each call.
+Both tree-sitter and LSP backends implement this interface fully. The tool dispatcher selects which backend to use for each call.
 
 ## Tool Call Flow: Request to Response
 
@@ -238,7 +238,7 @@ Fallback chain:
 
 File: `crates/rhizome-core/src/config.rs`
 
-Configuration is merged from two sources (project overrides global):
+Configuration merges from two sources, with project config overriding global:
 
 1. **Global**: `~/.config/rhizome/config.toml`
 2. **Project**: `<project_root>/.rhizome/config.toml`
@@ -293,16 +293,7 @@ Tools are grouped by category:
 
 File: `crates/rhizome-core/src/hyphae.rs`
 
-When a file changes, Rhizome can export symbol data to Hyphae:
-
-1. **Symbol Extraction**: Extract symbols via tree-sitter
-2. **Graph Building**: Link symbols (definitions, references, imports)
-3. **JSON-RPC**: Send graph to Hyphae via spore IPC
-4. **Incremental**: Cache checksums to avoid re-exporting unchanged files
-
-Flow: File changes → Tool call with path → Extract symbols → Build graph → Send to Hyphae
-
-This enables Hyphae to index code across a project and provide cross-file symbol search, refactoring, and memory.
+When a file changes, Rhizome can export symbol data to Hyphae. The flow: extract symbols via tree-sitter, link them into a graph (definitions, references, imports), send the graph to Hyphae via spore IPC, and cache checksums to skip unchanged files on the next export. This lets Hyphae index code across a project and provide cross-file symbol search, refactoring, and memory.
 
 ## Error Handling
 

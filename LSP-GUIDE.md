@@ -35,8 +35,7 @@ brew install lua-language-server
 brew install taplo           # TOML schema-aware server
 ```
 
-Rhizome auto-installs most of these on first use when the package manager is
-available. Installing upfront avoids cold-start delay during a session.
+Rhizome auto-installs most of these on first use when the package manager is available. Installing upfront avoids the cold-start delay on first tool call.
 
 ---
 
@@ -52,9 +51,7 @@ available. Installing upfront avoids cold-start delay during a session.
 | Features | Completions, diagnostics, hover, references, rename, go-to-definition, code actions, formatting (rustfmt), inlay hints, semantic tokens |
 | Rhizome | Full tree-sitter queries + LSP auto-install |
 
-The best-supported language in the ecosystem. Ships with rustup since Rust
-1.64. Tree-sitter covers 80% of rhizome's tools without it, but rust-analyzer
-is needed for `find_references`, `rename_symbol`, and `get_hover_info`.
+Ships with rustup since Rust 1.64. Tree-sitter covers 80% of rhizome's tools without it, but rust-analyzer is needed for `find_references`, `rename_symbol`, and `get_hover_info`.
 
 ---
 
@@ -69,8 +66,7 @@ is needed for `find_references`, `rename_symbol`, and `get_hover_info`.
 | Features | Completions, diagnostics, hover, references, rename, go-to-definition, code actions, formatting |
 | Rhizome | Full tree-sitter queries (including TSX variant) + LSP auto-install |
 
-Wraps `tsserver` (TypeScript's compiler service) in an LSP interface. The
-standard choice for non-VS-Code editors. Handles both `.ts` and `.js` files.
+Wraps `tsserver` (TypeScript's compiler service) in an LSP interface. The standard choice for non-VS-Code editors. Handles both `.ts` and `.js` files.
 
 ---
 
@@ -84,12 +80,9 @@ standard choice for non-VS-Code editors. Handles both `.ts` and `.js` files.
 | Features | Completions, diagnostics, hover, references, rename, go-to-definition, code actions, call hierarchy |
 | Rhizome | Full tree-sitter queries + LSP auto-install |
 
-Microsoft's Python type checker and language server. Fast, accurate, and
-actively maintained. The `pyright` package includes both the CLI type checker
-and the LSP server binary.
+Microsoft's Python type checker and language server. The `pyright` package includes both the CLI type checker and the LSP server binary.
 
-**Alternatives in rhizome's installer:** `pylsp` (community, plugin-based),
-`ruff` (fast linter/formatter), `jedi-language-server` (lightweight).
+Rhizome's installer also recognizes `pylsp` (community, plugin-based), `ruff` (linter/formatter), and `jedi-language-server` (lightweight) as alternatives.
 
 ---
 
@@ -103,8 +96,7 @@ and the LSP server binary.
 | Features | Completions, diagnostics (via shellcheck if installed), hover (man page excerpts), references, rename, go-to-definition (within file) |
 | Rhizome | Full tree-sitter queries + LSP auto-install |
 
-Tree-sitter queries already handle function/variable extraction well. The LSP
-adds diagnostics (especially with shellcheck) and cross-reference support.
+Tree-sitter queries handle function and variable extraction well. The LSP adds diagnostics (especially with shellcheck installed) and cross-reference support.
 
 ---
 
@@ -131,8 +123,7 @@ adds diagnostics (especially with shellcheck) and cross-reference support.
 | Note | Freemium — some features (rename, code actions) require a license key |
 | Rhizome | Install recipe available |
 
-phpactor is fully open source. intelephense is faster and more feature-complete
-but has a freemium model. Pick based on your needs.
+phpactor is fully open source. intelephense is faster and more feature-complete but requires a license key for rename and code actions.
 
 ---
 
@@ -146,10 +137,7 @@ but has a freemium model. Pick based on your needs.
 | Features | Completions (from JSON Schema), diagnostics, hover, formatting, document symbols |
 | Rhizome | LSP only (no tree-sitter queries) |
 
-Maintained by Red Hat. Supports JSON Schema Store for auto-completion of
-`docker-compose.yml`, GitHub Actions workflows, Kubernetes manifests, and
-other common YAML formats. Also supports custom schema mapping via modeline
-comments (`# yaml-language-server: $schema=...`).
+Maintained by Red Hat. Supports JSON Schema Store for auto-completion of `docker-compose.yml`, GitHub Actions workflows, Kubernetes manifests, and other common YAML formats. Custom schema mapping is available via modeline comments (`# yaml-language-server: $schema=...`).
 
 Atmos stack files (`.yaml`) are covered by this server.
 
@@ -165,13 +153,7 @@ Atmos stack files (`.yaml`) are covered by this server.
 | Features | Completions (providers, resources, attributes), diagnostics, hover, references, go-to-definition, formatting, semantic tokens |
 | Rhizome | LSP only (no tree-sitter queries) |
 
-HashiCorp's official language server. Provides provider-aware completions
-(knows the schema of AWS, GCP, Azure resources), module references, and
-variable tracking. Requires `terraform` CLI installed for provider schema
-fetching.
-
-Handles both `.tf` and `.tfvars` files. Atmos HCL components are covered
-when they use standard `.tf` extensions.
+HashiCorp's official language server. Provides provider-aware completions (AWS, GCP, Azure resource schemas), module references, and variable tracking. Requires the `terraform` CLI for provider schema fetching. Handles both `.tf` and `.tfvars` files.
 
 ---
 
@@ -185,10 +167,7 @@ when they use standard `.tf` extensions.
 | Features | Completions, diagnostics, hover, references, rename, color information, folding |
 | Rhizome | LSP only |
 
-Extracted from VS Code's built-in CSS extension. Handles `.css`, `.scss`, and
-`.less` files. Works outside VS Code as a standard LSP server.
-
-Part of the `vscode-langservers-extracted` package (see note below).
+Extracted from VS Code's built-in CSS extension. Handles `.css`, `.scss`, and `.less` files as a standard LSP server outside VS Code. Part of the `vscode-langservers-extracted` package (see note below).
 
 ---
 
@@ -202,10 +181,7 @@ Part of the `vscode-langservers-extracted` package (see note below).
 | Features | Completions (tags, attributes), hover, formatting (via js-beautify), linked editing (rename open/close tags), folding |
 | Rhizome | LSP only |
 
-Extracted from VS Code's built-in HTML extension. Handles `.html` and `.htm`
-files. Formatting is built-in via js-beautify.
-
-Part of the `vscode-langservers-extracted` package (see note below).
+Extracted from VS Code's built-in HTML extension. Handles `.html` and `.htm` files with formatting built in via js-beautify. Part of the `vscode-langservers-extracted` package (see note below).
 
 ---
 
@@ -219,11 +195,7 @@ Part of the `vscode-langservers-extracted` package (see note below).
 | Features | Completions (from JSON Schema), diagnostics (syntax + schema validation), hover (schema descriptions), formatting |
 | Rhizome | LSP only |
 
-Extracted from VS Code's built-in JSON extension. Connects to JSON Schema
-Store for auto-completion and validation of `package.json`, `tsconfig.json`,
-`.eslintrc.json`, and hundreds of other common JSON config files.
-
-Part of the `vscode-langservers-extracted` package (see note below).
+Extracted from VS Code's built-in JSON extension. Connects to JSON Schema Store for auto-completion and validation of `package.json`, `tsconfig.json`, `.eslintrc.json`, and hundreds of other common JSON config files. Part of the `vscode-langservers-extracted` package (see note below).
 
 ---
 
@@ -242,13 +214,7 @@ npm i -g vscode-langservers-extracted
 | `vscode-json-language-server` | VS Code JSON | `.json`, `.jsonc` |
 | `vscode-eslint-language-server` | VS Code ESLint | JS/TS (linting) |
 
-All communicate via `--stdio` and work in any editor (Neovim, Helix, Zed,
-Emacs, etc.). The package is maintained by the community (`hrsh7th`) but the
-server code comes from the official `microsoft/vscode` repository.
-
-Older package names like `css-languageserver-bin`, `html-languageserver-bin`,
-and `vscode-json-languageserver` are deprecated. This consolidated package
-supersedes all of them.
+All four communicate via `--stdio` and work in any editor (Neovim, Helix, Zed, Emacs, etc.). The package is maintained by the community (`hrsh7th`), but the server code comes from the official `microsoft/vscode` repository. Older package names like `css-languageserver-bin`, `html-languageserver-bin`, and `vscode-json-languageserver` are deprecated—this consolidated package supersedes all of them.
 
 ---
 
@@ -264,10 +230,7 @@ supersedes all of them.
 | Config | Requires `.graphqlrc.yml`, `.graphqlrc.json`, or `graphql.config.js` in project root |
 | Rhizome | Not yet integrated |
 
-Built by the GraphQL Foundation. Provides schema-aware intelligence for
-`.graphql` files and inline GraphQL in JS/TS (with config). The npm package
-name is `graphql-language-service-cli` — the binary name `graphql-lsp` comes
-from it.
+Built by the GraphQL Foundation. Provides schema-aware intelligence for `.graphql` files and inline GraphQL in JS/TS (with config). The npm package name is `graphql-language-service-cli`—the binary name `graphql-lsp` comes from it.
 
 ---
 
@@ -281,28 +244,19 @@ from it.
 | Features | Completions (JSX components in markdown), diagnostics, hover, go-to-definition (imported components) |
 | Rhizome | Not yet integrated |
 
-Official server from the MDX team (unified collective). Handles `.mdx` files
-with JSX component awareness. Understands imports and provides component-level
-intelligence within markdown content.
+Official server from the MDX team (unified collective). Handles `.mdx` files with JSX component awareness, understands imports, and provides component-level intelligence within markdown content.
 
 ---
 
 ### Markdown
 
-No LSP recommended. Rhizome handles heading-based structure extraction
-natively via tree-sitter. LSP servers like `marksman` exist but add little
-value for agent use cases — agents need structure, not prose diagnostics.
+No LSP recommended. Rhizome handles heading-based structure extraction natively via tree-sitter. Servers like `marksman` exist but add little value for agent use cases—agents need structure, not prose diagnostics.
 
 ---
 
 ### Makefile
 
-No production-quality LSP server exists. Experimental projects like
-`makefile-language-server` are abandoned. VS Code's Makefile Tools extension
-is VS-Code-only, not an LSP server.
-
-Rhizome can use tree-sitter (`tree-sitter-make`) for basic target and variable
-extraction. This covers what agents need.
+No production-quality LSP server exists. Experimental projects like `makefile-language-server` are abandoned, and VS Code's Makefile Tools extension is VS-Code-only. Rhizome uses tree-sitter (`tree-sitter-make`) for basic target and variable extraction, which covers what agents need.
 
 ---
 
@@ -316,9 +270,7 @@ extraction. This covers what agents need.
 | Features | Completions (instructions, flags), diagnostics (syntax errors, deprecated instructions), hover (instruction docs), formatting |
 | Rhizome | Not yet integrated |
 
-Community-maintained (`rcjsuen`). The standard choice used by Neovim, Helix,
-and other editors. Docker's official server is internal to Docker Desktop and
-not available standalone.
+Community-maintained (`rcjsuen`) and the standard choice for Neovim, Helix, and other editors. Docker's official server is internal to Docker Desktop and not available standalone.
 
 ---
 
@@ -333,9 +285,7 @@ not available standalone.
 | Note | Linter/formatter only — no completions, hover, references, or rename |
 | Rhizome | Install recipe exists |
 
-Companion to typescript-language-server. Biome handles lint diagnostics and
-formatting while tsserver handles type intelligence. Useful when a project
-uses Biome instead of ESLint/Prettier (cap does).
+Companion to typescript-language-server: Biome handles lint diagnostics and formatting while tsserver handles type intelligence. Use this when a project uses Biome instead of ESLint/Prettier (cap does).
 
 ---
 
@@ -349,10 +299,7 @@ uses Biome instead of ESLint/Prettier (cap does).
 | Features | Completions (from TOML schema), diagnostics, hover, formatting, semantic tokens |
 | Rhizome | Tree-sitter generic fallback exists; LSP not yet integrated |
 
-Schema-aware TOML server. Provides completions and validation for
-`Cargo.toml`, `pyproject.toml`, `biome.json`, and other structured TOML
-files. Three install paths — brew is fastest on macOS, npm is most portable,
-cargo builds native but takes minutes.
+Schema-aware TOML server. Provides completions and validation for `Cargo.toml`, `pyproject.toml`, `biome.json`, and other structured TOML files. Three install paths: brew is fastest on macOS, npm is most portable, cargo builds native but takes several minutes.
 
 ---
 
@@ -366,14 +313,13 @@ cargo builds native but takes minutes.
 | Features | Completions, diagnostics, hover, references, rename, go-to-definition, formatting, semantic tokens, type annotations (LuaCATS) |
 | Rhizome | Full tree-sitter queries + LSP auto-install |
 
-Maintained by LuaLS (sumneko). Standard Lua language server. Useful if you
-work with Neovim configs, game scripting, or embedded Lua.
+Maintained by LuaLS (sumneko). The standard Lua language server, used for Neovim configs, game scripting, and embedded Lua.
 
 ---
 
 ## Rhizome Backend Selection
 
-Not every language needs an LSP. Rhizome auto-selects per tool call:
+Rhizome auto-selects the backend per tool call, so not every language needs an LSP:
 
 | Requirement | Tools | What Happens |
 |------------|-------|-------------|
@@ -381,13 +327,7 @@ Not every language needs an LSP. Rhizome auto-selects per tool call:
 | **Prefers LSP** | `find_references`, `get_diagnostics`, `analyze_impact` | LSP if available, tree-sitter fallback |
 | **Requires LSP** | `rename_symbol`, `get_hover_info` | LSP or error with install hint |
 
-For languages with full tree-sitter query patterns (Rust, TypeScript, Python,
-Bash, PHP, and 13 others), most rhizome tools work without any LSP. Install
-the LSP when you need cross-file references, rename, hover, or diagnostics.
-
-For languages without tree-sitter support (YAML, Terraform, GraphQL, CSS,
-HTML, JSON, MDX, Dockerfile), the LSP is the only backend. Install it to get
-any intelligence from rhizome.
+For languages with full tree-sitter query patterns (Rust, TypeScript, Python, Bash, PHP, and 13 others), most rhizome tools work without any LSP. Install the LSP when you need cross-file references, rename, hover, or diagnostics. For languages without tree-sitter support (YAML, Terraform, GraphQL, CSS, HTML, JSON, MDX, Dockerfile), the LSP is the only backend—install it to get any intelligence from rhizome.
 
 ---
 

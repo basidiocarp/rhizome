@@ -1,91 +1,24 @@
 # Rhizome Documentation
 
-Comprehensive guides for developers building with or debugging Rhizome. These docs assume you're familiar with code intelligence tools, LSP, and tree-sitter. They focus on mechanism: what happens when X, not marketing abstractions.
+Guides for developers building with or debugging Rhizome. These docs assume familiarity with code intelligence tools, LSP, and tree-sitter. The focus is mechanism: what happens when X.
 
 ## Documents
 
 ### [ARCHITECTURE.md](./ARCHITECTURE.md) — System Design
 
-How Rhizome is organized and how data flows.
-
-**Read this when:**
-- You're new to Rhizome and want to understand how it works
-- You need to add a new language or tool
-- You're debugging a backend selection issue
-- You want to understand the 5-crate workspace
-
-**Key sections:**
-- 5-crate workspace structure (rhizome-core, rhizome-treesitter, rhizome-lsp, rhizome-mcp, rhizome-cli)
-- Core trait: CodeIntelligence
-- Tool call flow: request → backend selection → execution → response
-- Backend selection logic: RequiresLsp, PrefersLsp, TreeSitter
-- Tree-sitter backend: built-in support for 17 languages
-- LSP backend: multi-client design, per-project-root servers
-- Root detection: language-specific markers (Cargo.toml, package.json, go.mod, etc.)
-- Configuration loading and merging
-- MCP tools: 38 tools across 4 categories
-- Hyphae integration
+How Rhizome is organized and how data flows. Read this when you're new to Rhizome, need to add a language or tool, or are debugging a backend selection issue. Covers the 5-crate workspace, the `CodeIntelligence` trait, tool call flow (request → backend selection → execution → response), backend selection logic, tree-sitter built-in support for 17 languages, multi-client LSP design, root detection, config loading, MCP tool categories, and Hyphae integration.
 
 ### [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md) — Getting Languages Working
 
-Practical guide: "How do I make language X work with Rhizome?"
-
-**Read this when:**
-- A language isn't working and you need setup help
-- You're evaluating if Rhizome supports your language
-- You need to install an LSP server manually
-- You want to override default server configuration
-
-**Key sections:**
-- Path 1: Out-of-the-box languages (17 with tree-sitter, zero setup)
-- Path 2: LSP languages (32 built-in server mappings, auto-install where supported)
-- Path 3: Custom LSP configuration (TOML overrides)
-- How auto-install works (recipe lookup → package manager check → install)
-- Disable auto-install: RHIZOME_DISABLE_LSP_DOWNLOAD env var or config
-- Custom server examples: Java (JDTLS), C/C++ (Clangd)
-- Environment variables: RHIZOME_DISABLE_LSP_DOWNLOAD, RHIZOME_PROJECT, RUST_LOG
+How to make language X work with Rhizome. Read this when a language isn't working, you're evaluating coverage, or you need to install or override an LSP server. Covers three paths: out-of-the-box tree-sitter (17 languages, zero setup), LSP auto-install (32 built-in server mappings), and custom TOML configuration. Also documents how auto-install works, how to disable it, custom server examples for Java (JDTLS) and C/C++ (Clangd), and the relevant environment variables.
 
 ### [CONFIG.md](./CONFIG.md) — Configuration Reference
 
-Complete configuration options and defaults.
-
-**Read this when:**
-- You need to override a language server setting
-- You want to understand how config merging works
-- You're setting up per-project configuration
-- You need LSP-specific initialization options
-
-**Key sections:**
-- Configuration files: global (`~/.config/rhizome/config.toml`) vs project (`<project>/.rhizome/config.toml`)
-- Configuration sections: [languages.*], [lsp], [export]
-- Per-language options: server_binary, server_args, enabled, initialization_options
-- LSP-wide options: disable_download, bin_dir
-- Export options: auto_export
-- Default server configs for all 32 languages
-- Environment variables: RHIZOME_DISABLE_LSP_DOWNLOAD, RHIZOME_PROJECT, RUST_LOG
-- Priority order: env > project > global > built-in defaults
-- Example configurations (minimal, comprehensive, project override, CI/CD, performance-tuned)
+Complete configuration options and defaults. Read this when you need to override a language server setting, understand config merging, set up per-project configuration, or pass LSP-specific initialization options. Covers global vs project config files, the `[languages.*]`, `[lsp]`, and `[export]` sections, per-language options, environment variables, priority order (env > project > global > built-in), and example configurations for common scenarios.
 
 ### [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — Common Issues and Fixes
 
-Problems you might encounter and how to solve them.
-
-**Read this when:**
-- Something isn't working and you need to debug it
-- You see an error message you don't understand
-- A tool returns empty results or wrong data
-- LSP server won't start or crashes
-- Export to Hyphae fails
-
-**Key sections:**
-- Backend selection issues: tree-sitter vs LSP fallback, why results are empty
-- LSP auto-install failures: package manager not found, install disabled
-- Tool execution failures: timeouts, file not found, syntax errors
-- Hyphae export failures: connection issues, incomplete exports
-- Configuration issues: file not found, TOML syntax errors, merge order
-- Performance: large files, slow extraction, network latency
-- Error message reference table
-- When to escalate and how to report bugs
+Problems and fixes. Read this when something isn't working, you see an error message you don't understand, a tool returns empty results, an LSP server won't start, or export to Hyphae fails. Covers backend selection issues, LSP auto-install failures, tool execution failures, Hyphae export failures, configuration issues, performance on large files, an error message reference table, and when and how to report bugs.
 
 ## Quick Navigation
 
@@ -105,12 +38,7 @@ Problems you might encounter and how to solve them.
 rhizome status
 ```
 
-Shows all 32 languages with:
-- ✓ Tree-sitter status (`active` or `n/a`)
-- ✓ LSP binary name
-- ✓ LSP available (Yes/No / path)
-
-See [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md#path-1-out-of-the-box-languages-tree-sitter) for full language list.
+Shows all 32 languages with tree-sitter status (`active` or `n/a`), LSP binary name, and LSP availability. See [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md#path-1-out-of-the-box-languages-tree-sitter) for the full language list.
 
 ### What's the difference between tree-sitter and LSP?
 
@@ -136,14 +64,7 @@ See [TROUBLESHOOTING.md: Performance Issues](./TROUBLESHOOTING.md#performance-is
 
 ### How do I report a bug?
 
-Include:
-1. `rhizome status` output
-2. `rhizome --version` output
-3. Relevant config files
-4. Logs: `RUST_LOG=debug rhizome serve`
-5. Reproduction steps
-
-See [TROUBLESHOOTING.md: When to Escalate](./TROUBLESHOOTING.md#when-to-escalate).
+Include `rhizome status` output, `rhizome --version` output, relevant config files, logs from `RUST_LOG=debug rhizome serve`, and reproduction steps. See [TROUBLESHOOTING.md: When to Escalate](./TROUBLESHOOTING.md#when-to-escalate).
 
 ## Development
 
