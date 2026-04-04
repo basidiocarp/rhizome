@@ -4,7 +4,7 @@ use anyhow::Result;
 use rhizome_core::{CodeIntelligence, Language, Position, detect_workspace_root};
 use serde_json::{Value, json};
 
-use super::{ToolSchema, tool_error, tool_response};
+use super::{ToolSchema, edit_tools::resolve_path, tool_error, tool_response};
 
 // ---------------------------------------------------------------------------
 // Tool schemas
@@ -91,7 +91,8 @@ pub fn rename_symbol(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let path = Path::new(file);
+            let path_buf = resolve_path(file, project_root)?;
+            let path = path_buf.as_path();
             let ext = path
                 .extension()
                 .and_then(|e| e.to_str())

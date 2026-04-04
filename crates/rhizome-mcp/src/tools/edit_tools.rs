@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
 use rhizome_core::CodeIntelligence;
@@ -211,7 +211,63 @@ fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
 }
 
 /// Resolve a file path, validating it stays within project_root to prevent path traversal.
-fn resolve_path(file: &str, project_root: &Path) -> Result<std::path::PathBuf> {
+pub(crate) fn ensure_within_project_root(resolved: &Path, project_root: &Path) -> Result<()> {
+    let canonical_root = project_root
+        .canonicalize()
+        .map_err(|e| anyhow!("Failed to canonicalize {}: {e}", project_root.display()))?;
+
+    let canonical_candidate = if resolved.exists() {
+        resolved
+            .canonicalize()
+            .map_err(|e| anyhow!("Failed to canonicalize {}: {e}", resolved.display()))?
+    } else {
+        canonicalize_candidate_path(resolved)?
+    };
+
+    if !canonical_candidate.starts_with(&canonical_root) {
+        anyhow::bail!(
+            "Path traversal denied: {} escapes project root {}",
+            resolved.display(),
+            canonical_root.display()
+        );
+    }
+
+    Ok(())
+}
+
+fn canonicalize_candidate_path(resolved: &Path) -> Result<PathBuf> {
+    let mut existing_ancestor = resolved;
+    let mut missing_suffix = Vec::new();
+
+    while !existing_ancestor.exists() {
+        let name = existing_ancestor.file_name().ok_or_else(|| {
+            anyhow!(
+                "Cannot validate {} because it has no existing ancestor",
+                resolved.display()
+            )
+        })?;
+        missing_suffix.push(name.to_os_string());
+        existing_ancestor = existing_ancestor.parent().ok_or_else(|| {
+            anyhow!(
+                "Cannot validate {} because it has no existing ancestor",
+                resolved.display()
+            )
+        })?;
+    }
+
+    let mut canonical = existing_ancestor.canonicalize().map_err(|e| {
+        anyhow!(
+            "Failed to canonicalize {}: {e}",
+            existing_ancestor.display()
+        )
+    })?;
+    for component in missing_suffix.iter().rev() {
+        canonical.push(component);
+    }
+    Ok(canonical)
+}
+
+pub(crate) fn resolve_path(file: &str, project_root: &Path) -> Result<PathBuf> {
     let p = Path::new(file);
     let resolved = if p.is_absolute() {
         p.to_path_buf()
@@ -219,53 +275,7 @@ fn resolve_path(file: &str, project_root: &Path) -> Result<std::path::PathBuf> {
         project_root.join(p)
     };
 
-    // Canonicalize to resolve symlinks and ../ components.
-    // For non-existent paths, canonicalize the parent and re-attach the filename.
-    let canonical = if resolved.exists() {
-        resolved.canonicalize()?
-    } else {
-        // Path doesn't exist. Normalize it by canonicalizing the parent and re-attaching the name.
-        if let Some(parent) = resolved.parent() {
-            match parent.canonicalize() {
-                Ok(canonical_parent) => {
-                    canonical_parent.join(resolved.file_name().unwrap_or_default())
-                }
-                Err(_) => {
-                    // Parent path can't be canonicalized (may not exist yet).
-                    // Use dunce to normalize .. components without I/O.
-                    use std::path::Component;
-                    let mut normalized = project_root.to_path_buf();
-                    for component in resolved.components() {
-                        match component {
-                            Component::ParentDir => {
-                                normalized.pop();
-                            }
-                            Component::Normal(name) => {
-                                normalized.push(name);
-                            }
-                            _ => {}
-                        }
-                    }
-                    normalized
-                }
-            }
-        } else {
-            resolved.clone()
-        }
-    };
-
-    let canonical_root = project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf());
-
-    if !canonical.starts_with(&canonical_root) {
-        anyhow::bail!(
-            "Path traversal denied: {} is outside project root {}",
-            canonical.display(),
-            canonical_root.display()
-        );
-    }
-
+    ensure_within_project_root(&resolved, project_root)?;
     Ok(resolved)
 }
 
@@ -1125,6 +1135,38 @@ mod tests {
 
         let content = fs::read_to_string(dir.path().join("existing.txt")).unwrap();
         assert_eq!(content, "overwritten");
+    }
+
+    #[test]
+    fn rejects_path_traversal_above_project_root() {
+        let dir = TempDir::new().unwrap();
+
+        let result = resolve_path("../../etc/passwd", dir.path());
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn accepts_valid_relative_path() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+
+        let result = resolve_path("src/main.rs", dir.path()).unwrap();
+
+        assert_eq!(result, dir.path().join("src/main.rs"));
+    }
+
+    #[test]
+    fn rejects_absolute_path_outside_root() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_file = outside.path().join("outside.rs");
+        fs::write(&outside_file, "fn outside() {}\n").unwrap();
+
+        let result = resolve_path(outside_file.to_str().unwrap(), dir.path());
+
+        assert!(result.is_err());
     }
 
     #[test]
