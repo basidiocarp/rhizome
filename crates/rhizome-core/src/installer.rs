@@ -3,9 +3,9 @@ use std::process::Command;
 
 use tracing::{debug, info, warn};
 
+use crate::Language;
 use crate::error::{Result, RhizomeError};
 use crate::paths;
-use crate::Language;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Install recipes keyed by binary name

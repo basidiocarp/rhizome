@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use rhizome_mcp::tools::ToolDispatcher;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn fixture_path(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

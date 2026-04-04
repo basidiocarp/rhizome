@@ -3,11 +3,11 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use rhizome_core::{CodeIntelligence, Position, Symbol, SymbolKind};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::{tool_response, ToolSchema};
+use super::{ToolSchema, tool_response};
 
 // ---------------------------------------------------------------------------
 // Tool schemas

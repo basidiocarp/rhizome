@@ -3,12 +3,12 @@
 use anyhow::Result;
 use ignore::WalkBuilder;
 use rhizome_core::{
-    derive_export_identity, manual_install_hint, BackendSelector, Language, LanguageStatus,
-    RhizomeConfig,
+    BackendSelector, Language, LanguageStatus, RhizomeConfig, derive_export_identity,
+    manual_install_hint,
 };
 use spore::editors::{self, Editor};
 use spore::jsonrpc::{Request, Response};
-use spore::{discover, Tool};
+use spore::{Tool, discover};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Write};
@@ -812,10 +812,11 @@ mod tests {
                 }
             }
         });
-        assert!(root
-            .get(Editor::ClaudeCode.mcp_key())
-            .and_then(|value| value.get("rhizome"))
-            .is_some());
+        assert!(
+            root.get(Editor::ClaudeCode.mcp_key())
+                .and_then(|value| value.get("rhizome"))
+                .is_some()
+        );
     }
 
     #[test]
@@ -830,10 +831,11 @@ args = ["serve"]
             )
             .unwrap(),
         );
-        assert!(root
-            .get(Editor::CodexCli.mcp_key())
-            .and_then(|value: &toml::Value| value.get("rhizome"))
-            .is_some());
+        assert!(
+            root.get(Editor::CodexCli.mcp_key())
+                .and_then(|value: &toml::Value| value.get("rhizome"))
+                .is_some()
+        );
     }
 
     #[test]
@@ -945,24 +947,36 @@ args = ["serve"]
         let detected = detect_project_languages(dir.path());
 
         assert_eq!(detected.len(), 2);
-        assert!(detected
-            .iter()
-            .any(|(language, count)| *language == Language::Rust && *count == 1));
-        assert!(detected
-            .iter()
-            .any(|(language, count)| *language == Language::Python && *count == 1));
-        assert!(detected
-            .iter()
-            .all(|(language, _)| *language != Language::Go));
-        assert!(detected
-            .iter()
-            .all(|(language, _)| *language != Language::TypeScript));
-        assert!(detected
-            .iter()
-            .all(|(language, _)| *language != Language::Terraform));
-        assert!(detected
-            .iter()
-            .all(|(language, _)| *language != Language::Yaml));
+        assert!(
+            detected
+                .iter()
+                .any(|(language, count)| *language == Language::Rust && *count == 1)
+        );
+        assert!(
+            detected
+                .iter()
+                .any(|(language, count)| *language == Language::Python && *count == 1)
+        );
+        assert!(
+            detected
+                .iter()
+                .all(|(language, _)| *language != Language::Go)
+        );
+        assert!(
+            detected
+                .iter()
+                .all(|(language, _)| *language != Language::TypeScript)
+        );
+        assert!(
+            detected
+                .iter()
+                .all(|(language, _)| *language != Language::Terraform)
+        );
+        assert!(
+            detected
+                .iter()
+                .all(|(language, _)| *language != Language::Yaml)
+        );
     }
 
     #[cfg(unix)]

@@ -1,10 +1,10 @@
 use std::path::Path;
 
 use anyhow::Result;
-use rhizome_core::{detect_workspace_root, CodeIntelligence, Language, Position};
-use serde_json::{json, Value};
+use rhizome_core::{CodeIntelligence, Language, Position, detect_workspace_root};
+use serde_json::{Value, json};
 
-use super::{tool_error, tool_response, ToolSchema};
+use super::{ToolSchema, tool_error, tool_response};
 
 // ---------------------------------------------------------------------------
 // Tool schemas

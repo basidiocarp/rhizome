@@ -157,11 +157,7 @@ fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
 }
 
 fn tree_sitter_status_label(active: bool) -> &'static str {
-    if active {
-        "active"
-    } else {
-        "n/a"
-    }
+    if active { "active" } else { "n/a" }
 }
 
 fn print_status_table(title: &str, statuses: &[rhizome_core::LanguageStatus]) {

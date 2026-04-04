@@ -6,11 +6,11 @@ pub mod symbol_tools;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use rhizome_core::{BackendSelector, Language, ResolvedBackend, RhizomeConfig};
 use rhizome_treesitter::TreeSitterBackend;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

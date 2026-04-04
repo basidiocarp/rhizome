@@ -3,13 +3,13 @@ use std::path::Path;
 use anyhow::Result;
 use ignore::WalkBuilder;
 use rhizome_core::export_cache::ExportCache;
-use rhizome_core::graph::{build_graph, merge_graphs, CodeGraph};
+use rhizome_core::graph::{CodeGraph, build_graph, merge_graphs};
 use rhizome_core::hyphae;
-use rhizome_core::{derive_export_identity, CodeIntelligence, Language};
+use rhizome_core::{CodeIntelligence, Language, derive_export_identity};
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::{tool_error, ToolSchema};
+use super::{ToolSchema, tool_error};
 
 fn is_supported_extension(path: &Path) -> bool {
     path.extension()

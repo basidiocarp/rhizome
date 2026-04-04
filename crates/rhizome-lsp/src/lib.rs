@@ -17,7 +17,7 @@ use crate::convert::{
     lsp_diagnostic_to_diagnostic, lsp_location_to_location, lsp_symbol_info_to_symbol,
     lsp_symbol_to_symbol,
 };
-use crate::edit::{apply_workspace_edit, summarize_workspace_edit, ApplyResult, PreviewResult};
+use crate::edit::{ApplyResult, PreviewResult, apply_workspace_edit, summarize_workspace_edit};
 use crate::manager::LanguageServerManager;
 
 /// LSP-backed code intelligence. Wraps async LSP calls behind the sync

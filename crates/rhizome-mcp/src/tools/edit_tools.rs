@@ -1,11 +1,11 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use rhizome_core::CodeIntelligence;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::{tool_error, tool_response, ToolSchema};
+use super::{ToolSchema, tool_error, tool_response};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Param helpers

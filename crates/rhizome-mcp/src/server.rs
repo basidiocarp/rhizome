@@ -2,7 +2,7 @@ use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::{debug, error, info, warn};
 
 use crate::tools::ToolDispatcher;

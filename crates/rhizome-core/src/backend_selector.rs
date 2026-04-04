@@ -213,7 +213,7 @@ fn find_server(
                 binary: "(none)".into(),
                 available: false,
                 path: None,
-            }
+            };
         }
     };
 
@@ -247,7 +247,7 @@ fn probe_server(
                 binary: "(none)".into(),
                 available: false,
                 path: None,
-            }
+            };
         }
     };
 

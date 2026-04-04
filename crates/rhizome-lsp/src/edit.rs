@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use lsp_types::{
     DocumentChangeOperation, DocumentChanges, OneOf, Position, ResourceOp, TextDocumentEdit,
     TextEdit, Uri, WorkspaceEdit,

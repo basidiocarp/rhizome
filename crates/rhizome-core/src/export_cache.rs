@@ -1,4 +1,4 @@
-use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -282,9 +282,11 @@ mod tests {
         assert!(cache.files.is_empty());
         // Updated cache has the entry
         assert_eq!(updated.files.len(), 1);
-        assert!(updated
-            .files
-            .contains_key(&file_path.to_string_lossy().into_owned()));
+        assert!(
+            updated
+                .files
+                .contains_key(&file_path.to_string_lossy().into_owned())
+        );
     }
 
     #[test]

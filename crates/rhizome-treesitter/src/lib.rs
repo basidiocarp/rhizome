@@ -10,9 +10,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ignore::WalkBuilder;
 use lru::LruCache;
 use rhizome_core::{
-    export_cache::{scoped_cache_dir, scoped_cache_path},
     BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Result,
     RhizomeError, Symbol, SymbolKind,
+    export_cache::{scoped_cache_dir, scoped_cache_path},
 };
 use serde::{Deserialize, Serialize};
 

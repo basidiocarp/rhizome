@@ -18,14 +18,14 @@ pub use backend::{
 pub use backend_selector::{BackendRequirement, BackendSelector, LanguageStatus, ResolvedBackend};
 pub use config::RhizomeConfig;
 pub use error::{Result, RhizomeError};
-pub use export_cache::{derive_export_identity, ExportCache, ExportIdentity};
+pub use export_cache::{ExportCache, ExportIdentity, derive_export_identity};
 pub use graph::{CodeGraph, ConceptEdge, ConceptNode};
 pub use hyphae::ExportResult;
-pub use installer::{install_recipe, manual_install_hint, LspInstaller};
+pub use installer::{LspInstaller, install_recipe, manual_install_hint};
 pub use language::{Language, LanguageServerConfig};
 pub use paths::{
     augmented_path, global_config_path, managed_bin_dir, project_config_path, project_state_dir,
 };
-pub use project_summary::{summarize_project, EntryPoint, ModuleSummary, ProjectSummary};
+pub use project_summary::{EntryPoint, ModuleSummary, ProjectSummary, summarize_project};
 pub use root_detector::detect_workspace_root;
 pub use symbol::{Location, Symbol, SymbolKind};

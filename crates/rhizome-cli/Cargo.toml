@@ -24,7 +24,7 @@ anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 serde_json = "1"
-toml = "1.0"
+toml.workspace = true
 ureq = "3"
 tempfile = "3"
 which = "7"

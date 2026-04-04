@@ -10,7 +10,7 @@ anyhow = "1"
 thiserror = { workspace = true }
 which = "7"
 tracing = "0.1"
-toml = "1.0"
+toml.workspace = true
 ignore = "0.4"
 spore = { workspace = true }
 
