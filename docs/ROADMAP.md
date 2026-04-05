@@ -1,65 +1,58 @@
 # Rhizome Roadmap
 
-This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../ROADMAP.md) keeps the ecosystem sequencing, and [MASTER-ROADMAP.md](../../MASTER-ROADMAP.md) keeps the cross-repo summary.
+This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../docs/ROADMAP.md) keeps the ecosystem sequencing and cross-repo priorities.
 
 ## Recently Shipped
 
-- Host-aware `init` flows instead of one generic setup path.
-- Broader multi-host `doctor` checks and repair guidance.
-- Shared path handling and Windows-safe managed binary and PATH behavior.
-- Project-level summarize workflow.
-- Export-to-Hyphae memoir and code-graph path.
-- Export reliability improvements for path resolution, cache recovery, and explicit partial-failure reporting.
-- Rename preview via LSP workspace-edit summaries before applying changes.
-- Initial symbol impact summaries that group references by affected file and report local callers/callees plus same-name project symbols.
-- Capability-aware impact summaries that disclose heuristic confidence and scope on non-LSP backends.
-- Scoped workspace search caching with in-process reuse plus versioned persistent on-disk index files and modified/deleted file invalidation.
-- Scope-aware symbol identity in tree-sitter and LSP outputs so methods and nested symbols keep container context.
-- Expanded tree-sitter query coverage beyond the original small core set.
-- Existing rename and workspace-edit foundation, symbol move and copy MVP, and worktree-aware cache partitioning remain in place.
+- Rhizome now has host-aware `init` flows and broader multi-host `doctor` checks. Setup and repair guidance is much less dependent on one default local environment.
+- Shared path handling and Windows-safe managed binary behavior are in place. That makes the code-intelligence path more portable across operating systems.
+- Project summarization and export-to-Hyphae code-graph support now exist as first-class workflows. Rhizome is no longer just a bag of structural queries.
+- Rename preview, stronger impact summaries, and capability-aware confidence reporting make edit tooling safer than the original direct-apply model.
+- Scoped workspace caching, persistent index files, and better invalidation mean repeated queries no longer start from zero every time.
+- Tree-sitter coverage and symbol identity are broader than the initial narrow core. Nested symbols and container context now survive much more of the query surface.
 
 ## Next
 
 ### Change-impact analysis
 
-Expand change-impact analysis beyond grouped references into cross-file call graphs, dependency graphs, and materially better change-impact reasoning.
+Rhizome should expand impact analysis beyond grouped references into cross-file call graphs, dependency graphs, and materially better reasoning about what a change will touch. This item should stay aligned with the ecosystem roadmap because Hyphae, Cap, and Canopy all depend on stronger impact evidence.
 
 ### Workspace index
 
-Move from the current scoped cache files to a stronger persistent index or daemon for larger repos so repeated queries stop paying full scan cost and can support richer symbol identity.
+The current scoped cache files are a useful bridge, but larger repos need a stronger persistent index or daemon. That is how repeated queries stop paying full scan cost and how richer symbol identity becomes practical.
 
 ### Refactor preview
 
-Expand dry-run and preview flows beyond rename so edit operations are safer before applying changes.
+Rename is not the only risky edit. Dry-run and preview flows should extend to more edit operations so users can inspect what Rhizome plans to change before it writes to disk.
 
 ## Later
 
 ### Architectural summaries
 
-Expand project summaries from symbol listings into higher-level architectural overviews.
+Project summaries should grow from symbol listings into higher-level architecture views. That work becomes more valuable once the index and impact layers are stronger.
 
 ### Utility-backed LSP support
 
-Support non-language-specific LSP servers such as Biome and other workspace utilities when they provide repo-wide diagnostics, formatting, or edit intelligence that tree-sitter alone cannot cover cleanly.
+Rhizome should support non-language-specific LSP servers such as Biome when they provide useful repo-wide diagnostics, formatting, or edit intelligence that tree-sitter alone cannot cover well.
 
 ### Contributor tooling
 
-Add clearer contributor tooling and docs for expanding tree-sitter language and query coverage.
+Expanding language and query coverage will keep getting easier if the project has better contributor tooling and clearer docs for adding tree-sitter support.
 
 ### Non-standard containers
 
-Add support for Jupyter or other non-standard code containers if real demand appears.
+Jupyter and other non-standard code containers are a sensible future expansion, but only after the common source-file path is solid and in regular use.
 
 ### More query coverage
 
-Keep expanding tree-sitter coverage where offline parsing still lags behind supported languages.
+Offline parsing still lags behind the full set of supported languages in places. Expanding query coverage remains the right direction once the larger index and preview work lands.
 
 ## Research
 
 ### Semantic refactoring
 
-Go beyond symbol-level edits toward more semantic refactoring that combines tree-sitter precision with LSP-backed confidence.
+The interesting next step is moving beyond symbol-level edits toward more semantic refactoring that combines tree-sitter precision with LSP-backed confidence. The question is how far that can go without becoming fragile across language backends.
 
 ### Cross-repo impact
 
-Explore change-impact reasoning across monorepos or adjacent repositories once the single-repo path is stable.
+Single-repo impact analysis comes first. After that, Rhizome can explore monorepo-wide and adjacent-repository reasoning where changes cross package or repo boundaries.

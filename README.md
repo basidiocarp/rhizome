@@ -1,219 +1,154 @@
 # Rhizome
 
-Editor-agnostic code intelligence MCP server. Gives AI agents symbol-level code navigation — definitions, references, structure — instead of reading raw files, eliminating the biggest source of wasted tokens.
+Editor-agnostic code intelligence MCP server. Gives AI agents symbol-level
+navigation, structure, and refactor surfaces instead of forcing them to read
+raw files.
 
-Part of the [Basidiocarp ecosystem](https://github.com/basidiocarp) — see the [Technical Overview](https://github.com/basidiocarp/.github/blob/main/profile/README.md#technical-overview) for how Rhizome fits with Hyphae, Mycelium, Cap, and Lamella.
+Named after fungal rhizomorphs, root-like structures that spread through an
+environment and expose hidden pathways.
 
-## Why Rhizome?
+Part of the [Basidiocarp ecosystem](https://github.com/basidiocarp).
 
-Some AI coding tools (like Claude Code) have built-in LSP access. Most don't. Cursor, Windsurf, Cline, Continue, Aider, custom agents built with the Agent SDK, and any other MCP-compatible client get **zero** code intelligence out of the box — they can read files, but they can't navigate symbols, find references, or understand code structure.
+---
 
-Rhizome fills that gap as a standalone MCP server that works with **any** MCP client. It also provides analysis tools that go beyond what LSP offers — file summaries, cyclomatic complexity, test discovery, annotation scanning, and git-aware symbol diffs — useful even for tools that already have LSP access.
+## The Problem
 
-Built in Rust with a dual-backend architecture:
+Most MCP-compatible clients have no built-in code intelligence. They can read
+files, but they cannot navigate symbols, find references, inspect structure, or
+perform project-wide refactors without expensive raw reads and brittle search.
 
-- **Tree-sitter** (always available) — instant offline parsing, sub-millisecond, zero setup. 18 languages with grammars compiled in.
-- **LSP** (auto-selected when needed) — cross-file go-to-definition, find-all-references, rename, type info. Auto-installs servers for 20+ languages.
+## The Solution
+
+Rhizome provides a standalone code-intelligence layer for any MCP client.
+Tree-sitter handles fast offline structure work, LSP takes over when you need
+cross-file semantics, and the MCP surface keeps the result compact enough to
+use in real sessions.
+
+---
+
+## The Ecosystem
+
+| Tool | Purpose |
+|------|---------|
+| **[rhizome](https://github.com/basidiocarp/rhizome)** | Code intelligence via tree-sitter and LSP |
+| **[cap](https://github.com/basidiocarp/cap)** | Web dashboard for the ecosystem |
+| **[cortina](https://github.com/basidiocarp/cortina)** | Lifecycle signal capture and session attribution |
+| **[hyphae](https://github.com/basidiocarp/hyphae)** | Persistent agent memory |
+| **[lamella](https://github.com/basidiocarp/lamella)** | Skills, hooks, and plugins for coding agents |
+| **[mycelium](https://github.com/basidiocarp/mycelium)** | Token-optimized command output |
+| **[spore](https://github.com/basidiocarp/spore)** | Shared transport and editor primitives |
+| **[stipe](https://github.com/basidiocarp/stipe)** | Ecosystem installer and manager |
+| **[volva](https://github.com/basidiocarp/volva)** | Execution-host runtime layer |
+
+> **Boundary:** `rhizome` owns code intelligence and structural editing tools.
+> It does not own memory, shell filtering, lifecycle capture, or installation.
+
+---
 
 ## Quick Start
 
-```sh
+```bash
 # Build
 cargo build --release
 
-# Generate MCP config guidance for detected hosts
-cargo run --release -- init
-
-# Print a paste-ready MCP snippet for one host
-cargo run --release -- init --editor claude-code
-cargo run --release -- init --editor codex
-
-# Check backend status and available LSP servers
-cargo run --release -- status
-
-# Manage LSP servers
-cargo run --release -- lsp status
-cargo run --release -- lsp install python
-
-# Use directly from the CLI
-cargo run --release -- symbols src/main.rs
-cargo run --release -- structure src/lib.rs
-```
-
-### Add to Any MCP Client
-
-Works with Claude Code, Cursor, Windsurf, Cline, Continue, OpenCode, and any MCP-compatible tool.
-
-```sh
 # Recommended: full ecosystem setup
 stipe init
 
-# Alternative: rhizome-only config generation
+# Alternative: rhizome-only config guidance
 rhizome init
-# Shows detected hosts and the right MCP snippet shape for each one
-
-rhizome init --editor claude-code
-# Prints only the Claude Code JSON snippet
-
-rhizome init --editor codex
-# Prints only the Codex TOML snippet
 ```
 
-For JSON MCP clients:
+```bash
+# Inspect status and servers
+rhizome status
+rhizome lsp status
+rhizome lsp install python
 
-```json
-{
-  "mcpServers": {
-    "rhizome": {
-      "command": "rhizome",
-      "args": ["serve"],
-      "env": {}
-    }
-  }
-}
+# Use directly
+rhizome symbols src/main.rs
+rhizome structure src/lib.rs
 ```
 
-For Codex CLI TOML config:
+---
 
-```toml
-[mcp_servers.rhizome]
-command = "rhizome"
-args = ["serve"]
+## How It Works
+
+```text
+MCP client             Rhizome                      Backend
+──────────             ───────                      ───────
+tool call        ─►    backend selector      ─►    tree-sitter
+deeper query     ─►    capability check      ─►    LSP if needed
+edit or export   ─►    tool handler          ─►    project-aware result
 ```
 
-Rhizome uses platform-specific config and data directories. Use `rhizome status` to see the resolved managed bin directory on the current machine. Project-scoped workspace symbol caches are stored under `.rhizome/` with worktree-aware partitioning.
+1. Receive MCP requests: navigation, diagnostics, editing, and export calls arrive through the MCP server.
+2. Select a backend: choose tree-sitter, generic fallback, or LSP based on the tool and language.
+3. Run project-aware analysis: resolve structure, symbols, references, or diagnostics.
+4. Return structured results: emit compact machine-readable data instead of raw file dumps.
+5. Export knowledge: send code graph data to Hyphae when requested.
+
+---
 
 ## Supported Languages
 
-Rhizome supports **32 languages** with a three-tier parsing strategy. See the [Technical Overview: Tree-sitter Code Parsing](https://github.com/basidiocarp/.github/blob/main/profile/README.md#tree-sitter-code-parsing--rhizome) for details.
-
 | Tier | Languages | How it works |
 |------|-----------|-------------|
-| **Full query patterns** (10) | Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, Ruby, PHP | Language-specific tree-sitter S-expression queries for precise symbol extraction |
-| **Generic fallback** (8) | Bash, C#, Elixir, Lua, Swift, Zig, Haskell, TOML | AST walker matching common node types (`function_definition`, `class_declaration`, etc.) |
-| **LSP only** (14+) | Kotlin, Dart, Clojure, OCaml, Julia, Nix, Gleam, Vue, Svelte, Astro, Prisma, Typst, YAML, F# | Requires installed language server — auto-installed when available |
+| Full query patterns | 10 languages | Language-specific tree-sitter queries |
+| Generic fallback | 8 languages | Generic AST walker over common node types |
+| LSP only | 14 or more languages | Language server required |
 
-All 32 languages have LSP server configs. 20+ have auto-install recipes (npm, pip, cargo, gem, go, brew, dotnet, opam, ghcup, mix).
+All 32 supported languages have LSP server configs, and 20 or more have
+auto-install recipes.
+
+---
+
+## What Rhizome Owns
+
+- Symbol navigation and structure queries
+- Tree-sitter and LSP backend orchestration
+- Safe structural editing tools
+- Code graph export to Hyphae
+
+## What Rhizome Does Not Own
+
+- Long-term memory and retrieval: handled by `hyphae`
+- Token filtering: handled by `mycelium`
+- Lifecycle signal capture: handled by `cortina`
+- Installation and host registration: handled by `stipe`
+
+---
+
+## Key Features
+
+- Dual backend model: uses tree-sitter by default and upgrades to LSP when the task requires it.
+- MCP-first surface: works with Claude Code, Codex, Cursor, Continue, and other MCP clients.
+- Structural editing: exposes targeted edit tools instead of line-oriented shell patching.
+- Project-aware export: can ship code graph data into Hyphae memoirs.
+- Managed LSP support: includes status, install, and per-language config surfaces.
+
+---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Rhizome MCP Server (JSON-RPC 2.0 over stdio)               │
-│  └─ Tool Registry (35 tools)                                │
-├─────────────────────────────────────────────────────────────┤
-│ Backend Auto-Selection                                      │
-│  ├─ Tree-sitter (default, 18 languages with grammars)       │
-│  ├─ Generic fallback (languages without query patterns)     │
-│  ├─ LSP (auto-upgrade for refs, rename, hover, diagnostics) │
-│  └─ Per-tool requirement mapping                            │
-├─────────────────────────────────────────────────────────────┤
-│ Smart Infrastructure                                        │
-│  ├─ Auto-install LSP servers (platform data dir/bin)        │
-│  ├─ Per-language workspace root detection                   │
-│  ├─ Multi-client LSP (per language × root pair)             │
-│  ├─ Path traversal prevention in edit tools                 │
-│  └─ 32 languages, 20+ install recipes                      │
-├─────────────────────────────────────────────────────────────┤
-│ Hyphae Integration                                          │
-│  ├─ Code graph export (symbols → concept nodes + edges)     │
-│  └─ Incremental caching (mtime-based)                       │
-└─────────────────────────────────────────────────────────────┘
+```text
+rhizome/
+├── rhizome-core        backend selection, config, installer
+├── rhizome-treesitter  offline parsing and symbol queries
+├── rhizome-lsp         LSP client backend
+├── rhizome-mcp         MCP server and tool handlers
+└── rhizome-cli         CLI entry point
 ```
 
-## MCP Tools
-
-### Symbol Navigation (tree-sitter)
-
-| Tool | Description |
-|------|-------------|
-| `get_symbols` | List all symbols in a file, including qualified names and stable ids |
-| `get_structure` | Hierarchical symbol tree with nesting depth control |
-| `get_definition` | Full symbol definition including body |
-| `get_symbol_body` | Source code body of a specific symbol |
-| `search_symbols` | Find symbols by name pattern across the project |
-| `find_references` | Find all references to a symbol |
-| `analyze_impact` | Summarize likely blast radius, callers, callees, and scope-aware same-name project symbols |
-| `go_to_definition` | Jump from usage to definition |
-| `get_signature` | Signature only (no body) |
-| `get_imports` | All import/use statements |
-| `get_call_sites` | All function call expressions |
-
-### Code Intelligence (tree-sitter)
-
-| Tool | Description |
-|------|-------------|
-| `get_scope` | Enclosing scope at a given line |
-| `get_exports` | Public/exported symbols only |
-| `summarize_file` | Compact summary — signatures only |
-| `get_tests` | Test functions in a file |
-| `get_type_definitions` | Structs, enums, interfaces, type aliases |
-| `get_parameters` | Function parameters with types |
-| `get_dependencies` | Intra-file call graph |
-| `get_enclosing_class` | Parent class + sibling methods |
-| `get_complexity` | Cyclomatic complexity per function |
-| `get_annotations` | TODO, FIXME, HACK comments |
-
-### File Editing (7 tools)
-
-| Tool | Description |
-|------|-------------|
-| `replace_symbol_body` | Replace a symbol's implementation |
-| `insert_after_symbol` | Insert code after a symbol |
-| `insert_before_symbol` | Insert code before a symbol |
-| `replace_lines` | Replace a line range |
-| `insert_at_line` | Insert at a specific line |
-| `delete_lines` | Delete a line range |
-| `create_file` | Create a new file |
-
-All edit tools validate paths stay within the project root (path traversal prevention).
-
-### Git Integration
-
-| Tool | Description |
-|------|-------------|
-| `get_diff_symbols` | Symbols modified in uncommitted changes |
-| `get_changed_files` | Changed files with modified symbol counts |
-
-### Deep Intelligence (LSP — auto-selected)
-
-| Tool | Description |
-|------|-------------|
-| `rename_symbol` | Project-wide refactor rename with optional dry-run preview |
-| `get_diagnostics` | Compiler errors and warnings |
-| `get_hover_info` | Type information and docs |
-
-### Hyphae Integration
-
-| Tool | Description |
-|------|-------------|
-| `export_to_hyphae` | Export code graph as knowledge memoir with cache-aware export summaries |
-
-## Backend Auto-Selection
-
-See [Technical Overview: LSP Auto-Management](https://github.com/basidiocarp/.github/blob/main/profile/README.md#lsp-auto-management--rhizome) for details.
-
-| Backend | Tools | Behavior |
-|---------|-------|----------|
-| **Tree-sitter** | `get_symbols`, `get_structure`, 18 others | Always used — instant, no dependencies |
-| **LSP preferred** | `find_references`, `get_diagnostics` | LSP if available, tree-sitter fallback |
-| **LSP required** | `rename_symbol`, `get_hover_info` | Requires LSP — auto-installs or returns instructions |
-
-## CLI Commands
-
+```text
+rhizome serve                     start MCP server
+rhizome symbols <file>            list symbols
+rhizome structure <file>          show symbol tree
+rhizome status                    show backend status
+rhizome lsp install <language>    install an LSP server
+rhizome export                    export code graph to Hyphae
 ```
-rhizome serve [--project <path>] [--expanded]    Start MCP server
-rhizome symbols <file>                           List symbols
-rhizome structure <file>                         Show structure tree
-rhizome status [--project <path>]                Backend status per language
-rhizome lsp status [--json]                      LSP server availability
-rhizome lsp install <language>                   Install LSP server
-rhizome export [--project <path>]                Export code graph to Hyphae
-rhizome init [--config] [--editor <host>]       Print MCP or example config
-rhizome doctor [--fix]                           Diagnose issues
-rhizome self-update [--check]                    Check/install updates
-rhizome summarize [--project <path>] [--json]    Project summary
-```
+
+---
 
 ## Configuration
 
@@ -224,27 +159,29 @@ rhizome summarize [--project <path>] [--json]    Project summary
 server_binary = "ruff"
 server_args = ["server"]
 
-[languages.java]
-enabled = false
-
 [lsp]
 disable_download = false
-
-[export]
-auto_export = true
 ```
 
-## Project Structure
+---
 
-```
-rhizome/
-├── crates/
-│   ├── rhizome-core/        # Domain types, backend selection, installer, config
-│   ├── rhizome-treesitter/  # Tree-sitter backend (18 language grammars)
-│   ├── rhizome-lsp/         # LSP client backend (multi-client, per-root)
-│   ├── rhizome-mcp/         # MCP server + 35 tool handlers
-│   └── rhizome-cli/         # CLI entry point
-└── tests/
+## Documentation
+
+- [docs/README.md](docs/README.md): docs index
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): backend and server architecture
+- [docs/CONFIG.md](docs/CONFIG.md): config file reference
+- [docs/LANGUAGE-SETUP.md](docs/LANGUAGE-SETUP.md): language and LSP setup details
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md): diagnostics and fixes
+- [docs/ROADMAP.md](docs/ROADMAP.md): planned work
+- [LSP-GUIDE.md](LSP-GUIDE.md): LSP-focused guidance
+
+## Development
+
+```bash
+cargo build --release
+cargo test --all
+cargo clippy
+cargo fmt
 ```
 
 ## License

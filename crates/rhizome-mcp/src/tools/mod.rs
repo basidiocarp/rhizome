@@ -61,30 +61,56 @@ impl ToolDispatcher {
     pub fn call_tool(&self, name: &str, args: Value) -> Result<Value> {
         match name {
             // ── Symbol tools (tree-sitter) ──────────────────────────────
-            "get_symbols" => symbol_tools::get_symbols(&self.treesitter, &args),
-            "get_structure" => symbol_tools::get_structure(&self.treesitter, &args),
-            "get_definition" => symbol_tools::get_definition(&self.treesitter, &args),
+            "get_symbols" => symbol_tools::get_symbols(&self.treesitter, &args, &self.project_root),
+            "get_structure" => {
+                symbol_tools::get_structure(&self.treesitter, &args, &self.project_root)
+            }
+            "get_definition" => {
+                symbol_tools::get_definition(&self.treesitter, &args, &self.project_root)
+            }
             "search_symbols" => {
                 symbol_tools::search_symbols(&self.treesitter, &args, &self.project_root)
             }
-            "go_to_definition" => symbol_tools::go_to_definition(&self.treesitter, &args),
-            "get_signature" => symbol_tools::get_signature(&self.treesitter, &args),
-            "get_imports" => symbol_tools::get_imports(&self.treesitter, &args),
-            "get_call_sites" => symbol_tools::get_call_sites(&self.treesitter, &args),
-            "get_scope" => symbol_tools::get_scope(&self.treesitter, &args),
-            "get_exports" => symbol_tools::get_exports(&self.treesitter, &args),
-            "summarize_file" => symbol_tools::summarize_file(&self.treesitter, &args),
-            "get_tests" => symbol_tools::get_tests(&self.treesitter, &args),
+            "go_to_definition" => {
+                symbol_tools::go_to_definition(&self.treesitter, &args, &self.project_root)
+            }
+            "get_signature" => {
+                symbol_tools::get_signature(&self.treesitter, &args, &self.project_root)
+            }
+            "get_imports" => symbol_tools::get_imports(&self.treesitter, &args, &self.project_root),
+            "get_call_sites" => {
+                symbol_tools::get_call_sites(&self.treesitter, &args, &self.project_root)
+            }
+            "get_scope" => symbol_tools::get_scope(&self.treesitter, &args, &self.project_root),
+            "get_exports" => symbol_tools::get_exports(&self.treesitter, &args, &self.project_root),
+            "summarize_file" => {
+                symbol_tools::summarize_file(&self.treesitter, &args, &self.project_root)
+            }
+            "get_tests" => symbol_tools::get_tests(&self.treesitter, &args, &self.project_root),
             "get_diff_symbols" => {
                 symbol_tools::get_diff_symbols(&self.treesitter, &args, &self.project_root)
             }
-            "get_annotations" => symbol_tools::get_annotations(&self.treesitter, &args),
-            "get_complexity" => symbol_tools::get_complexity(&self.treesitter, &args),
-            "get_type_definitions" => symbol_tools::get_type_definitions(&self.treesitter, &args),
-            "get_dependencies" => symbol_tools::get_dependencies(&self.treesitter, &args),
-            "get_parameters" => symbol_tools::get_parameters(&self.treesitter, &args),
-            "get_enclosing_class" => symbol_tools::get_enclosing_class(&self.treesitter, &args),
-            "get_symbol_body" => symbol_tools::get_symbol_body(&self.treesitter, &args),
+            "get_annotations" => {
+                symbol_tools::get_annotations(&self.treesitter, &args, &self.project_root)
+            }
+            "get_complexity" => {
+                symbol_tools::get_complexity(&self.treesitter, &args, &self.project_root)
+            }
+            "get_type_definitions" => {
+                symbol_tools::get_type_definitions(&self.treesitter, &args, &self.project_root)
+            }
+            "get_dependencies" => {
+                symbol_tools::get_dependencies(&self.treesitter, &args, &self.project_root)
+            }
+            "get_parameters" => {
+                symbol_tools::get_parameters(&self.treesitter, &args, &self.project_root)
+            }
+            "get_enclosing_class" => {
+                symbol_tools::get_enclosing_class(&self.treesitter, &args, &self.project_root)
+            }
+            "get_symbol_body" => {
+                symbol_tools::get_symbol_body(&self.treesitter, &args, &self.project_root)
+            }
             "get_changed_files" => {
                 symbol_tools::get_changed_files(&self.treesitter, &args, &self.project_root)
             }
@@ -98,8 +124,8 @@ impl ToolDispatcher {
                 self.dispatch_auto(
                     name,
                     &args,
-                    |a| symbol_tools::find_references(ts, a),
-                    |lsp, a| symbol_tools::find_references(lsp, a),
+                    |a| symbol_tools::find_references(ts, a, &self.project_root),
+                    |lsp, a| symbol_tools::find_references(lsp, a, &self.project_root),
                 )
             }
             "analyze_impact" => {

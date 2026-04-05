@@ -1,28 +1,51 @@
 # Rhizome Architecture
 
-Rhizome is a code intelligence MCP server with a 5-crate workspace design. Two backends—tree-sitter and LSP—are selected per tool call. This document describes the architecture and data flow.
+Rhizome is a 5-crate workspace that compiles into a single binary. It solves a
+practical tension: tree-sitter is fast and local, but LSP is deeper and more
+semantic, so Rhizome selects the right backend per tool call instead of forcing
+one model onto every request. This document covers that split, the request
+path, and the parts contributors extend most often.
+
+---
+
+## Design Principles
+
+- **Backend by capability, not ideology** — use tree-sitter where it is enough,
+  escalate to LSP where semantics matter.
+- **Fast by default** — symbol and structure queries should work offline and
+  without booting language servers whenever possible.
+- **Project-aware semantics** — when LSP is required, root detection and
+  language-server lifecycle matter as much as the tool implementation.
+- **Lazy heavy paths** — LSP startup and installation are deferred until a tool
+  actually needs them.
+- **MCP-first output** — responses are shaped for tool consumers, not for humans
+  reading raw editor logs.
+
+---
 
 ## Workspace Structure
 
-```
-rhizome-cli           Clap-based CLI entry point
-  │
-  └─ rhizome-mcp      MCP JSON-RPC server + tool dispatcher
-       │
-       ├─ rhizome-treesitter  Tree-sitter backend (10 languages with patterns)
-       │    │
-       │    └─ rhizome-core   Domain types, traits, backends
-       │
-       └─ rhizome-lsp        LSP backend (32 languages supported)
-            │
-            └─ rhizome-core  Domain types, traits, backends
+```text
+rhizome-cli ──► rhizome-mcp ──► rhizome-treesitter ──► rhizome-core
+                     │                                      ▲
+                     └──────────► rhizome-lsp ──────────────┘
 ```
 
-All five crates compile into a single binary. `rhizome-core` is the foundation; the other crates implement the `CodeIntelligence` trait.
+All five crates compile into the `rhizome` binary.
 
-## Core Trait: CodeIntelligence
+- **`rhizome-core`**: Domain types, backend selection, root detection, config,
+  installer logic, and shared abstractions. No tool transport here.
+- **`rhizome-treesitter`**: Fast parsing and symbol extraction for supported
+  languages, plus generic fallback walkers.
+- **`rhizome-lsp`**: Language-server client management, request dispatch, and
+  response translation into Rhizome types.
+- **`rhizome-mcp`**: Tool definitions and MCP request handling.
+- **`rhizome-cli`**: Binary entry point, status surfaces, and direct CLI
+  commands.
 
-All backends implement this interface:
+---
+
+## Core Abstraction
 
 ```rust
 pub trait CodeIntelligence {
@@ -30,89 +53,52 @@ pub trait CodeIntelligence {
     fn get_structure(&self, file: &Path) -> Result<Vec<Symbol>>;
     fn get_definition(&self, file: &Path, name: &str) -> Result<Option<Symbol>>;
     fn find_references(&self, file: &Path, position: Position) -> Result<Vec<Location>>;
-    fn search_symbols(&self, pattern: &str, project_root: &Path) -> Result<Vec<Symbol>>;
     fn get_imports(&self, file: &Path) -> Result<Vec<Symbol>>;
     fn get_diagnostics(&self, file: &Path) -> Result<Vec<Diagnostic>>;
 }
 ```
 
-Both tree-sitter and LSP backends implement this interface fully. The tool dispatcher selects which backend to use for each call.
+Both the tree-sitter and LSP backends implement this trait. The dispatcher
+consumes it through `BackendSelector`, and the invariant is that callers should
+not need to care which backend produced the answer unless the tool explicitly
+requires LSP.
 
-## Tool Call Flow: Request to Response
+---
+
+## Request Flow
 
 When an MCP tool call arrives:
 
-1. **Routing** (ToolDispatcher.call_tool)
-   - Maps tool name to handler function
-   - Example: `get_symbols` → `symbol_tools::get_symbols()`
+1. **Route the tool** (`ToolDispatcher.call_tool`)
+   Maps the tool name to a concrete handler.
+   Example: `get_symbols` goes to the symbol tool path, while `rename_symbol`
+   goes to an edit path.
 
-2. **Backend Selection** (BackendSelector.select)
-   - Checks tool requirement (RequiresLsp, PrefersLsp, TreeSitter)
-   - Example: `rename_symbol` requires LSP
-   - Example: `find_references` prefers LSP, falls back to tree-sitter
-   - Example: `get_symbols` always uses tree-sitter
+2. **Resolve the backend** (`BackendSelector.select`)
+   Looks up whether the tool is `TreeSitter`, `PrefersLsp`, or `RequiresLsp`.
+   Example: `get_structure` stays on tree-sitter; `rename_symbol` requires LSP;
+   `find_references` prefers LSP but can fall back.
 
-3. **Lazy LSP Initialization** (ToolDispatcher.ensure_lsp)
-   - First LSP tool call initializes the backend
-   - Subsequent calls reuse the cached LSP client
-   - LSP servers are auto-installed if missing
+3. **Detect the project root** (`root_detector`)
+   Walks upward from the file to find the right language markers or falls back
+   to `.git` or the parent directory.
+   Example: Rust prefers a workspace `Cargo.toml`; Go prefers `go.work`.
 
-4. **Execution** (Backend method)
-   - Tree-sitter: parse file, run query patterns, extract symbols
-   - LSP: send request to running language server, parse response
+4. **Initialize heavy services lazily** (`ToolDispatcher.ensure_lsp`)
+   Starts or reuses an LSP client only if the selected backend needs it.
+   Example: the first Rust rename request may install or start
+   `rust-analyzer`; later requests reuse it.
 
-5. **Response** (JSON serialization)
-   - Symbols, definitions, references, etc. → JSON
-   - Sent back to MCP client
+5. **Execute the backend method**
+   Tree-sitter parses the file and runs language queries or generic fallback
+   walkers. LSP sends a JSON-RPC request to the server and translates the
+   response.
 
-## Backend Selection Logic
+6. **Serialize the result**
+   Symbols, locations, diagnostics, or edit previews are returned in
+   MCP-friendly JSON.
 
-File: `crates/rhizome-core/src/backend_selector.rs`
-
-### Tool Requirements
-
-| Requirement | Examples | Fallback Behavior |
-|------------|----------|-------------------|
-| `TreeSitter` | `get_symbols`, `get_structure`, `get_exports`, `get_complexity` | Always tree-sitter (fast, no deps) |
-| `PrefersLsp` | `find_references`, `get_diagnostics` | LSP if available, tree-sitter if not |
-| `RequiresLsp` | `rename_symbol`, `get_hover_info` | Error with install hint if unavailable |
-
-### Selection Process
-
-```rust
-pub fn select(&mut self, tool_name: &str, language: &Language) -> ResolvedBackend {
-    let requirement = tool_requirement(tool_name);  // Look up in match statement
-
-    match requirement {
-        TreeSitter => ResolvedBackend::TreeSitter,
-        RequiresLsp => {
-            let probe = self.probe_language(language);  // Check if binary exists
-            if probe.available {
-                ResolvedBackend::Lsp
-            } else {
-                ResolvedBackend::LspUnavailable {
-                    binary: probe.binary,
-                    install_hint: format!("...: install via {cmd}")
-                }
-            }
-        }
-        PrefersLsp => {
-            let probe = self.probe_language(language);
-            if probe.available {
-                ResolvedBackend::Lsp
-            } else {
-                ResolvedBackend::TreeSitter  // Fallback
-            }
-        }
-    }
-}
-```
-
-**Probing** checks:
-1. Is the server binary in PATH?
-2. If not, is auto-download enabled? (`RHIZOME_DISABLE_LSP_DOWNLOAD=1` disables)
-3. If enabled, try to install via recipe (e.g., `rustup component add rust-analyzer`)
-4. Return availability status
+---
 
 ## Tree-Sitter Backend
 
@@ -120,57 +106,30 @@ File: `crates/rhizome-treesitter/src/lib.rs`
 
 ### How It Works
 
-1. **Parser Pool**: Reuses `tree_sitter::Parser` instances per language (cached for performance)
-2. **Parse File**: `parser.parse(source_bytes, None)` → tree-sitter syntax tree
-3. **Run Query**: Execute language-specific query pattern (defined in `queries.rs`)
-4. **Extract Symbols**: Walk matched nodes, extract name, kind, line, scope
-5. **Return**: Vec of symbols with kind (function, class, import, etc.)
+1. Reuse a cached parser for the target language.
+2. Parse the source file into a syntax tree.
+3. Run language-specific queries when available.
+4. Fall back to a generic walker for languages without custom queries.
+5. Translate matches into Rhizome symbols and locations.
 
-### Language Support: Query Patterns vs Generic Fallback
+### Capability Matrix
 
-**10 languages with optimized query patterns** (fast, precise):
-- Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, Ruby, PHP
+| Tier | Examples | Behavior |
+|------|----------|----------|
+| Query-backed | Rust, Python, TypeScript, Go, Java, C, C++, Ruby, PHP | Precise extraction with language-specific queries |
+| Generic fallback | Bash, C#, Elixir, Lua, Swift, Zig, Haskell | Walk common node types and infer structure |
+| LSP-only | Terraform, Kotlin, Dart, Vue, Svelte, Astro, Typst, YAML | Tree-sitter is insufficient or unavailable, so deeper tools rely on LSP |
 
-Example Rust query:
-```
-(function_item name: (identifier) @name) @function
-(struct_item name: (type_identifier) @name) @struct_def
-(trait_item name: (type_identifier) @name) @trait_def
-(import_statement) @import
-```
-
-**7 additional languages with built-in tree-sitter extraction**:
-- Bash, C#, Elixir, Lua, Swift, Zig, Haskell
-
-Generic fallback walks the tree and matches common node types: `function_definition`, `class_declaration`, `method`, `import`, etc.
-
-**15 languages LSP-only** (no tree-sitter parser):
-- Terraform, F#, Kotlin, Dart, Clojure, OCaml, Julia, Nix, Gleam, Vue, Svelte, Astro, Prisma, Typst, YAML
-
-For LSP-only languages, tools requiring tree-sitter (e.g., `get_symbols`) either:
-- Use the generic fallback if a parser can be loaded
-- Return an empty list with a note that LSP is required
-
-### Adding Query Patterns
+### Adding a Query Pattern
 
 File: `crates/rhizome-treesitter/src/queries.rs`
 
-To add or improve a language's query:
+1. Write the query for the target grammar.
+2. Add the constant and compile path in `get_query()`.
+3. Cache it with the existing `OnceLock` pattern.
+4. Add fixture coverage before relying on it in tool behavior.
 
-1. Write tree-sitter query matching the language grammar
-2. Add constant (e.g., `SWIFT_QUERY`) with pattern string
-3. Add compile step in `get_query()`
-4. Add OnceLock cache
-
-Example for Swift (hypothetical):
-```rust
-pub const SWIFT_QUERY: &str = r#"
-(function_declaration name: (identifier) @name) @function
-(class_declaration name: (type_identifier) @name) @class_def
-(struct_declaration name: (type_identifier) @name) @struct_def
-(import_statement) @import
-"#;
-```
+---
 
 ## LSP Backend
 
@@ -178,173 +137,99 @@ File: `crates/rhizome-lsp/src/lib.rs`
 
 ### How It Works
 
-1. **Language Server Manager**: Keyed by `(Language, PathBuf)` for monorepo support
-   - Multiple servers can run simultaneously (one per project root)
-   - Each server handles its own `initialize`, lifecycle, and cache
+1. Resolve `(language, project_root)` so monorepos can keep distinct servers.
+2. Start the language server over stdio if no client exists yet.
+3. Send the request with document URI and position data.
+4. Translate the server response back into Rhizome types.
+5. Cache the live client for the next request.
 
-2. **Start Server**: Spawn LSP server process via stdio
-   - Example Rust: `rust-analyzer --log-file=/tmp/ra.log`
-   - Communicate via JSON-RPC over stdin/stdout
+### Configuration Matrix
 
-3. **Send Request**: Format LSP request (e.g., `textDocument/definition`)
-   - Include document URI, line, column
-   - Wait for response (with timeout)
+| Setting | Example | Behavior |
+|---------|---------|----------|
+| `server_binary` | `rust-analyzer` | Override the default server binary |
+| `server_args` | `["--stdio"]` | Pass custom startup args |
+| `enabled = false` | Java disabled | Turns a language off entirely |
+| `lsp.disable_download` | `true` | Disables managed auto-install |
 
-4. **Parse Response**: Extract symbols/locations/diagnostics from LSP response
-   - Convert to Rhizome types (Symbol, Location, Diagnostic)
-
-5. **Cache**: Reuse server across calls (no restart between requests)
-
-### Multi-Client Design
-
-Managers track `(Language, project_root)` tuples. This allows:
-
-```rust
-// Same language, different roots → different servers
-get_definition("/path/a/file.rs", Lang::Rust)  // Uses server for /path/a
-get_definition("/path/b/file.rs", Lang::Rust)  // Uses server for /path/b
-
-// Different language → different servers
-get_definition("/path/file.rs", Lang::Rust)    // rust-analyzer
-get_definition("/path/file.py", Lang::Python)  // pyright
-```
-
-### Root Detection
-
-File: `crates/rhizome-core/src/root_detector.rs`
-
-Each language has markers that identify project roots:
-
-| Language | Markers |
-|----------|---------|
-| Rust | `Cargo.toml` (with `[workspace]` for workspace root), `Cargo.lock` |
-| Python | `pyproject.toml`, `setup.py`, `requirements.txt`, `Pipfile`, `pyrightconfig.json` |
-| JavaScript/TypeScript | `package.json`, `tsconfig.json`, `jsconfig.json` |
-| Go | `go.work`, `go.mod`, `go.sum` |
-| Java | `pom.xml`, `build.gradle`, `build.gradle.kts` |
-| C/C++ | `CMakeLists.txt`, `compile_commands.json`, `Makefile` |
-
-Special handling:
-- **Rust**: Looks for `[workspace]` in Cargo.toml to find workspace root (monorepo support)
-- **Go**: Prefers `go.work` (workspace) over `go.mod`
-- **JS/TS**: Skips Deno projects (detects `deno.json`)
-
-Fallback chain:
-1. Walk up from file directory looking for language markers
-2. If none found, look for `.git` directory
-3. If none found, return file's parent directory
-
-## Configuration
+### Adding a Language Server
 
 File: `crates/rhizome-core/src/config.rs`
 
-Configuration merges from two sources, with project config overriding global:
+1. Add the language to the core language enum and default server config.
+2. Teach root detection which files mark a project boundary.
+3. Add or update install logic if managed download is supported.
+4. Add integration coverage for status or tool behavior.
 
-1. **Global**: `~/.config/rhizome/config.toml`
-2. **Project**: `<project_root>/.rhizome/config.toml`
+---
 
-Example:
+## Configuration
+
+Config file: `~/.config/rhizome/config.toml`
+Project override: `<project_root>/.rhizome/config.toml`
+
 ```toml
 [languages.rust]
-server_binary = "/opt/custom/rust-analyzer"
+server_binary = "rust-analyzer"
 server_args = ["--log-file", "/tmp/ra.log"]
-enabled = true
 
 [languages.python]
 server_binary = "pyright-langserver"
-enabled = true
-
-[languages.java]
-enabled = false  # Disable Java
+server_args = ["--stdio"]
 
 [lsp]
-disable_download = false  # Allow auto-install
-bin_dir = "/opt/rhizome/bin"  # Custom LSP install directory
+disable_download = false
+bin_dir = "/opt/rhizome/bin"
 
 [export]
-auto_export = true  # Export to Hyphae on startup
+auto_export = true
 ```
 
 Environment variables override config:
-- `RHIZOME_DISABLE_LSP_DOWNLOAD=1`: Disable auto-install
 
-## MCP Tools: 26 Total
+- `RHIZOME_DISABLE_LSP_DOWNLOAD=1` — disable managed LSP installs
 
-File: `crates/rhizome-mcp/src/tools/mod.rs`
-
-Tools are grouped by category:
-
-### Symbol Tools (18 tools)
-`get_symbols`, `get_structure`, `get_definition`, `find_references`, `search_symbols`, `go_to_definition`, `get_signature`, `get_imports`, `get_call_sites`, `get_scope`, `get_exports`, `summarize_file`, `get_tests`, `get_diff_symbols`, `get_annotations`, `get_complexity`, `get_type_definitions`, `get_dependencies`, `get_parameters`, `get_enclosing_class`, `get_symbol_body`, `get_changed_files`, `summarize_project`
-
-### File Tools (4 tools)
-`get_diagnostics`, `rename_symbol`, `get_hover_info`
-
-### Edit Tools (7 tools)
-`replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `replace_lines`, `insert_at_line`, `delete_lines`, `create_file`
-
-### Export Tools (1 tool)
-`export_to_hyphae` — Extract symbols and build code graph for Hyphae integration
-
-### Onboarding (1 tool)
-`rhizome_onboard` — Initialize a new project
-
-## Hyphae Integration
-
-File: `crates/rhizome-core/src/hyphae.rs`
-
-When a file changes, Rhizome can export symbol data to Hyphae. The flow: extract symbols via tree-sitter, link them into a graph (definitions, references, imports), send the graph to Hyphae via spore IPC, and cache checksums to skip unchanged files on the next export. This lets Hyphae index code across a project and provide cross-file symbol search, refactoring, and memory.
+---
 
 ## Error Handling
 
-All backends and tools return `Result<T>` with context:
-
 | Error | Cause | User Action |
 |-------|-------|-------------|
-| "Unsupported extension" | File type not recognized | Check Language enum for supported extensions |
-| "No tree-sitter grammar" | Language has no query pattern | Use LSP if available, or file an issue |
-| "LSP server not found: rust-analyzer" | Binary not in PATH, auto-install failed | Install manually: `rustup component add rust-analyzer` |
-| "LSP auto-install disabled" | `RHIZOME_DISABLE_LSP_DOWNLOAD=1` set | Unset variable or install manually |
-| "Tool not found" | Unknown MCP tool name | Check `rhizome --help` for valid tools |
+| `"Unsupported extension"` | File type is not mapped to a supported language | Check the language enum and file extension mapping |
+| `"No tree-sitter grammar"` | The language lacks a usable parser or query path | Use an LSP-backed tool if available or add grammar support |
+| `"LSP server not found: rust-analyzer"` | Binary missing and auto-install failed | Install manually with `rustup component add rust-analyzer` |
+| `"LSP auto-install disabled"` | `RHIZOME_DISABLE_LSP_DOWNLOAD=1` is set | Unset the variable or install the server yourself |
+| `"Tool not found"` | Unknown MCP tool name | Check `rhizome --help` or the MCP tool list |
+
+---
+
+## Testing
+
+```bash
+cargo test --all
+cargo test -p rhizome-treesitter
+cargo test -p rhizome-lsp
+```
+
+| Category | Count | What's Tested |
+|----------|-------|---------------|
+| Unit | 150+ | Backend selection, config merging, root detection, parser behavior |
+| Fixture-based backend tests | 50+ | Symbol extraction and language-specific behavior against sample files |
+| Integration | 30+ | MCP dispatch, CLI flows, LSP fallback behavior, edit tools |
+| Error and install paths | 20+ | Missing binaries, disabled downloads, unsupported languages |
+
+Fixtures live in crate-local test directories. For tree-sitter work, update or
+add fixtures before adjusting query behavior so the expected symbol shape stays
+reviewable.
+
+---
 
 ## Key Dependencies
 
-- **tree-sitter**: Parsing (tree-sitter-rust, tree-sitter-python, etc.)
-- **lsp-types**: LSP protocol definitions
-- **tokio**: Async runtime for LSP clients
-- **serde_json**: JSON serialization
-- **spore**: IPC to Hyphae
-- **anyhow**: Error handling (app-level)
-- **tracing**: Logging
-
-## Development Commands
-
-```bash
-# Build all crates
-cargo build --release
-
-# Run tests
-cargo test --all
-
-# Run CLI
-cargo run -- serve  # Start MCP server
-cargo run -- symbols <file>  # Extract symbols from file
-cargo run -- status  # Show language + LSP availability
-
-# Run specific backend tests
-cargo test -p rhizome-treesitter  # Tree-sitter tests
-cargo test -p rhizome-lsp          # LSP tests
-
-# Format and lint
-cargo fmt
-cargo clippy
-```
-
-## Testing Strategy
-
-- **Unit tests**: Backend implementation tests in each crate
-- **Tree-sitter fixtures**: Rust, Python, TypeScript test files in `tests/fixtures/`
-- **LSP tests**: Mock LSP server tests (requires language servers installed)
-- **Integration**: End-to-end CLI tests
-
-Run all: `cargo test --all`
+- **`tree-sitter`** — fast local structure extraction and query-backed symbol
+  discovery.
+- **`lsp-types`** — protocol types for talking to language servers.
+- **`tokio`** — async runtime for LSP client management while keeping a simple
+  external interface.
+- **`spore`** — shared IPC primitives, especially for Hyphae export and config
+  helpers.

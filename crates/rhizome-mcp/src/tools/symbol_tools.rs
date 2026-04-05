@@ -7,7 +7,7 @@ use anyhow::{Result, anyhow};
 use rhizome_core::{CodeIntelligence, Position, Symbol, SymbolKind};
 use serde_json::{Value, json};
 
-use super::{ToolSchema, tool_response};
+use super::{ToolSchema, edit_tools::resolve_path, tool_response};
 
 // ---------------------------------------------------------------------------
 // Tool schemas
@@ -331,15 +331,23 @@ fn required_u32(args: &Value, key: &str) -> Result<u32> {
         .ok_or_else(|| anyhow!("Missing required parameter: {key}"))
 }
 
+fn resolve_project_path(file: &str, project_root: &Path) -> Result<PathBuf> {
+    resolve_path(file, project_root)
+}
+
 // ---------------------------------------------------------------------------
 // Tool handlers
 // ---------------------------------------------------------------------------
 
 /// List all symbols in a file.
-pub fn get_symbols(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_symbols(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     let formatted: Vec<Value> = symbols.iter().flat_map(flatten_symbol).collect();
     let text = serde_json::to_string_pretty(&formatted)?;
@@ -370,15 +378,19 @@ fn flatten_symbol(sym: &Symbol) -> Vec<Value> {
 }
 
 /// Show hierarchical structure of symbols as an indented tree.
-pub fn get_structure(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_structure(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let max_depth = args
         .get("depth")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
 
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     let mut output = String::new();
     for sym in &symbols {
@@ -405,17 +417,21 @@ fn format_tree(sym: &Symbol, depth: usize, max_depth: Option<usize>, output: &mu
 }
 
 /// Get the definition of a symbol, with optional body truncation.
-pub fn get_definition(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_definition(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let symbol_name = required_str(args, "symbol")?;
     let full = args.get("full").and_then(|v| v.as_bool()).unwrap_or(false);
 
-    let path = Path::new(file);
-    let sym = backend.get_definition(path, symbol_name)?;
+    let path = resolve_project_path(file, project_root)?;
+    let sym = backend.get_definition(&path, symbol_name)?;
 
     match sym {
         Some(sym) => {
-            let body = read_symbol_body(path, &sym, full)?;
+            let body = read_symbol_body(&path, &sym, full)?;
             let result = json!({
                 "name": sym.name,
                 "qualified_name": sym.qualified_name(),
@@ -478,14 +494,15 @@ fn read_symbol_body(file: &Path, sym: &Symbol, full: bool) -> Result<String> {
 pub fn search_symbols(
     backend: &dyn CodeIntelligence,
     args: &Value,
-    default_root: &Path,
+    project_root: &Path,
 ) -> Result<Value> {
     let pattern = required_str(args, "pattern")?;
     let search_path = args
         .get("path")
         .and_then(|v| v.as_str())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| default_root.to_path_buf());
+        .map(|path| resolve_project_path(path, project_root))
+        .transpose()?
+        .unwrap_or_else(|| project_root.to_path_buf());
 
     let symbols = backend.search_symbols(pattern, &search_path)?;
 
@@ -507,14 +524,18 @@ pub fn search_symbols(
 }
 
 /// Find all references to the symbol at a given position.
-pub fn find_references(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn find_references(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let line = required_u32(args, "line")?;
     let column = required_u32(args, "column")?;
 
-    let path = Path::new(file);
+    let path = resolve_project_path(file, project_root)?;
     let pos = Position { line, column };
-    let locations = backend.find_references(path, &pos)?;
+    let locations = backend.find_references(&path, &pos)?;
 
     let formatted: Vec<Value> = locations
         .iter()
@@ -543,9 +564,9 @@ pub fn analyze_impact(
     let line = required_u32(args, "line")?;
     let column = required_u32(args, "column")?;
 
-    let path = Path::new(file);
+    let path = resolve_project_path(file, project_root)?;
     let pos = Position { line, column };
-    let source = std::fs::read_to_string(path)?;
+    let source = std::fs::read_to_string(&path)?;
     let lines: Vec<&str> = source.lines().collect();
     let line_idx = line as usize;
 
@@ -558,16 +579,16 @@ pub fn analyze_impact(
         return Ok(tool_response("No identifier at the given position"));
     }
 
-    let definition = backend.get_definition(path, &symbol_name)?;
+    let definition = backend.get_definition(&path, &symbol_name)?;
     let definition_location = definition.as_ref().map(|symbol| &symbol.location);
     let definition_qualified_name = definition.as_ref().map(Symbol::qualified_name);
     let references = backend
-        .find_references(path, &pos)?
+        .find_references(&path, &pos)?
         .into_iter()
         .filter(|loc| !is_definition_location(definition_location, loc))
         .collect::<Vec<_>>();
     let capabilities = backend.capabilities();
-    let symbols = backend.get_symbols(path)?;
+    let symbols = backend.get_symbols(&path)?;
     let dependency_map = build_dependency_map(&symbols, &lines);
     let related_symbols = backend
         .search_symbols(&symbol_name, project_root)?
@@ -823,22 +844,26 @@ fn build_dependency_map(
 
 /// Find the definition of the symbol at a given position.
 /// Uses tree-sitter to identify the symbol name at the position, then calls get_definition.
-pub fn go_to_definition(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn go_to_definition(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let line = required_u32(args, "line")?;
     let column = required_u32(args, "column")?;
 
-    let path = Path::new(file);
+    let path = resolve_project_path(file, project_root)?;
     let pos = Position { line, column };
 
     // Find the identifier at the given position by looking at references
-    let refs = backend.find_references(path, &pos)?;
+    let refs = backend.find_references(&path, &pos)?;
     if refs.is_empty() {
         return Ok(tool_response("No symbol found at the given position"));
     }
 
     // Read the source to get the symbol name at the position
-    let source = std::fs::read_to_string(path)?;
+    let source = std::fs::read_to_string(&path)?;
     let lines: Vec<&str> = source.lines().collect();
     let line_idx = line as usize;
 
@@ -855,7 +880,7 @@ pub fn go_to_definition(backend: &dyn CodeIntelligence, args: &Value) -> Result<
         return Ok(tool_response("No identifier at the given position"));
     }
 
-    let sym = backend.get_definition(path, &name)?;
+    let sym = backend.get_definition(&path, &name)?;
     match sym {
         Some(sym) => {
             let result = json!({
@@ -908,12 +933,16 @@ fn is_ident_char(b: u8) -> bool {
 }
 
 /// Get only the signature of a symbol.
-pub fn get_signature(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_signature(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let symbol_name = required_str(args, "symbol")?;
 
-    let path = Path::new(file);
-    let sym = backend.get_definition(path, symbol_name)?;
+    let path = resolve_project_path(file, project_root)?;
+    let sym = backend.get_definition(&path, symbol_name)?;
 
     match sym {
         Some(sym) => {
@@ -929,10 +958,14 @@ pub fn get_signature(backend: &dyn CodeIntelligence, args: &Value) -> Result<Val
 }
 
 /// List all import statements in a file.
-pub fn get_imports(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_imports(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
-    let path = Path::new(file);
-    let imports = backend.get_imports(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let imports = backend.get_imports(&path)?;
 
     let formatted: Vec<Value> = imports
         .iter()
@@ -955,16 +988,20 @@ pub fn get_imports(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value
 
 /// Find function call expressions in a file.
 /// Uses tree-sitter to parse and find call_expression nodes.
-pub fn get_call_sites(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_call_sites(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let function_filter = args.get("function").and_then(|v| v.as_str());
 
-    let path = Path::new(file);
-    let source = std::fs::read_to_string(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let source = std::fs::read_to_string(&path)?;
     let lines: Vec<&str> = source.lines().collect();
 
     // Use the backend to get symbols which validates the file is parseable
-    let _symbols = backend.get_symbols(path)?;
+    let _symbols = backend.get_symbols(&path)?;
 
     // Parse call sites from the source text by scanning for function call patterns
     let mut call_sites = Vec::new();
@@ -1104,12 +1141,16 @@ fn is_keyword(name: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Get the enclosing scope at a given line.
-pub fn get_scope(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_scope(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let line = required_u32(args, "line")?;
 
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     let scope = find_innermost_scope(&symbols, line);
 
@@ -1171,10 +1212,14 @@ fn find_innermost_scope(symbols: &[Symbol], line: u32) -> Option<&Symbol> {
 // ---------------------------------------------------------------------------
 
 /// List only public/exported symbols in a file.
-pub fn get_exports(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_exports(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
@@ -1227,10 +1272,14 @@ fn is_exported(sym: &Symbol, ext: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Compact file summary showing only public signatures, no bodies.
-pub fn summarize_file(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn summarize_file(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     let mut output = String::new();
     for sym in &symbols {
@@ -1273,15 +1322,19 @@ fn format_summary(sym: &Symbol, depth: usize, output: &mut String) {
 // ---------------------------------------------------------------------------
 
 /// Find test functions in a file.
-pub fn get_tests(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_tests(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     // Read source for attribute checking
-    let source = std::fs::read_to_string(path)?;
+    let source = std::fs::read_to_string(&path)?;
     let source_lines: Vec<&str> = source.lines().collect();
 
     let mut tests = Vec::new();
@@ -1501,7 +1554,11 @@ fn parse_diff_hunks(diff: &str) -> Vec<(String, Vec<u32>)> {
 // ---------------------------------------------------------------------------
 
 /// Find TODO, FIXME, HACK, and other annotation comments in a file.
-pub fn get_annotations(_backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_annotations(
+    _backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let tags_arg = args.get("tags").and_then(|v| v.as_array());
 
@@ -1517,7 +1574,8 @@ pub fn get_annotations(_backend: &dyn CodeIntelligence, args: &Value) -> Result<
         default_tags
     };
 
-    let source = std::fs::read_to_string(file)?;
+    let path = resolve_project_path(file, project_root)?;
+    let source = std::fs::read_to_string(&path)?;
     let mut annotations = Vec::new();
 
     for (line_idx, line) in source.lines().enumerate() {
@@ -1552,13 +1610,17 @@ pub fn get_annotations(_backend: &dyn CodeIntelligence, args: &Value) -> Result<
 // ---------------------------------------------------------------------------
 
 /// Calculate cyclomatic complexity for functions in a file.
-pub fn get_complexity(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_complexity(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let function_filter = args.get("function").and_then(|v| v.as_str());
 
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
-    let source = std::fs::read_to_string(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
+    let source = std::fs::read_to_string(&path)?;
     let source_lines: Vec<&str> = source.lines().collect();
 
     let mut results = Vec::new();
@@ -1636,10 +1698,14 @@ fn collect_complexity(
 // ---------------------------------------------------------------------------
 
 /// List type definitions (structs, enums, interfaces, type aliases) in a file.
-pub fn get_type_definitions(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_type_definitions(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     let mut type_defs = Vec::new();
     collect_type_definitions(&symbols, &mut type_defs);
@@ -1704,11 +1770,15 @@ fn collect_type_definitions(symbols: &[Symbol], out: &mut Vec<Value>) {
 // ---------------------------------------------------------------------------
 
 /// Map which functions call which within a file.
-pub fn get_dependencies(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_dependencies(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
-    let source = std::fs::read_to_string(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
+    let source = std::fs::read_to_string(&path)?;
     let source_lines: Vec<&str> = source.lines().collect();
     let deps = build_dependency_map(&symbols, &source_lines)
         .into_iter()
@@ -1737,12 +1807,16 @@ fn collect_function_ranges<'a>(symbols: &'a [Symbol], out: &mut Vec<(&'a str, us
 // ---------------------------------------------------------------------------
 
 /// Extract function parameters with types.
-pub fn get_parameters(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_parameters(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let function_filter = args.get("function").and_then(|v| v.as_str());
 
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     let mut results = Vec::new();
     collect_parameters(&symbols, function_filter, &mut results);
@@ -1874,12 +1948,16 @@ fn parse_params_from_signature(sig: Option<&str>) -> Vec<Value> {
 // ---------------------------------------------------------------------------
 
 /// Get the parent class/struct and all sibling methods for a given method.
-pub fn get_enclosing_class(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_enclosing_class(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let method_name = required_str(args, "method")?;
 
-    let path = Path::new(file);
-    let symbols = backend.get_symbols(path)?;
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
 
     if let Some((parent, methods)) = find_parent_with_method(&symbols, method_name) {
         let methods_json: Vec<Value> = methods
@@ -1931,21 +2009,25 @@ fn find_parent_with_method<'a>(
 // ---------------------------------------------------------------------------
 
 /// Get the source code body of a specific symbol by name and optional line.
-pub fn get_symbol_body(backend: &dyn CodeIntelligence, args: &Value) -> Result<Value> {
+pub fn get_symbol_body(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
     let file = required_str(args, "file")?;
     let symbol_name = required_str(args, "symbol")?;
     let line_hint = args.get("line").and_then(|v| v.as_u64()).map(|v| v as u32);
 
-    let path = Path::new(file);
+    let path = resolve_project_path(file, project_root)?;
 
     // Find all matching symbols
-    let symbols = backend.get_symbols(path)?;
+    let symbols = backend.get_symbols(&path)?;
     let mut matches = Vec::new();
     collect_symbols_by_name(&symbols, symbol_name, &mut matches);
 
     let sym = if matches.is_empty() {
         // Try get_definition as fallback
-        match backend.get_definition(path, symbol_name)? {
+        match backend.get_definition(&path, symbol_name)? {
             Some(s) => s,
             None => {
                 return Ok(tool_response(&format!(
@@ -1969,7 +2051,7 @@ pub fn get_symbol_body(backend: &dyn CodeIntelligence, args: &Value) -> Result<V
         matches.into_iter().next().unwrap()
     };
 
-    let source = std::fs::read_to_string(path)?;
+    let source = std::fs::read_to_string(&path)?;
     let lines: Vec<&str> = source.lines().collect();
     let start = sym.location.line_start as usize;
     let end = (sym.location.line_end as usize).min(lines.len().saturating_sub(1));
@@ -2290,6 +2372,106 @@ pub fn onboard_schema() -> ToolSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tempfile::TempDir;
+
+    #[derive(Default)]
+    struct MockBackend {
+        symbols: Vec<Symbol>,
+        last_get_symbols_path: RefCell<Option<PathBuf>>,
+        last_search_root: RefCell<Option<PathBuf>>,
+    }
+
+    impl MockBackend {
+        fn with_symbols(symbols: Vec<Symbol>) -> Self {
+            Self {
+                symbols,
+                ..Self::default()
+            }
+        }
+    }
+
+    impl CodeIntelligence for MockBackend {
+        fn get_symbols(&self, file: &Path) -> rhizome_core::Result<Vec<Symbol>> {
+            self.last_get_symbols_path.replace(Some(file.to_path_buf()));
+            Ok(self.symbols.clone())
+        }
+
+        fn get_definition(
+            &self,
+            _file: &Path,
+            _name: &str,
+        ) -> rhizome_core::Result<Option<Symbol>> {
+            Ok(None)
+        }
+
+        fn find_references(
+            &self,
+            _file: &Path,
+            _position: &Position,
+        ) -> rhizome_core::Result<Vec<rhizome_core::Location>> {
+            Ok(Vec::new())
+        }
+
+        fn search_symbols(
+            &self,
+            _pattern: &str,
+            project_root: &Path,
+        ) -> rhizome_core::Result<Vec<Symbol>> {
+            self.last_search_root
+                .replace(Some(project_root.to_path_buf()));
+            Ok(self.symbols.clone())
+        }
+
+        fn get_imports(&self, _file: &Path) -> rhizome_core::Result<Vec<Symbol>> {
+            Ok(Vec::new())
+        }
+
+        fn get_diagnostics(
+            &self,
+            _file: &Path,
+        ) -> rhizome_core::Result<Vec<rhizome_core::Diagnostic>> {
+            Ok(Vec::new())
+        }
+
+        fn capabilities(&self) -> rhizome_core::BackendCapabilities {
+            rhizome_core::BackendCapabilities {
+                cross_file_references: true,
+                rename: true,
+                type_info: true,
+                diagnostics: true,
+            }
+        }
+    }
+
+    fn write_test_file(dir: &TempDir, name: &str, content: &str) -> PathBuf {
+        let path = dir.path().join(name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&path, content).unwrap();
+        path
+    }
+
+    fn make_symbol(path: &Path, name: &str) -> Symbol {
+        Symbol {
+            name: name.to_string(),
+            kind: SymbolKind::Function,
+            location: rhizome_core::Location {
+                file_path: path.to_string_lossy().into_owned(),
+                line_start: 0,
+                line_end: 0,
+                column_start: 0,
+                column_end: 0,
+            },
+            scope_path: Vec::new(),
+            signature: Some(format!("fn {name}()")),
+            doc_comment: None,
+            children: Vec::new(),
+        }
+    }
 
     #[test]
     fn test_extract_identifier_at() {
@@ -2305,5 +2487,68 @@ mod tests {
         assert!(is_keyword("fn"));
         assert!(!is_keyword("hello"));
         assert!(!is_keyword("process"));
+    }
+
+    #[test]
+    fn resolves_paths_within_project_root_for_file_reading_and_search() {
+        let dir = TempDir::new().unwrap();
+        let file_path = write_test_file(&dir, "src/lib.rs", "TODO: keep me\nfn hello() {}\n");
+        let backend = MockBackend::with_symbols(vec![make_symbol(&file_path, "hello")]);
+
+        let annotations =
+            get_annotations(&backend, &json!({"file": "src/lib.rs"}), dir.path()).unwrap();
+        let annotations_text = annotations["content"][0]["text"].as_str().unwrap();
+        assert!(annotations_text.contains("TODO"));
+
+        let symbols = get_symbols(
+            &backend,
+            &json!({"file": file_path.to_string_lossy()}),
+            dir.path(),
+        )
+        .unwrap();
+        let symbols_text = symbols["content"][0]["text"].as_str().unwrap();
+        assert!(symbols_text.contains("hello"));
+
+        assert_eq!(
+            backend.last_get_symbols_path.borrow().as_ref(),
+            Some(&file_path)
+        );
+
+        let search = search_symbols(
+            &backend,
+            &json!({"pattern": "hello", "path": "src"}),
+            dir.path(),
+        )
+        .unwrap();
+        let search_text = search["content"][0]["text"].as_str().unwrap();
+        assert!(search_text.contains("hello"));
+        assert_eq!(
+            backend.last_search_root.borrow().as_ref(),
+            Some(&dir.path().join("src"))
+        );
+    }
+
+    #[test]
+    fn rejects_paths_outside_project_root() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_file = write_test_file(&outside, "outside.rs", "fn outside() {}\n");
+        let backend = MockBackend::with_symbols(vec![make_symbol(&outside_file, "outside")]);
+
+        let traversal_result = get_symbols(&backend, &json!({"file": "../outside.rs"}), dir.path());
+        assert!(traversal_result.is_err());
+        assert!(backend.last_get_symbols_path.borrow().is_none());
+
+        let traversal_search = search_symbols(
+            &backend,
+            &json!({"pattern": "outside", "path": "../outside"}),
+            dir.path(),
+        );
+        assert!(traversal_search.is_err());
+        assert!(backend.last_search_root.borrow().is_none());
+
+        let traversal_read =
+            get_annotations(&backend, &json!({"file": "../outside.rs"}), dir.path());
+        assert!(traversal_read.is_err());
     }
 }

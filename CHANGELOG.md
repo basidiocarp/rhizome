@@ -1,174 +1,231 @@
 # Changelog
 
+All notable changes to Rhizome are documented in this file.
+
 ## [Unreleased]
 
 ### Changed
 
-- Reorganized documentation: moved INTERNALS.md to docs/, updated architecture, language setup, and README docs
+- **Docs cleanup**: Internal docs moved under `docs/`, and the README,
+  architecture, and language-setup docs were refreshed to match the current
+  backend model.
 
 ## [0.7.2] - 2026-04-01
 
 ### Fixed
 
-- **Release-gating for macOS binaries**: Apple release builds now fail on tree-sitter smoke-test or MCP initialize regressions instead of publishing artifacts after advisory-only checks.
-- **macOS build diagnostics**: Release workflows now emit verbose native compiler logs, pin the SDK and deployment target, re-sign the binary, and upload diagnostics when the Apple build path fails.
+- **Release-gating for macOS binaries**: Apple release builds now fail on
+  tree-sitter smoke-test or MCP initialize regressions instead of publishing
+  artifacts after advisory-only checks.
+- **macOS build diagnostics**: Release workflows now emit verbose native
+  compiler logs, pin the SDK and deployment target, re-sign the binary, and
+  upload diagnostics when the Apple build path fails.
 
 ## [0.7.0] - 2026-03-31
 
 ### Added
 
-- **Broader export language coverage**: Hyphae export now follows Rhizome's broader language map instead of truncating code-graph export to a narrow extension subset.
+- **Broader export language coverage**: Hyphae export now follows Rhizome's
+  wider language map instead of truncating code-graph export to a narrow
+  extension subset.
 
 ### Changed
 
-- **Canonical export identity**: Hyphae export now derives project and worktree identity from canonical roots and emits the published `code-graph-v1` envelope with explicit schema versioning.
-- **Stricter contract handling**: Doctor and export paths now validate the real Hyphae import contract and stop relying on older compatibility shims such as unscoped cache fallback.
+- **Canonical export identity**: Hyphae export now derives project and worktree
+  identity from canonical roots and emits the published `code-graph-v1`
+  envelope.
+- **Stricter contract handling**: Doctor and export paths now validate the real
+  Hyphae import contract and stop relying on older compatibility shims.
 
 ### Fixed
 
-- **Auto-export resilience**: Background export now retries with backoff and escalates persistent failures at warning level instead of failing silently after one attempt.
-- **Doctor signal quality**: Hyphae health checks now probe the actual import path, respect ignore-aware language scanning, and report more realistic export readiness.
+- **Auto-export resilience**: Background export now retries with backoff and
+  escalates persistent failures at warning level instead of failing silently.
+- **Doctor signal quality**: Hyphae health checks now probe the actual import
+  path, respect ignore-aware language scanning, and report more realistic
+  export readiness.
 
 ## [0.6.2] - 2026-03-27
 
 ### Added
 
-- **Rename preview and impact analysis**: `rename_symbol` now supports dry-run preview, and `analyze_impact` summarizes grouped references, callers, callees, tests, and disclosed backend confidence.
-- **Scope-aware symbol identity**: Rhizome now emits `qualified_name` and `stable_id` metadata so nested symbols and methods keep container context across tree-sitter and LSP paths.
-- **Persistent workspace symbol snapshots**: Tree-sitter workspace search now persists scoped on-disk symbol indexes under `.rhizome/`, improving repeat query performance across process restarts.
+- **Rename preview and impact analysis**: `rename_symbol` now supports dry-run
+  preview, and `analyze_impact` summarizes grouped references, callers,
+  callees, tests, and backend confidence.
+- **Scope-aware symbol identity**: Rhizome now emits `qualified_name` and
+  `stable_id` metadata so nested symbols and methods keep container context.
+- **Persistent workspace symbol snapshots**: Tree-sitter workspace search now
+  persists scoped symbol indexes under `.rhizome/`.
 
 ### Changed
 
-- **Workspace cache hardening**: Persistent workspace snapshots now use schema versioning plus stronger file fingerprints instead of trusting timestamps alone.
-- **Scoped project state paths**: Project-local cache/config state now flows through shared `.rhizome/` path helpers instead of ad hoc joins.
-- **Roadmap and README refresh**: Rhizome docs now describe the current impact-analysis and workspace-index direction more accurately.
+- **Workspace cache hardening**: Persistent workspace snapshots now use schema
+  versioning and stronger file fingerprints instead of trusting timestamps
+  alone.
+- **Scoped project state paths**: Project-local cache and config state now flow
+  through shared `.rhizome/` path helpers.
 
 ### Fixed
 
-- **Hyphae export resilience**: Export now resolves relative roots against the project root, reports partial failures more clearly, and tolerates unreadable cache state better.
-- **Wildcard root markers**: Haskell `*.cabal` and OCaml `*.opam` root detection now actually works during workspace discovery.
-- **Worktree-aware symbol cache invalidation**: Workspace snapshots now preserve worktree/branch scoping and refresh correctly for modified or deleted files.
+- **Hyphae export resilience**: Export now resolves relative roots against the
+  project root, reports partial failures more clearly, and tolerates unreadable
+  cache state better.
+- **Wildcard root markers**: Haskell `*.cabal` and OCaml `*.opam` root
+  detection now works during workspace discovery.
+- **Worktree-aware cache invalidation**: Workspace snapshots now preserve
+  branch and worktree scoping and refresh correctly for modified or deleted
+  files.
 
 ## [0.6.1] - 2026-03-26
 
 ### Added
 
-- **Host-aware MCP setup output**: `rhizome init` now supports `--editor <host>` and can print paste-ready JSON or TOML snippets for Claude Code, Codex CLI, Cursor-family editors, and other supported MCP hosts.
-- **Per-host doctor repair guidance**: `rhizome doctor` now gives host-specific next steps when MCP registration is missing, including the right `rhizome init --editor ...` command for each detected host.
+- **Host-aware MCP setup output**: `rhizome init` now supports `--editor
+  <host>` and can print paste-ready config snippets for Claude Code, Codex CLI,
+  Cursor-family editors, and other supported hosts.
+- **Per-host doctor guidance**: `rhizome doctor` now gives host-specific next
+  steps when MCP registration is missing.
 
 ### Changed
 
-- **Platform-aware path resolution**: Rhizome now uses shared `spore` path/config helpers for global config loading, managed LSP bin directories, and path reporting instead of hand-rolled Unix-shaped logic.
-- **Windows-safe managed PATH**: LSP installer PATH augmentation now uses platform-safe path joining instead of hardcoded `:` separators.
-- **Multi-host MCP diagnostics**: `rhizome doctor` now inspects detected editor/host configs, including Codex TOML config, rather than only checking Claude Code CLI registration.
-- **Spore v0.4.3**: Rhizome now targets the current released `spore` tag.
+- **Platform-aware path resolution**: Rhizome now uses shared Spore helpers for
+  config loading, managed LSP bin directories, and path reporting.
+- **Windows-safe managed PATH**: LSP installer PATH augmentation now uses
+  platform-safe path joining.
+- **Multi-host diagnostics**: `rhizome doctor` now inspects detected editor and
+  host configs instead of only checking Claude Code registration.
 
 ### Fixed
 
-- **Pip fallback portability**: Rhizome now retries Python package installation without `--break-system-packages` when that flag is unsupported, avoiding a Linux-specific failure mode on other platforms.
+- **Pip fallback portability**: Python package installation now retries without
+  `--break-system-packages` when that flag is unsupported.
 
 ## [0.6.0] - 2026-03-23
 
 ### Added
 
-- **Symbol copy and move workflows**: Added `copy_symbol` and `move_symbol` MCP tools for whole-symbol edits across files, and completed end-to-end `rename_symbol` workspace-edit application through the LSP pipeline.
+- **Symbol copy and move workflows**: Added `copy_symbol` and `move_symbol`
+  MCP tools for whole-symbol edits across files.
+- **End-to-end rename application**: `rename_symbol` now completes workspace
+  edits through the LSP pipeline.
 
 ### Fixed
 
-- **Worktree-aware export cache**: Export cache keys now include git context so separate branches and worktrees do not reuse stale export state.
-- **LSP startup noise tolerance**: The LSP client now ignores noisy stdout preambles before the first JSON-RPC payload instead of failing startup.
-- **Hyphae export compatibility**: Export parsing now accepts current Hyphae response shapes and compact summaries, and graph merges drop invalid edges before import.
-- **Released Spore dependency**: Rhizome now depends on the released `spore` `v0.4.2` tag instead of a raw git revision.
+- **Worktree-aware export cache**: Export cache keys now include git context so
+  separate branches and worktrees do not reuse stale state.
+- **LSP startup noise tolerance**: The LSP client now ignores noisy stdout
+  preambles before the first JSON-RPC payload.
+- **Hyphae export compatibility**: Export parsing now accepts current Hyphae
+  response shapes and compact summaries, and graph merges drop invalid edges
+  before import.
 
 ## [0.5.4] - 2026-03-22
 
 ### Fixed
 
-- **Path traversal security**: `resolve_path` now canonicalizes parent directories for non-existent files. Previously, `../` sequences in new file paths bypassed the project root check.
-- **Mutex poison safety**: Replaced 5 `lock().unwrap()` calls with poison-safe alternatives in LSP client and parse cache. A panic in one request no longer permanently crashes the server.
-- **LSP manager entry API**: Replaced insert-then-unwrap pattern with `HashMap::entry()`, eliminating a potential panic if the key disappeared between operations.
-- **Probe server logging**: Installation and probing failures are now logged at `warn!` level instead of silently swallowed.
-- **Deprecated annotations**: Added `reason` attributes to 3 `#[allow(deprecated)]` sites.
+- **Path traversal security**: `resolve_path` now canonicalizes parent
+  directories for non-existent files so `../` sequences cannot bypass the
+  project-root check.
+- **Mutex poison safety**: LSP client and parse-cache locks now recover safely
+  after a panic instead of crashing the server permanently.
+- **LSP manager entry handling**: `HashMap::entry()` replaced an
+  insert-then-unwrap path that could panic under edge conditions.
+- **Probe server logging**: Install and probe failures now log warnings instead
+  of disappearing silently.
 
 ## [0.5.3] - 2026-03-21
 
 ### Added
 
-- **Parse-tree LRU cache**: Process-wide shared cache (100 entries) for tree-sitter parsed trees, keyed by `(file_path, mtime)`. Eliminates redundant re-parsing when multiple MCP tools operate on the same file. ~5-10x speedup on repeated file access.
+- **Parse-tree LRU cache**: Added a process-wide shared cache for tree-sitter
+  parsed trees, keyed by file path and mtime, to speed up repeated file access.
 
 ### Changed
 
-- **Spore v0.3.0**: Self-update and logging now use shared spore modules.
+- **Shared Spore runtime**: Self-update and logging now use shared Spore
+  modules.
 
 ## [0.4.3] - 2026-03-18
 
 ### Added
 
-- **7 file editing MCP tools**: `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `replace_lines`, `insert_lines`, `delete_lines`, `create_file` — enabling agents to make targeted code edits through Rhizome.
-- **`summarize_project` MCP tool**: Generates a high-level project summary including language breakdown, key entry points, dependency count, and architecture overview.
-- **`rhizome summarize` CLI command**: CLI entrypoint for project summarization.
-- **`rhizome_onboard` MCP tool**: Guided onboarding that detects the project stack, available backends, and returns a structured orientation for new agents.
-- **`rhizome doctor` diagnostic command**: Health check that validates tree-sitter grammars, LSP server availability, Hyphae connectivity, and configuration.
-- **Tree-sitter queries for Java, C, C++, Ruby, PHP**: Extended language-specific query patterns from 5 to 10 languages, improving symbol extraction accuracy for these languages.
-- **Spore adoption for Hyphae discovery**: Replaced manual binary detection with the shared `spore` crate for consistent Hyphae tool resolution during export.
+- **Editing MCP tools**: Added targeted file-editing tools such as
+  `replace_symbol_body`, `insert_after_symbol`, `replace_lines`, `delete_lines`,
+  and `create_file`.
+- **Project summarization**: Added `summarize_project`, the matching CLI
+  command, and `rhizome_onboard` for structured orientation.
+- **Doctor command**: Added runtime health checks for grammars, LSP servers,
+  Hyphae connectivity, and config.
+- **Broader query coverage**: Extended language-specific tree-sitter queries to
+  Java, C, C++, Ruby, and PHP.
 
 ## [0.4.0] - 2026-03-16
 
 ### Added
 
-- **32 language support**: Elixir, Zig, C#, F#, Swift, PHP, Haskell, Bash, Terraform, Kotlin, Dart, Lua, Clojure, OCaml, Julia, Nix, Gleam, Vue, Svelte, Astro, Prisma, Typst, YAML — each with LSP server config, file extension mapping, root markers, and graph metadata.
-- **Auto-install LSP servers**: `LspInstaller` auto-downloads missing servers via native package managers (rustup, pipx/pip, npm, go install, gem, dotnet tool, ghcup, brew, opam, nix-env, cargo). Installs to `~/.rhizome/bin/`. Controlled by `RHIZOME_DISABLE_LSP_DOWNLOAD=1` env var or `lsp.disable_download` config.
-- **Binary-name-based install recipes**: 20+ install recipes keyed by server binary name, not language. Users who configure alternative servers (e.g. `ruff` instead of `pyright`, `ruby-lsp` instead of `solargraph`) get auto-install support automatically.
-- **Backend auto-selection**: `BackendSelector` maps each tool to a backend requirement (tree-sitter, prefers-lsp, requires-lsp) and resolves per call. Tree-sitter for most tools, automatic LSP upgrade for `find_references`, `get_diagnostics`, `rename_symbol`, `get_hover_info`.
-- **Smart root detection**: Per-language workspace root detection — Rust walks up for `[workspace]` in `Cargo.toml`, Go prefers `go.work`, JS/TS skips Deno dirs, Python finds `pyproject.toml`. Falls back to `.git`.
-- **Multi-client LSP management**: `LanguageServerManager` keyed by `(Language, PathBuf)` supports multiple LSP clients for different workspace roots in monorepos.
-- **`rhizome status` CLI command**: Shows per-language backend availability, detected LSP server paths, auto-install state, and managed bin directory.
-- **`LspConfig`**: New config section with `disable_download` and `bin_dir` fields.
+- **32-language support**: Added language-server configs, extension mappings,
+  root markers, and graph metadata for a much broader language set.
+- **Auto-install LSP servers**: `LspInstaller` can now download missing servers
+  through native package managers and install them under `~/.rhizome/bin/`.
+- **Backend auto-selection**: `BackendSelector` now maps each tool to
+  tree-sitter, prefers-LSP, or requires-LSP behavior.
+- **Smart root detection**: Rust, Go, JS, TS, and Python now resolve project
+  roots through language-aware rules before falling back to `.git`.
+- **Multi-client LSP management**: `LanguageServerManager` now supports
+  multiple workspace roots in monorepos.
+- **Status surface**: Added `rhizome status` and the `LspConfig` surface for
+  install and availability reporting.
 
 ### Changed
 
-- PHP default server changed from `intelephense` to `phpactor`.
-- Ruby default server changed from `solargraph` to `ruby-lsp`.
-- `ToolDispatcher` uses `RefCell` for lazy LSP initialization with `BackendSelector` integration.
-- `LspBackend` exposes root-aware methods (`*_with_root`) alongside `CodeIntelligence` trait.
-- Install hints now derive from the recipe registry, showing correct commands for whatever server is configured.
+- **Default server choices**: PHP now defaults to `phpactor`, and Ruby now
+  defaults to `ruby-lsp`.
+- **Lazy LSP initialization**: `ToolDispatcher` now combines backend selection
+  with lazy LSP startup.
+- **Config-aware install hints**: Install guidance now reflects the actual
+  configured server binary.
 
 ### Fixed
 
-- TypeScript tree-sitter query: use `type_identifier` for `class_declaration` name field (was `identifier`, causing query compilation failure on `.ts` files).
-- Export integration tests handle environments where Hyphae is installed.
-- Hyphae export uses spore for tool discovery and line-delimited JSON-RPC.
-- Flattened `export_graph` params to match Hyphae's expected format.
+- **TypeScript query compilation**: The `.ts` class query now uses the correct
+  `type_identifier` field.
+- **Hyphae export transport**: Export now uses Spore discovery and
+  line-delimited JSON-RPC.
+- **Export parameter shape**: `export_graph` params now match Hyphae's expected
+  format.
 
 ## [0.3.0] - 2026-03-16
 
 ### Added
 
-- **Code graph construction** (`rhizome-core::graph`): Build concept graphs from extracted symbols with typed nodes, labeled edges (contains, imports), and per-node metadata (file path, line range, language). Supports merging graphs across files with deduplication.
-- **Hyphae integration** (`rhizome-core::hyphae`): Export code graphs to Hyphae's semantic knowledge store via JSON-RPC over stdio. Spawns `hyphae serve`, sends the graph, and returns concept/link counts.
-- **Incremental export cache** (`rhizome-core::export_cache`): Mtime-based file change tracking that skips unchanged files on re-export. Persists to `.rhizome/cache.json`.
-- **`export_to_hyphae` MCP tool**: Walks the project (respecting `.gitignore`), extracts symbols via tree-sitter, builds a merged concept graph, and sends it to Hyphae. Reports files processed vs skipped.
-- **`rhizome export` CLI command**: CLI entrypoint for the Hyphae export pipeline.
-- **Auto-export on MCP server startup**: When Hyphae is available and `export.auto_export` is enabled (default), the MCP server automatically exports the code graph in the background on startup.
-- **Export configuration** (`RhizomeConfig.export`): New `ExportConfig` section with `auto_export` toggle.
-- Graph integration tests verifying end-to-end symbol extraction → graph building for Rust and Python fixtures.
-- Integration tests for the export tool (unavailable, unified mode, and E2E scenarios).
+- **Code graph construction**: Rhizome can now build typed concept graphs from
+  extracted symbols and merge them across files.
+- **Hyphae export**: Added export to Hyphae over JSON-RPC stdio, plus the
+  `export_to_hyphae` MCP tool and `rhizome export` CLI command.
+- **Incremental export cache**: Added mtime-based file change tracking under
+  `.rhizome/cache.json`.
+- **Auto-export on startup**: MCP startup can now export the code graph in the
+  background when Hyphae is available.
 
 ## [0.2.0] - 2026-02-28
 
 ### Added
 
-- MCP server with 25 code intelligence tools (unified + expanded modes)
-- Tree-sitter backend: symbol extraction, definitions, references, imports, diagnostics
-- LSP backend: async client with JSON-RPC, cross-file references, rename, type info
-- CLI with `serve` and `analyze` commands
-- Support for 9 languages: Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, Ruby
-- CI/CD workflows and release infrastructure
+- **MCP server**: Rhizome shipped with 25 code-intelligence tools across
+  unified and expanded modes.
+- **Dual backend model**: Tree-sitter covered structure work, and the LSP
+  backend covered cross-file references, rename, and type information.
+- **CLI surface**: Added `serve` and `analyze` commands.
+- **Initial language set**: Shipped with Rust, Python, JavaScript, TypeScript,
+  Go, Java, C, C++, and Ruby.
+- **Release infrastructure**: Added the initial CI and release workflows.
 
 ## [0.1.0] - 2026-02-14
 
 ### Added
 
-- Initial workspace setup with 5 crates
-- Core domain types: `Symbol`, `SymbolKind`, `Location`, `Language`
-- `CodeIntelligence` trait with 6 operations
+- **Workspace foundation**: Rhizome shipped as a 5-crate workspace.
+- **Core domain types**: Added `Symbol`, `SymbolKind`, `Location`, and
+  `Language`.
+- **Code intelligence trait**: Added the initial `CodeIntelligence` abstraction
+  with six core operations.
