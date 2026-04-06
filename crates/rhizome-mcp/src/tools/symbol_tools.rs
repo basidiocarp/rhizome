@@ -21,7 +21,8 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "file": { "type": "string", "description": "Path to the source file" }
+                    "file": { "type": "string", "description": "Path to the source file (absolute, or relative to root)" },
+                    "root": { "type": "string", "description": "Optional project root to resolve relative paths against. Use when working in a project other than the server's configured root." }
                 },
                 "required": ["file"]
             }),
@@ -33,8 +34,9 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "file": { "type": "string", "description": "Path to the source file" },
-                    "depth": { "type": "number", "description": "Maximum nesting depth to display" }
+                    "file": { "type": "string", "description": "Path to the source file (absolute, or relative to root)" },
+                    "depth": { "type": "number", "description": "Maximum nesting depth to display" },
+                    "root": { "type": "string", "description": "Optional project root to resolve relative paths against. Use when working in a project other than the server's configured root." }
                 },
                 "required": ["file"]
             }),

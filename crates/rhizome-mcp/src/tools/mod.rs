@@ -59,63 +59,51 @@ impl ToolDispatcher {
     }
 
     pub fn call_tool(&self, name: &str, args: Value) -> Result<Value> {
+        // Callers may pass an optional `root` to analyze files in a project
+        // other than the server's configured project_root (e.g., when rhizome
+        // is registered globally and used across multiple projects).
+        let root: PathBuf = args
+            .get("root")
+            .and_then(|v| v.as_str())
+            .map(|s| {
+                let p = Path::new(s);
+                if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    self.project_root.join(p)
+                }
+            })
+            .unwrap_or_else(|| self.project_root.clone());
+
         match name {
             // ── Symbol tools (tree-sitter) ──────────────────────────────
-            "get_symbols" => symbol_tools::get_symbols(&self.treesitter, &args, &self.project_root),
-            "get_structure" => {
-                symbol_tools::get_structure(&self.treesitter, &args, &self.project_root)
-            }
-            "get_definition" => {
-                symbol_tools::get_definition(&self.treesitter, &args, &self.project_root)
-            }
-            "search_symbols" => {
-                symbol_tools::search_symbols(&self.treesitter, &args, &self.project_root)
-            }
-            "go_to_definition" => {
-                symbol_tools::go_to_definition(&self.treesitter, &args, &self.project_root)
-            }
-            "get_signature" => {
-                symbol_tools::get_signature(&self.treesitter, &args, &self.project_root)
-            }
-            "get_imports" => symbol_tools::get_imports(&self.treesitter, &args, &self.project_root),
-            "get_call_sites" => {
-                symbol_tools::get_call_sites(&self.treesitter, &args, &self.project_root)
-            }
-            "get_scope" => symbol_tools::get_scope(&self.treesitter, &args, &self.project_root),
-            "get_exports" => symbol_tools::get_exports(&self.treesitter, &args, &self.project_root),
-            "summarize_file" => {
-                symbol_tools::summarize_file(&self.treesitter, &args, &self.project_root)
-            }
-            "get_tests" => symbol_tools::get_tests(&self.treesitter, &args, &self.project_root),
-            "get_diff_symbols" => {
-                symbol_tools::get_diff_symbols(&self.treesitter, &args, &self.project_root)
-            }
-            "get_annotations" => {
-                symbol_tools::get_annotations(&self.treesitter, &args, &self.project_root)
-            }
-            "get_complexity" => {
-                symbol_tools::get_complexity(&self.treesitter, &args, &self.project_root)
-            }
+            "get_symbols" => symbol_tools::get_symbols(&self.treesitter, &args, &root),
+            "get_structure" => symbol_tools::get_structure(&self.treesitter, &args, &root),
+            "get_definition" => symbol_tools::get_definition(&self.treesitter, &args, &root),
+            "search_symbols" => symbol_tools::search_symbols(&self.treesitter, &args, &root),
+            "go_to_definition" => symbol_tools::go_to_definition(&self.treesitter, &args, &root),
+            "get_signature" => symbol_tools::get_signature(&self.treesitter, &args, &root),
+            "get_imports" => symbol_tools::get_imports(&self.treesitter, &args, &root),
+            "get_call_sites" => symbol_tools::get_call_sites(&self.treesitter, &args, &root),
+            "get_scope" => symbol_tools::get_scope(&self.treesitter, &args, &root),
+            "get_exports" => symbol_tools::get_exports(&self.treesitter, &args, &root),
+            "summarize_file" => symbol_tools::summarize_file(&self.treesitter, &args, &root),
+            "get_tests" => symbol_tools::get_tests(&self.treesitter, &args, &root),
+            "get_diff_symbols" => symbol_tools::get_diff_symbols(&self.treesitter, &args, &root),
+            "get_annotations" => symbol_tools::get_annotations(&self.treesitter, &args, &root),
+            "get_complexity" => symbol_tools::get_complexity(&self.treesitter, &args, &root),
             "get_type_definitions" => {
-                symbol_tools::get_type_definitions(&self.treesitter, &args, &self.project_root)
+                symbol_tools::get_type_definitions(&self.treesitter, &args, &root)
             }
-            "get_dependencies" => {
-                symbol_tools::get_dependencies(&self.treesitter, &args, &self.project_root)
-            }
-            "get_parameters" => {
-                symbol_tools::get_parameters(&self.treesitter, &args, &self.project_root)
-            }
+            "get_dependencies" => symbol_tools::get_dependencies(&self.treesitter, &args, &root),
+            "get_parameters" => symbol_tools::get_parameters(&self.treesitter, &args, &root),
             "get_enclosing_class" => {
-                symbol_tools::get_enclosing_class(&self.treesitter, &args, &self.project_root)
+                symbol_tools::get_enclosing_class(&self.treesitter, &args, &root)
             }
-            "get_symbol_body" => {
-                symbol_tools::get_symbol_body(&self.treesitter, &args, &self.project_root)
-            }
-            "get_changed_files" => {
-                symbol_tools::get_changed_files(&self.treesitter, &args, &self.project_root)
-            }
+            "get_symbol_body" => symbol_tools::get_symbol_body(&self.treesitter, &args, &root),
+            "get_changed_files" => symbol_tools::get_changed_files(&self.treesitter, &args, &root),
             "summarize_project" => {
-                symbol_tools::summarize_project_tool(&self.treesitter, &args, &self.project_root)
+                symbol_tools::summarize_project_tool(&self.treesitter, &args, &root)
             }
 
             // ── Auto-select tools (prefer LSP when available) ───────────
@@ -124,8 +112,8 @@ impl ToolDispatcher {
                 self.dispatch_auto(
                     name,
                     &args,
-                    |a| symbol_tools::find_references(ts, a, &self.project_root),
-                    |lsp, a| symbol_tools::find_references(lsp, a, &self.project_root),
+                    |a| symbol_tools::find_references(ts, a, &root),
+                    |lsp, a| symbol_tools::find_references(lsp, a, &root),
                 )
             }
             "analyze_impact" => {
@@ -133,8 +121,8 @@ impl ToolDispatcher {
                 self.dispatch_auto(
                     name,
                     &args,
-                    |a| symbol_tools::analyze_impact(ts, a, &self.project_root),
-                    |lsp, a| symbol_tools::analyze_impact(lsp, a, &self.project_root),
+                    |a| symbol_tools::analyze_impact(ts, a, &root),
+                    |lsp, a| symbol_tools::analyze_impact(lsp, a, &root),
                 )
             }
             "get_diagnostics" => {
@@ -149,7 +137,7 @@ impl ToolDispatcher {
 
             // ── LSP-required tools ──────────────────────────────────────
             "rename_symbol" => self.dispatch_lsp_required(name, &args, |lsp, a| {
-                file_tools::rename_symbol(Some(lsp), a, &self.project_root)
+                file_tools::rename_symbol(Some(lsp), a, &root)
             }),
             "get_hover_info" => self.dispatch_lsp_required(name, &args, |lsp, a| {
                 file_tools::get_hover_info(Some(lsp), a)
@@ -157,24 +145,24 @@ impl ToolDispatcher {
 
             // ── Edit tools ─────────────────────────────────────────────
             "replace_symbol_body" => {
-                edit_tools::replace_symbol_body(&self.treesitter, &args, &self.project_root)
+                edit_tools::replace_symbol_body(&self.treesitter, &args, &root)
             }
             "insert_after_symbol" => {
-                edit_tools::insert_after_symbol(&self.treesitter, &args, &self.project_root)
+                edit_tools::insert_after_symbol(&self.treesitter, &args, &root)
             }
             "insert_before_symbol" => {
-                edit_tools::insert_before_symbol(&self.treesitter, &args, &self.project_root)
+                edit_tools::insert_before_symbol(&self.treesitter, &args, &root)
             }
-            "replace_lines" => edit_tools::replace_lines(&args, &self.project_root),
-            "insert_at_line" => edit_tools::insert_at_line(&args, &self.project_root),
-            "delete_lines" => edit_tools::delete_lines(&args, &self.project_root),
-            "create_file" => edit_tools::create_file(&args, &self.project_root),
-            "copy_symbol" => edit_tools::copy_symbol(&self.treesitter, &args, &self.project_root),
-            "move_symbol" => edit_tools::move_symbol(&self.treesitter, &args, &self.project_root),
+            "replace_lines" => edit_tools::replace_lines(&args, &root),
+            "insert_at_line" => edit_tools::insert_at_line(&args, &root),
+            "delete_lines" => edit_tools::delete_lines(&args, &root),
+            "create_file" => edit_tools::create_file(&args, &root),
+            "copy_symbol" => edit_tools::copy_symbol(&self.treesitter, &args, &root),
+            "move_symbol" => edit_tools::move_symbol(&self.treesitter, &args, &root),
 
             // ── Export tools ────────────────────────────────────────────
             "export_to_hyphae" => {
-                export_tools::export_to_hyphae(&self.treesitter, &args, &self.project_root)
+                export_tools::export_to_hyphae(&self.treesitter, &args, &root)
             }
 
             // ── Onboarding ───────────────────────────────────────────────
