@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use rhizome_core::{CodeIntelligence, Language, Symbol, SymbolKind};
+use rhizome_core::{
+    CodeIntelligence, Language, ParserlessBackend, ParserlessRegion, Symbol, SymbolKind,
+};
 use rhizome_mcp::McpServer;
 use rhizome_treesitter::TreeSitterBackend;
 use spore::editors;
@@ -265,21 +267,59 @@ fn print_tree(symbols: &[Symbol], prefix: &str, is_last_set: &[bool]) {
     }
 }
 
+fn print_parserless_regions(regions: &[ParserlessRegion], tree: bool) {
+    for region in regions {
+        let indent = "  ".repeat(region.depth as usize);
+        if tree {
+            println!(
+                "{indent}{} [{}-{}] ({})",
+                region.label, region.line, region.line_end, region.region_id
+            );
+        } else {
+            println!(
+                "{} [{}-{}] ({})",
+                region.label, region.line, region.line_end, region.region_id
+            );
+        }
+    }
+}
+
+fn print_parserless_notice(file: &Path) {
+    eprintln!(
+        "Heuristic parserless fallback for {} (outline only, not semantic analysis).",
+        file.display()
+    );
+}
+
 fn cmd_symbols(file: &Path) -> Result<()> {
     let backend = TreeSitterBackend::new();
-    let symbols = backend
-        .get_symbols(file)
-        .with_context(|| format!("Failed to get symbols from {}", file.display()))?;
-    print_symbols_flat(&symbols);
+    match backend.get_symbols(file) {
+        Ok(symbols) => print_symbols_flat(&symbols),
+        Err(_) => {
+            let parserless = ParserlessBackend::new();
+            let regions = parserless
+                .outline(file)
+                .with_context(|| format!("Failed to get symbols from {}", file.display()))?;
+            print_parserless_notice(file);
+            print_parserless_regions(&regions, false);
+        }
+    }
     Ok(())
 }
 
 fn cmd_structure(file: &Path) -> Result<()> {
     let backend = TreeSitterBackend::new();
-    let symbols = backend
-        .get_symbols(file)
-        .with_context(|| format!("Failed to get symbols from {}", file.display()))?;
-    print_tree(&symbols, "", &[]);
+    match backend.get_symbols(file) {
+        Ok(symbols) => print_tree(&symbols, "", &[]),
+        Err(_) => {
+            let parserless = ParserlessBackend::new();
+            let regions = parserless
+                .outline(file)
+                .with_context(|| format!("Failed to get structure from {}", file.display()))?;
+            print_parserless_notice(file);
+            print_parserless_regions(&regions, true);
+        }
+    }
     Ok(())
 }
 

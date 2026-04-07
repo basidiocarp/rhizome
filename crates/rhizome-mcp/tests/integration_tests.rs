@@ -22,10 +22,10 @@ fn make_dispatcher() -> ToolDispatcher {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_list_tools_returns_38_tools() {
+fn test_list_tools_returns_39_tools() {
     let dispatcher = make_dispatcher();
     let tools = dispatcher.list_tools();
-    assert_eq!(tools.len(), 38, "Expected 38 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 39, "Expected 39 tools, got {}", tools.len());
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"get_symbols"));
@@ -55,6 +55,7 @@ fn test_list_tools_returns_38_tools() {
     assert!(names.contains(&"get_parameters"));
     assert!(names.contains(&"get_enclosing_class"));
     assert!(names.contains(&"get_symbol_body"));
+    assert!(names.contains(&"get_region"));
     assert!(names.contains(&"get_changed_files"));
     assert!(names.contains(&"copy_symbol"));
     assert!(names.contains(&"move_symbol"));
@@ -113,6 +114,28 @@ fn test_get_symbols_python() {
     let text = extract_text(&result);
     assert!(text.contains("Config"), "Should find Config class");
     assert!(text.contains("process"), "Should find process function");
+}
+
+#[test]
+fn test_get_symbols_parserless_fallback_for_unsupported_file() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool("get_symbols", json!({ "file": fixture_path("sample.txt") }))
+        .expect("get_symbols should succeed with parserless fallback");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("\"backend\": \"parserless\""),
+        "Should expose parserless backend: {text}"
+    );
+    assert!(
+        text.contains("\"region_id\": \"region-1\""),
+        "Should expose stable region ids: {text}"
+    );
+    assert!(
+        text.contains("\"label\": \"section:\""),
+        "Should emit structural labels: {text}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +223,31 @@ fn test_get_structure() {
     assert!(
         text.contains("Function process"),
         "Should show process function"
+    );
+}
+
+#[test]
+fn test_get_structure_parserless_fallback_for_unsupported_file() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_structure",
+            json!({ "file": fixture_path("sample.txt") }),
+        )
+        .expect("get_structure should succeed with parserless fallback");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("\"backend\": \"parserless\""),
+        "Should annotate parserless backend: {text}"
+    );
+    assert!(
+        text.contains("\"region_id\": \"region-1\""),
+        "Should include region ids: {text}"
+    );
+    assert!(
+        text.contains("\"label\": \"section:\""),
+        "Should include section labels: {text}"
     );
 }
 
@@ -924,6 +972,81 @@ fn test_get_symbol_body_not_found() {
     );
 }
 
+#[test]
+fn test_get_region_for_parserless_outline() {
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool(
+            "get_region",
+            json!({ "file": fixture_path("sample.txt"), "region_id": "region-1" }),
+        )
+        .expect("get_region should succeed for parserless outline");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("\"backend\": \"parserless\""),
+        "Should report parserless backend: {text}"
+    );
+    assert!(
+        text.contains("section:"),
+        "Should include selected region body: {text}"
+    );
+    assert!(
+        text.contains("child: true"),
+        "Should include nested content: {text}"
+    );
+    assert!(
+        !text.contains("next:"),
+        "Should not spill into the next region: {text}"
+    );
+}
+
+#[test]
+fn test_get_region_for_semantic_stable_id() {
+    let dispatcher = make_dispatcher();
+    let symbols = dispatcher
+        .call_tool("get_symbols", json!({ "file": fixture_path("sample.rs") }))
+        .expect("get_symbols should succeed");
+    let text = extract_text(&symbols);
+    let parsed: Value = serde_json::from_str(&text).expect("symbols output should be JSON");
+    let region_id = parsed
+        .as_array()
+        .and_then(|symbols| {
+            symbols.iter().find_map(|symbol| {
+                if symbol.get("name").and_then(|value| value.as_str()) == Some("process") {
+                    symbol
+                        .get("stable_id")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .expect("process stable_id should exist");
+
+    let result = dispatcher
+        .call_tool(
+            "get_region",
+            json!({ "file": fixture_path("sample.rs"), "region_id": region_id }),
+        )
+        .expect("get_region should succeed for semantic ids");
+
+    let region_text = extract_text(&result);
+    assert!(
+        region_text.contains("\"backend\": \"semantic\""),
+        "Should report semantic backend: {region_text}"
+    );
+    assert!(
+        region_text.contains("process"),
+        "Should include process symbol body: {region_text}"
+    );
+    assert!(
+        region_text.contains("config"),
+        "Should include symbol source: {region_text}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // get_changed_files
 // ---------------------------------------------------------------------------
@@ -970,7 +1093,7 @@ fn test_unified_mode_tools_list_returns_one_tool() {
 }
 
 #[test]
-fn test_expanded_mode_tools_list_returns_38_tools() {
+fn test_expanded_mode_tools_list_returns_39_tools() {
     let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let server = rhizome_mcp::McpServer::new(project_root, false);
 
@@ -989,8 +1112,8 @@ fn test_expanded_mode_tools_list_returns_38_tools() {
         .expect("Should have tools array");
     assert_eq!(
         tools.len(),
-        38,
-        "Expanded mode should return 38 tools, got {}",
+        39,
+        "Expanded mode should return 39 tools, got {}",
         tools.len()
     );
 }

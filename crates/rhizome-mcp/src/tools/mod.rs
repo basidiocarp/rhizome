@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
-use rhizome_core::{BackendSelector, Language, ResolvedBackend, RhizomeConfig};
+use rhizome_core::{BackendSelector, Language, ParserlessBackend, ResolvedBackend, RhizomeConfig};
 use rhizome_treesitter::TreeSitterBackend;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -28,6 +28,7 @@ pub struct ToolSchema {
 enum ActiveBackend {
     TreeSitter,
     Lsp,
+    Parserless,
     Error(String),
 }
 
@@ -42,6 +43,7 @@ enum ActiveBackend {
 /// because the MCP server loop is single-threaded.
 pub struct ToolDispatcher {
     treesitter: TreeSitterBackend,
+    parserless: ParserlessBackend,
     lsp: RefCell<Option<rhizome_lsp::LspBackend>>,
     selector: RefCell<BackendSelector>,
     project_root: PathBuf,
@@ -52,6 +54,7 @@ impl ToolDispatcher {
         let config = RhizomeConfig::load(&project_root).unwrap_or_default();
         Self {
             treesitter: TreeSitterBackend::new(),
+            parserless: ParserlessBackend::new(),
             lsp: RefCell::new(None),
             selector: RefCell::new(BackendSelector::new(config)),
             project_root,
@@ -76,9 +79,29 @@ impl ToolDispatcher {
             .unwrap_or_else(|| self.project_root.clone());
 
         match name {
-            // ── Symbol tools (tree-sitter) ──────────────────────────────
-            "get_symbols" => symbol_tools::get_symbols(&self.treesitter, &args, &root),
-            "get_structure" => symbol_tools::get_structure(&self.treesitter, &args, &root),
+            // ── Symbol tools ────────────────────────────────────────────
+            "get_symbols" => {
+                let ts = &self.treesitter;
+                let parserless = &self.parserless;
+                self.dispatch_outline(
+                    name,
+                    &args,
+                    |a| symbol_tools::get_symbols(ts, a, &root),
+                    |lsp, a| symbol_tools::get_symbols(lsp, a, &root),
+                    |a| symbol_tools::get_parserless_symbols(parserless, a, &root),
+                )
+            }
+            "get_structure" => {
+                let ts = &self.treesitter;
+                let parserless = &self.parserless;
+                self.dispatch_outline(
+                    name,
+                    &args,
+                    |a| symbol_tools::get_structure(ts, a, &root),
+                    |lsp, a| symbol_tools::get_structure(lsp, a, &root),
+                    |a| symbol_tools::get_parserless_structure(parserless, a, &root),
+                )
+            }
             "get_definition" => symbol_tools::get_definition(&self.treesitter, &args, &root),
             "search_symbols" => symbol_tools::search_symbols(&self.treesitter, &args, &root),
             "go_to_definition" => symbol_tools::go_to_definition(&self.treesitter, &args, &root),
@@ -101,6 +124,16 @@ impl ToolDispatcher {
                 symbol_tools::get_enclosing_class(&self.treesitter, &args, &root)
             }
             "get_symbol_body" => symbol_tools::get_symbol_body(&self.treesitter, &args, &root),
+            "get_region" => {
+                let ts = &self.treesitter;
+                let parserless = &self.parserless;
+                self.dispatch_semantic_region(
+                    name,
+                    &args,
+                    |a| symbol_tools::get_region(ts, parserless, a, &root),
+                    |lsp, a| symbol_tools::get_region(lsp, parserless, a, &root),
+                )
+            }
             "get_changed_files" => symbol_tools::get_changed_files(&self.treesitter, &args, &root),
             "summarize_project" => {
                 symbol_tools::summarize_project_tool(&self.treesitter, &args, &root)
@@ -216,6 +249,72 @@ impl ToolDispatcher {
         }
     }
 
+    /// Dispatch for outline tools that can degrade to the parserless backend.
+    fn dispatch_outline<F, G, H>(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        ts_fn: F,
+        lsp_fn: G,
+        parserless_fn: H,
+    ) -> Result<Value>
+    where
+        F: FnOnce(&Value) -> Result<Value>,
+        G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
+        H: FnOnce(&Value) -> Result<Value>,
+    {
+        let lang = self
+            .detect_language(args)
+            .unwrap_or(Language::Other("unknown".into()));
+
+        match self.resolve_backend(tool_name, args) {
+            ActiveBackend::Parserless => parserless_fn(args),
+            ActiveBackend::Lsp => self.try_lsp_or_parserless(args, lsp_fn, parserless_fn),
+            ActiveBackend::TreeSitter => match ts_fn(args) {
+                Ok(value) => Ok(value),
+                Err(_) => match self.selector.borrow_mut().outline_fallback(&lang) {
+                    ResolvedBackend::Lsp => self.try_lsp_or_parserless(args, lsp_fn, parserless_fn),
+                    ResolvedBackend::Parserless => parserless_fn(args),
+                    _ => parserless_fn(args),
+                },
+            },
+            ActiveBackend::Error(_) => parserless_fn(args),
+        }
+    }
+
+    /// Dispatch for semantic region lookups: tree-sitter first, then LSP, never parserless.
+    fn dispatch_semantic_region<F, G>(
+        &self,
+        _tool_name: &str,
+        args: &Value,
+        ts_fn: F,
+        lsp_fn: G,
+    ) -> Result<Value>
+    where
+        F: FnOnce(&Value) -> Result<Value>,
+        G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
+    {
+        let lang = self
+            .detect_language(args)
+            .unwrap_or(Language::Other("unknown".into()));
+        let parserless_id = args
+            .get("region_id")
+            .and_then(|value| value.as_str())
+            .is_some_and(|value| value.starts_with("region-"));
+
+        if parserless_id {
+            return ts_fn(args);
+        }
+
+        match ts_fn(args) {
+            Ok(value) => Ok(value),
+            Err(error) => match self.selector.borrow_mut().outline_fallback(&lang) {
+                ResolvedBackend::Lsp => self.try_lsp_or_error(args, lsp_fn, error),
+                _ => Err(error),
+            },
+        }
+    }
+
     /// Dispatch for tools that require LSP — error if unavailable.
     fn dispatch_lsp_required<F>(&self, tool_name: &str, args: &Value, lsp_fn: F) -> Result<Value>
     where
@@ -237,6 +336,9 @@ impl ToolDispatcher {
             ActiveBackend::TreeSitter => Ok(tool_error(&format!(
                 "{tool_name} requires an LSP server. Run `rhizome status` to check availability."
             ))),
+            ActiveBackend::Parserless => Ok(tool_error(&format!(
+                "{tool_name} requires an LSP server. Run `rhizome status` to check availability."
+            ))),
         }
     }
 
@@ -251,6 +353,7 @@ impl ToolDispatcher {
         match resolved {
             ResolvedBackend::TreeSitter => ActiveBackend::TreeSitter,
             ResolvedBackend::Lsp => ActiveBackend::Lsp,
+            ResolvedBackend::Parserless => ActiveBackend::Parserless,
             ResolvedBackend::LspUnavailable { install_hint, .. } => {
                 ActiveBackend::Error(install_hint)
             }
@@ -275,6 +378,44 @@ impl ToolDispatcher {
             Err(_) => {
                 tracing::debug!("No tokio runtime available for LSP backend initialization");
             }
+        }
+    }
+
+    fn try_lsp_or_parserless<G, H>(
+        &self,
+        args: &Value,
+        lsp_fn: G,
+        parserless_fn: H,
+    ) -> Result<Value>
+    where
+        G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
+        H: FnOnce(&Value) -> Result<Value>,
+    {
+        self.ensure_lsp();
+        let lsp = self.lsp.borrow();
+        match lsp.as_ref() {
+            Some(backend) => match lsp_fn(backend, args) {
+                Ok(value) => Ok(value),
+                Err(_) => parserless_fn(args),
+            },
+            None => parserless_fn(args),
+        }
+    }
+
+    fn try_lsp_or_error<G>(
+        &self,
+        args: &Value,
+        lsp_fn: G,
+        original_error: anyhow::Error,
+    ) -> Result<Value>
+    where
+        G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
+    {
+        self.ensure_lsp();
+        let lsp = self.lsp.borrow();
+        match lsp.as_ref() {
+            Some(backend) => lsp_fn(backend, args).or(Err(original_error)),
+            None => Err(original_error),
         }
     }
 }

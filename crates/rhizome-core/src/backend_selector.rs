@@ -27,6 +27,7 @@ pub enum BackendRequirement {
 pub enum ResolvedBackend {
     TreeSitter,
     Lsp,
+    Parserless,
     /// LSP was required but the server binary wasn't found.
     LspUnavailable {
         binary: String,
@@ -84,7 +85,13 @@ impl BackendSelector {
         let requirement = tool_requirement(tool_name);
 
         match requirement {
-            BackendRequirement::TreeSitter => ResolvedBackend::TreeSitter,
+            BackendRequirement::TreeSitter => {
+                if parserless_supported(tool_name) && !language.tree_sitter_supported() {
+                    self.outline_fallback(language)
+                } else {
+                    ResolvedBackend::TreeSitter
+                }
+            }
             BackendRequirement::RequiresLsp => {
                 let install_bin_dir = self.installer.bin_dir().to_path_buf();
                 let probe = self.probe_language(language);
@@ -101,6 +108,8 @@ impl BackendSelector {
                 let probe = self.probe_language(language);
                 if probe.available {
                     ResolvedBackend::Lsp
+                } else if parserless_supported(tool_name) && !language.tree_sitter_supported() {
+                    ResolvedBackend::Parserless
                 } else {
                     ResolvedBackend::TreeSitter
                 }
@@ -138,6 +147,16 @@ impl BackendSelector {
         }
         &self.cache[language]
     }
+
+    /// Pick the best outline fallback once tree-sitter cannot serve the request.
+    pub fn outline_fallback(&mut self, language: &Language) -> ResolvedBackend {
+        let probe = self.probe_language(language);
+        if probe.available {
+            ResolvedBackend::Lsp
+        } else {
+            ResolvedBackend::Parserless
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,6 +169,11 @@ pub fn tool_requirement(tool_name: &str) -> BackendRequirement {
         "get_diagnostics" | "find_references" => BackendRequirement::PrefersLsp,
         _ => BackendRequirement::TreeSitter,
     }
+}
+
+#[must_use]
+pub fn parserless_supported(tool_name: &str) -> bool {
+    matches!(tool_name, "get_symbols" | "get_structure")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,6 +392,14 @@ mod tests {
     }
 
     #[test]
+    fn select_parserless_for_unknown_outline_tools() {
+        let config = RhizomeConfig::default();
+        let mut selector = BackendSelector::new(config);
+        let result = selector.select("get_structure", &Language::Other("text".into()));
+        assert_eq!(result, ResolvedBackend::Parserless);
+    }
+
+    #[test]
     fn select_lsp_unavailable_for_missing_server() {
         let config = RhizomeConfig::default();
         let mut selector = BackendSelector::new(config);
@@ -379,6 +411,9 @@ mod tests {
             }
             ResolvedBackend::Lsp => {
                 // jdtls happens to be installed — that's fine
+            }
+            ResolvedBackend::Parserless => {
+                panic!("rename_symbol should not resolve to parserless");
             }
             ResolvedBackend::TreeSitter => {
                 panic!("rename_symbol should not resolve to tree-sitter");
@@ -397,6 +432,14 @@ mod tests {
             ResolvedBackend::Lsp => {}        // jdtls installed — also ok
             _ => panic!("PrefersLsp should not produce LspUnavailable"),
         }
+    }
+
+    #[test]
+    fn outline_fallback_prefers_lsp_then_parserless() {
+        let config = RhizomeConfig::default();
+        let mut selector = BackendSelector::new(config);
+        let result = selector.outline_fallback(&Language::Other("text".into()));
+        assert_eq!(result, ResolvedBackend::Parserless);
     }
 
     #[test]

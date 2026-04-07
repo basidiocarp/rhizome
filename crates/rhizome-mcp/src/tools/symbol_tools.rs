@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Result, anyhow};
-use rhizome_core::{CodeIntelligence, Position, Symbol, SymbolKind};
+use rhizome_core::{
+    CodeIntelligence, ParserlessBackend, ParserlessRegion, Position, Symbol, SymbolKind,
+};
 use serde_json::{Value, json};
 
 use super::{ToolSchema, edit_tools::resolve_path, tool_response};
@@ -292,6 +294,19 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
             }),
         },
         ToolSchema {
+            name: "get_region".into(),
+            description:
+                "Return the full text for a parserless region_id or semantic stable_id".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "region_id": { "type": "string", "description": "Parserless region_id (region-<line>) or semantic stable_id" }
+                },
+                "required": ["file", "region_id"]
+            }),
+        },
+        ToolSchema {
             name: "get_changed_files".into(),
             description: "List files with uncommitted changes and their modified symbol counts"
                 .into(),
@@ -356,6 +371,18 @@ pub fn get_symbols(
     Ok(tool_response(&text))
 }
 
+pub fn get_parserless_symbols(
+    backend: &ParserlessBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = required_str(args, "file")?;
+    let path = resolve_project_path(file, project_root)?;
+    let regions = backend.outline(&path)?;
+    let text = serde_json::to_string_pretty(&parserless_region_values(&regions))?;
+    Ok(tool_response(&text))
+}
+
 fn flatten_symbol(sym: &Symbol) -> Vec<Value> {
     let mut results = vec![json!({
         "name": sym.name,
@@ -400,6 +427,39 @@ pub fn get_structure(
     }
 
     Ok(tool_response(output.trim_end()))
+}
+
+pub fn get_parserless_structure(
+    backend: &ParserlessBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = required_str(args, "file")?;
+    let path = resolve_project_path(file, project_root)?;
+    let regions = backend.outline(&path)?;
+    let response = json!({
+        "backend": "parserless",
+        "heuristic": true,
+        "regions": parserless_region_values(&regions),
+    });
+    Ok(tool_response(&serde_json::to_string_pretty(&response)?))
+}
+
+fn parserless_region_values(regions: &[ParserlessRegion]) -> Vec<Value> {
+    regions
+        .iter()
+        .map(|region| {
+            json!({
+                "region_id": region.region_id,
+                "line": region.line,
+                "line_end": region.line_end,
+                "depth": region.depth,
+                "label": region.label,
+                "backend": "parserless",
+                "heuristic": true,
+            })
+        })
+        .collect()
 }
 
 fn format_tree(sym: &Symbol, depth: usize, max_depth: Option<usize>, output: &mut String) {
@@ -2053,18 +2113,7 @@ pub fn get_symbol_body(
         matches.into_iter().next().unwrap()
     };
 
-    let source = std::fs::read_to_string(&path)?;
-    let lines: Vec<&str> = source.lines().collect();
-    let start = sym.location.line_start as usize;
-    let end = (sym.location.line_end as usize).min(lines.len().saturating_sub(1));
-
-    let mut body = String::new();
-    if start < lines.len() {
-        for line in &lines[start..=end] {
-            body.push_str(line);
-            body.push('\n');
-        }
-    }
+    let body = read_location_body(&path, &sym.location)?;
 
     let result = json!({
         "name": sym.name,
@@ -2077,6 +2126,51 @@ pub fn get_symbol_body(
     Ok(tool_response(&text))
 }
 
+pub fn get_region(
+    backend: &dyn CodeIntelligence,
+    parserless: &ParserlessBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = required_str(args, "file")?;
+    let region_id = required_str(args, "region_id")?;
+    let path = resolve_project_path(file, project_root)?;
+
+    if region_id.starts_with("region-") {
+        return match parserless.get_region_text(&path, region_id) {
+            Ok(body) => {
+                let result = json!({
+                    "region_id": region_id,
+                    "backend": "parserless",
+                    "heuristic": true,
+                    "body": body,
+                });
+                Ok(tool_response(&serde_json::to_string_pretty(&result)?))
+            }
+            Err(_) => Ok(tool_response(&format!(
+                "Region '{region_id}' not found in {file}"
+            ))),
+        };
+    }
+
+    let symbols = backend.get_symbols(&path)?;
+    let Some(sym) = find_symbol_by_stable_id(&symbols, region_id) else {
+        return Ok(tool_response(&format!(
+            "Region '{region_id}' not found in {file}"
+        )));
+    };
+
+    let body = read_location_body(&path, &sym.location)?;
+    let result = json!({
+        "name": sym.name,
+        "qualified_name": sym.qualified_name(),
+        "stable_id": sym.stable_id(),
+        "backend": "semantic",
+        "body": body,
+    });
+    Ok(tool_response(&serde_json::to_string_pretty(&result)?))
+}
+
 fn collect_symbols_by_name(symbols: &[Symbol], name: &str, out: &mut Vec<Symbol>) {
     for sym in symbols {
         if sym.name == name {
@@ -2084,6 +2178,34 @@ fn collect_symbols_by_name(symbols: &[Symbol], name: &str, out: &mut Vec<Symbol>
         }
         collect_symbols_by_name(&sym.children, name, out);
     }
+}
+
+fn find_symbol_by_stable_id(symbols: &[Symbol], stable_id: &str) -> Option<Symbol> {
+    for sym in symbols {
+        if sym.stable_id() == stable_id {
+            return Some(sym.clone());
+        }
+        if let Some(child) = find_symbol_by_stable_id(&sym.children, stable_id) {
+            return Some(child);
+        }
+    }
+    None
+}
+
+fn read_location_body(path: &Path, location: &rhizome_core::Location) -> Result<String> {
+    let source = std::fs::read_to_string(path)?;
+    let lines: Vec<&str> = source.lines().collect();
+    let start = location.line_start as usize;
+    let end = (location.line_end as usize).min(lines.len().saturating_sub(1));
+
+    let mut body = String::new();
+    if start < lines.len() {
+        for line in &lines[start..=end] {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    Ok(body)
 }
 
 // ---------------------------------------------------------------------------
@@ -2321,6 +2443,7 @@ pub fn rhizome_onboard(project_root: &Path) -> Result<Value> {
         "get_parameters",
         "get_enclosing_class",
         "get_symbol_body",
+        "get_region",
         "get_changed_files",
         "summarize_project",
         "find_references",
@@ -2341,14 +2464,15 @@ pub fn rhizome_onboard(project_root: &Path) -> Result<Value> {
     ];
 
     let quick_start = "Rhizome provides code intelligence across 32 languages via tree-sitter \
-        (fast, no deps) and LSP (full-featured, auto-selected). Start with get_symbols to \
-        list symbols in a file, get_structure for a hierarchical view, or search_symbols \
-        to find symbols across the project. Use export_to_hyphae to build a knowledge graph.";
+        (fast, no deps), LSP (full-featured, auto-selected), and a parserless heuristic \
+        fallback for outline-only reads. Start with get_symbols to list symbols in a file, \
+        get_structure for a hierarchical view, or get_region to expand one section without \
+        reading the full file. Use export_to_hyphae to build a knowledge graph.";
 
     let result = json!({
         "languages_supported": languages_supported,
         "tools_available": tools_available,
-        "backend": "tree-sitter + LSP (auto-selected per tool call)",
+        "backend": "tree-sitter + LSP + parserless fallback",
         "project_root": project_root.to_string_lossy(),
         "quick_start": quick_start,
     });

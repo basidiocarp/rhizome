@@ -7,6 +7,7 @@ pub mod graph;
 pub mod hyphae;
 pub mod installer;
 pub mod language;
+pub mod parserless;
 pub mod paths;
 pub mod project_summary;
 pub mod root_detector;
@@ -23,6 +24,7 @@ pub use graph::{CodeGraph, ConceptEdge, ConceptNode};
 pub use hyphae::ExportResult;
 pub use installer::{LspInstaller, install_recipe, manual_install_hint};
 pub use language::{Language, LanguageServerConfig};
+pub use parserless::{ParserlessBackend, ParserlessRegion};
 pub use paths::{
     augmented_path, global_config_path, managed_bin_dir, project_config_path, project_state_dir,
 };
