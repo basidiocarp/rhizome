@@ -5,24 +5,12 @@ use anyhow::{Result, anyhow};
 use rhizome_core::CodeIntelligence;
 use serde_json::{Value, json};
 
+use super::symbol_tools::{required_str, required_u32};
 use super::{ToolSchema, tool_error, tool_response};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Param helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-fn required_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
-    args.get(key)
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing required parameter: {key}"))
-}
-
-fn required_u32(args: &Value, key: &str) -> Result<u32> {
-    args.get(key)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| anyhow!("Missing required parameter: {key}"))
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RelativePosition {
