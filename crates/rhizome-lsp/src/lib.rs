@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use rhizome_core::{
     BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Result,
-    Symbol, SymbolKind,
+    Symbol, SymbolKind, find_symbol_by_name,
 };
 
 use rhizome_core::RhizomeError;
@@ -226,19 +226,6 @@ fn detect_language(file: &Path) -> Result<Language> {
         RhizomeError::ParseError(format!("Cannot detect language for: {}", file.display()))
     })?;
     Language::from_extension(ext).ok_or_else(|| RhizomeError::UnsupportedLanguage(ext.to_string()))
-}
-
-/// Recursively search a symbol tree for a symbol matching `name`.
-fn find_symbol_by_name(symbols: &[Symbol], name: &str) -> Option<Symbol> {
-    for sym in symbols {
-        if sym.name == name {
-            return Some(sym.clone());
-        }
-        if let Some(found) = find_symbol_by_name(&sym.children, name) {
-            return Some(found);
-        }
-    }
-    None
 }
 
 impl CodeIntelligence for LspBackend {

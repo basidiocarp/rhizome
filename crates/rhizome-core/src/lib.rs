@@ -30,4 +30,4 @@ pub use paths::{
 };
 pub use project_summary::{EntryPoint, ModuleSummary, ProjectSummary, summarize_project};
 pub use root_detector::detect_workspace_root;
-pub use symbol::{Location, Symbol, SymbolKind};
+pub use symbol::{Location, Symbol, SymbolKind, find_symbol_by_name};

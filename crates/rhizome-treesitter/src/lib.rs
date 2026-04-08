@@ -11,7 +11,7 @@ use ignore::WalkBuilder;
 use lru::LruCache;
 use rhizome_core::{
     BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Result,
-    RhizomeError, Symbol, SymbolKind,
+    RhizomeError, Symbol, SymbolKind, find_symbol_by_name,
     export_cache::{scoped_cache_dir, scoped_cache_path},
 };
 use serde::{Deserialize, Serialize};
@@ -391,18 +391,6 @@ impl CodeIntelligence for TreeSitterBackend {
             diagnostics: false,
         }
     }
-}
-
-fn find_symbol_by_name(symbols: &[Symbol], name: &str) -> Option<Symbol> {
-    for sym in symbols {
-        if sym.name == name {
-            return Some(sym.clone());
-        }
-        if let Some(child) = find_symbol_by_name(&sym.children, name) {
-            return Some(child);
-        }
-    }
-    None
 }
 
 fn collect_matching_symbols(symbol: &Symbol, pattern_lower: &str, results: &mut Vec<Symbol>) {

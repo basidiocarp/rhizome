@@ -60,3 +60,17 @@ impl Symbol {
         )
     }
 }
+
+/// Recursively search a symbol tree for a symbol matching `name`.
+#[must_use]
+pub fn find_symbol_by_name(symbols: &[Symbol], name: &str) -> Option<Symbol> {
+    for sym in symbols {
+        if sym.name == name {
+            return Some(sym.clone());
+        }
+        if let Some(child) = find_symbol_by_name(&sym.children, name) {
+            return Some(child);
+        }
+    }
+    None
+}
