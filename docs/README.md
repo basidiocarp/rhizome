@@ -64,7 +64,7 @@ See [TROUBLESHOOTING.md: Performance Issues](./TROUBLESHOOTING.md#performance-is
 
 ### How do I report a bug?
 
-Include `rhizome status` output, `rhizome --version` output, relevant config files, logs from `RUST_LOG=debug rhizome serve`, and reproduction steps. See [TROUBLESHOOTING.md: When to Escalate](./TROUBLESHOOTING.md#when-to-escalate).
+Include `rhizome status` output, `rhizome --version` output, relevant config files, logs from `RHIZOME_LOG=debug rhizome serve`, and reproduction steps. See [TROUBLESHOOTING.md: When to Escalate](./TROUBLESHOOTING.md#when-to-escalate).
 
 ## Development
 

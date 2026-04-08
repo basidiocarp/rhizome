@@ -163,6 +163,22 @@ server_args = ["server"]
 disable_download = false
 ```
 
+## Logging
+
+Rhizome reads `RHIZOME_LOG` first, then falls back to `RUST_LOG`. If neither is
+set, it defaults to `warn`.
+
+```bash
+# General debugging
+RHIZOME_LOG=debug rhizome serve
+
+# Narrow to a noisy module
+RHIZOME_LOG=rhizome_mcp::tools=debug rhizome serve
+```
+
+`rhizome serve` keeps stdout reserved for newline-delimited MCP JSON-RPC
+traffic. Logs go to stderr so they do not corrupt the transport.
+
 ---
 
 ## Documentation

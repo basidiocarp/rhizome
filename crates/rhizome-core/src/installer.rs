@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use spore::logging::{SpanContext, subprocess_span, tool_span};
 use tracing::{debug, info, warn};
 
 use crate::Language;
@@ -419,6 +420,13 @@ impl LspInstaller {
             RhizomeError::Other(format!("Failed to create rhizome bin directory: {}", e))
         })?;
 
+        let span_context = SpanContext::for_app("rhizome")
+            .with_tool(binary_name)
+            .with_workspace_root(self.bin_dir.display().to_string());
+        let _tool_span = tool_span("ensure_lsp_server", &span_context).entered();
+        let install_cmd = recipe.manual_install_command(&self.bin_dir);
+        let _subprocess_span = subprocess_span(&install_cmd, &span_context).entered();
+
         info!(
             "Installing LSP server: {binary_name} via {}",
             recipe.manager
@@ -516,6 +524,16 @@ impl LspInstaller {
         std::fs::create_dir_all(&self.bin_dir).map_err(|e| {
             RhizomeError::Other(format!("Failed to create rhizome bin directory: {}", e))
         })?;
+
+        let span_context = SpanContext::for_app("rhizome")
+            .with_tool(binary_name)
+            .with_workspace_root(prefix_dir.display().to_string());
+        let _tool_span = tool_span("ensure_lsp_server", &span_context).entered();
+        let _subprocess_span = subprocess_span(
+            &format!("{pip} install --prefix {} {package}", prefix_dir.display()),
+            &span_context,
+        )
+        .entered();
 
         info!("Installing LSP server: {binary_name} via {pip}");
 

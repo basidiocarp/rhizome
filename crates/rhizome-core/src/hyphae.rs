@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use spore::discover;
+use spore::logging::{SpanContext, subprocess_span, tool_span, workflow_span};
 use spore::subprocess::McpClient;
 use spore::types::Tool;
 
@@ -61,6 +62,12 @@ pub fn export_graph(
     graph_json: &serde_json::Value,
     identity: &ExportIdentity,
 ) -> Result<ExportResult> {
+    let span_context = SpanContext::for_app("rhizome")
+        .with_tool("hyphae_export")
+        .with_workspace_root(identity.project_root.clone());
+    let _tool_span = tool_span("export_to_hyphae", &span_context).entered();
+    let _workflow_span = workflow_span("code_graph_export", &span_context).entered();
+
     // ─────────────────────────────────────────────────────────────────────────
     // Verify Hyphae is available
     // ─────────────────────────────────────────────────────────────────────────
@@ -75,6 +82,7 @@ pub fn export_graph(
     // ─────────────────────────────────────────────────────────────────────────
     // Call Hyphae via McpClient
     // ─────────────────────────────────────────────────────────────────────────
+    let _subprocess_span = subprocess_span("hyphae serve", &span_context).entered();
     let mut client = McpClient::spawn(Tool::Hyphae, &["serve"])
         .map_err(|e| RhizomeError::Other(format!("Failed to spawn hyphae serve: {}", e)))?
         .with_timeout(Duration::from_secs(10));

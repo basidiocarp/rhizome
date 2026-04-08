@@ -4,6 +4,19 @@ All notable changes to Rhizome are documented in this file.
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-04-08
+
+### Fixed
+
+- **Logging contract docs now match runtime behavior**: README and operational
+  docs now document `RHIZOME_LOG` as the primary knob, `RUST_LOG` as fallback,
+  and `warn` as the default level.
+- **Broader tracing around fragile runtime boundaries**: installer and Hyphae
+  export paths now enter shared tool, workflow, and subprocess spans so
+  subprocess failures are easier to localize.
+- **Consistent CLI root spans**: non-serve command paths now enter the shared
+  root/workflow tracing boundary instead of only instrumenting `serve`.
+
 ## [0.7.5] - 2026-04-08
 
 ### Changed

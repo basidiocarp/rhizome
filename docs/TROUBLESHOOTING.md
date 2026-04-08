@@ -9,7 +9,7 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
 | Tool returns empty or weak results | `rhizome status` | Tree-sitter is active, but the language needs LSP or better query coverage |
 | LSP-required tool says the server is unavailable | `rhizome status` | The server binary is missing, unhealthy, or auto-install is disabled |
 | Auto-install does nothing | `printenv RHIZOME_DISABLE_LSP_DOWNLOAD` | Auto-install was disabled or the package manager is missing |
-| Config changes have no effect | `RUST_LOG=debug rhizome serve 2>&1 | grep -i config` | The wrong config file is being edited or the project root is not what you expect |
+| Config changes have no effect | `RHIZOME_LOG=debug rhizome serve 2>&1 | grep -i config` | The wrong config file is being edited or the project root is not what you expect |
 | Export to Hyphae fails | `command -v hyphae` | Hyphae is missing, unreachable, or misconfigured |
 
 ## Backend and LSP Issues
@@ -133,7 +133,7 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
 
 3. If the file is valid but Rhizome still fails, capture logs and file a bug:
    ```bash
-   RUST_LOG=debug rhizome serve
+   RHIZOME_LOG=debug rhizome serve
    ```
 
 ### Export to Hyphae fails
@@ -156,7 +156,7 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
 
 3. Retry export after checking Rhizome logs:
    ```bash
-   RUST_LOG=debug rhizome serve
+   RHIZOME_LOG=debug rhizome serve
    ```
 
 ## Configuration Issues
@@ -171,7 +171,7 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
 
 1. Check which config files are being loaded:
    ```bash
-   RUST_LOG=debug rhizome serve 2>&1 | grep -i config
+   RHIZOME_LOG=debug rhizome serve 2>&1 | grep -i config
    ```
 
 2. Validate the TOML you edited:
@@ -209,7 +209,7 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
 
 3. Restart Rhizome and inspect config loading:
    ```bash
-   RUST_LOG=debug rhizome serve 2>&1 | grep -i config
+   RHIZOME_LOG=debug rhizome serve 2>&1 | grep -i config
    ```
 
 ### Project config does not override global config
@@ -222,7 +222,7 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
 
 1. Check the detected project root:
    ```bash
-   RUST_LOG=debug rhizome serve 2>&1 | grep -i "project.root"
+   RHIZOME_LOG=debug rhizome serve 2>&1 | grep -i "project.root"
    ```
 
 2. Confirm the project config is in the detected root:
@@ -291,13 +291,13 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
 **Enable debug logging:**
 ```bash
 # All debug output
-RUST_LOG=debug rhizome serve
+RHIZOME_LOG=debug rhizome serve
 
 # Rhizome-only logs
-RUST_LOG=rhizome=debug rhizome serve
+RHIZOME_LOG=rhizome=debug rhizome serve
 
 # Tool-module logs
-RUST_LOG=rhizome_mcp::tools=debug rhizome serve
+RHIZOME_LOG=rhizome_mcp::tools=debug rhizome serve
 ```
 
 **Check version:**

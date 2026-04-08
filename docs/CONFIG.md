@@ -243,7 +243,8 @@ Examples below use POSIX shell syntax. On PowerShell, set environment variables 
 |----------|------|---------|---------|
 | `RHIZOME_DISABLE_LSP_DOWNLOAD` | String | Disable auto-install (`1` or `true`) | `RHIZOME_DISABLE_LSP_DOWNLOAD=1` |
 | `RHIZOME_PROJECT` | Path | Override project root detection | `RHIZOME_PROJECT=/path/to/project` |
-| `RUST_LOG` | String | Logging level (debug, info, warn, error) | `RUST_LOG=rhizome=debug` |
+| `RHIZOME_LOG` | String | Primary logging filter override | `RHIZOME_LOG=debug` |
+| `RUST_LOG` | String | Fallback logging filter if `RHIZOME_LOG` is unset | `RUST_LOG=info` |
 
 ### RHIZOME_DISABLE_LSP_DOWNLOAD
 
@@ -279,23 +280,24 @@ RHIZOME_PROJECT=/path/to/project rhizome serve
 - **Use case**: Monorepo with non-standard structure, testing root detection
 - **Effect**: All file operations use this as project root
 
-### RUST_LOG
+### RHIZOME_LOG
 
-Set logging verbosity.
+Set logging verbosity. Rhizome checks `RHIZOME_LOG` first, then falls back to
+`RUST_LOG`, then defaults to `warn`.
 
 ```sh
 # All Rhizome logs at debug level
-RUST_LOG=rhizome=debug rhizome serve
+RHIZOME_LOG=debug rhizome serve
 
 # Specific module
-RUST_LOG=rhizome_mcp::tools=debug rhizome serve
+RHIZOME_LOG=rhizome_mcp::tools=debug rhizome serve
 
-# All dependencies at info level
+# Fall back to the standard Rust override if needed
 RUST_LOG=info rhizome serve
 ```
 
 - **Levels**: `error`, `warn`, `info`, `debug`, `trace`
-- **Default**: `info`
+- **Default**: `warn`
 - **Use case**: Debugging, performance analysis
 
 ## Default Values
@@ -501,14 +503,14 @@ server_args = ["--no-default-features"]  # Reduce memory
 
 3. Check Rhizome is reading it:
    ```sh
-   RUST_LOG=debug rhizome serve 2>&1 | grep config
+   RHIZOME_LOG=debug rhizome serve 2>&1 | grep config
    ```
 
 ### Project config not overriding global
 
 1. Verify project root is detected:
    ```sh
-   RUST_LOG=debug rhizome serve 2>&1 | grep "project.root"
+   RHIZOME_LOG=debug rhizome serve 2>&1 | grep "project.root"
    ```
 
 2. Verify project config exists:

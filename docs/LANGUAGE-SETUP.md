@@ -297,7 +297,7 @@ Check logs and increase verbosity:
 
 ```bash
 # With logging
-RUST_LOG=debug rhizome serve
+RHIZOME_LOG=debug rhizome serve
 
 # Check LSP server logs (server-specific)
 # Example Rust: inspect the configured log file path
@@ -317,7 +317,8 @@ Example: `get_symbols` works, but `rename_symbol` fails. Check:
 |----------|---------|---------|
 | `RHIZOME_DISABLE_LSP_DOWNLOAD` | Disable auto-install (`1` to disable) | Unset (auto-install enabled) |
 | `RHIZOME_PROJECT` | Override project root detection | Unset (auto-detect) |
-| `RUST_LOG` | Logging level (debug, info, warn) | Unset (info) |
+| `RHIZOME_LOG` | Primary logging level or filter override | Unset (warn) |
+| `RUST_LOG` | Fallback logging level or filter override | Unset |
 
 ## Next Steps
 

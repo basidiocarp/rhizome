@@ -8,6 +8,7 @@ use rhizome_core::{
 use rhizome_mcp::McpServer;
 use rhizome_treesitter::TreeSitterBackend;
 use spore::editors;
+use spore::logging::{SpanContext, root_span, workflow_span};
 use tracing::info;
 
 mod doctor;
@@ -156,6 +157,58 @@ fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
         .or_else(|| std::env::var_os("RHIZOME_PROJECT").map(PathBuf::from))
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     std::fs::canonicalize(&root).unwrap_or(root)
+}
+
+fn command_name(command: &Commands) -> &'static str {
+    match command {
+        Commands::Serve { .. } => "serve",
+        Commands::Symbols { .. } => "symbols",
+        Commands::Structure { .. } => "structure",
+        Commands::Init { .. } => "init",
+        Commands::Export { .. } => "export",
+        Commands::Status { .. } => "status",
+        Commands::SelfUpdate { .. } => "self_update",
+        Commands::Doctor { .. } => "doctor",
+        Commands::Summarize { .. } => "summarize",
+        Commands::Lsp { action } => match action {
+            LspAction::Status { .. } => "lsp_status",
+            LspAction::Install { .. } => "lsp_install",
+        },
+    }
+}
+
+fn current_workspace_root() -> Option<String> {
+    std::env::current_dir()
+        .ok()
+        .map(|path| path.display().to_string())
+}
+
+fn command_span_context(command: &Commands) -> SpanContext {
+    let workspace_root = match command {
+        Commands::Serve { project, .. }
+        | Commands::Export { project }
+        | Commands::Status { project }
+        | Commands::Summarize { project, .. } => Some(detect_project_root(project.clone())),
+        Commands::Lsp { action } => match action {
+            LspAction::Status { project, .. } | LspAction::Install { project, .. } => {
+                Some(detect_project_root(project.clone()))
+            }
+        },
+        Commands::Symbols { file } | Commands::Structure { file } => file
+            .parent()
+            .map(|path| path.to_path_buf())
+            .or_else(|| std::env::current_dir().ok()),
+        Commands::Init { .. } | Commands::SelfUpdate { .. } | Commands::Doctor { .. } => None,
+    };
+
+    let context = SpanContext::for_app("rhizome");
+    match workspace_root
+        .map(|path| path.display().to_string())
+        .or_else(current_workspace_root)
+    {
+        Some(workspace_root) => context.with_workspace_root(workspace_root),
+        None => context,
+    }
 }
 
 fn tree_sitter_status_label(active: bool) -> &'static str {
@@ -545,9 +598,6 @@ fn resolve_lsp_install_server_config(
 
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
     let project_root = detect_project_root(project);
-    let span_context = spore::logging::SpanContext::for_app("rhizome")
-        .with_workspace_root(project_root.display().to_string());
-    let _runtime_span = spore::logging::root_span(&span_context).entered();
     info!(
         "Starting MCP server with project root: {}",
         project_root.display()
@@ -572,6 +622,9 @@ async fn main() -> Result<()> {
     spore::logging::init_app("rhizome", tracing::Level::WARN);
 
     let cli = Cli::parse();
+    let span_context = command_span_context(&cli.command);
+    let _runtime_span = root_span(&span_context).entered();
+    let _command_span = workflow_span(command_name(&cli.command), &span_context).entered();
 
     match cli.command {
         Commands::Serve { project, expanded } => cmd_serve(project, expanded).await,
@@ -642,5 +695,36 @@ mod tests {
             .expect("explicit install should still resolve a server");
 
         assert_eq!(config.binary, "rust-analyzer");
+    }
+
+    #[test]
+    fn command_span_context_uses_project_aware_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path().join("workspace");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let expected_root = detect_project_root(Some(project_root.clone()));
+
+        let context = command_span_context(&Commands::Status {
+            project: Some(project_root.clone()),
+        });
+
+        assert_eq!(context.service.as_deref(), Some("rhizome"));
+        assert_eq!(
+            context.workspace_root.as_deref(),
+            Some(expected_root.display().to_string().as_str())
+        );
+    }
+
+    #[test]
+    fn command_name_labels_nested_lsp_commands() {
+        assert_eq!(
+            command_name(&Commands::Lsp {
+                action: LspAction::Install {
+                    project: None,
+                    language: "rust".into(),
+                },
+            }),
+            "lsp_install"
+        );
     }
 }
