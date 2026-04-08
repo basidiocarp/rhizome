@@ -241,6 +241,9 @@ mod tests {
 
     #[test]
     fn test_lsp_location_to_location() {
+        #[cfg(windows)]
+        let uri: lsp_types::Uri = "file:///C:/Users/test/project/src/main.rs".parse().unwrap();
+        #[cfg(not(windows))]
         let uri: lsp_types::Uri = "file:///home/user/project/src/main.rs".parse().unwrap();
         let loc = lsp_types::Location {
             uri,
@@ -256,6 +259,9 @@ mod tests {
             },
         };
         let result = lsp_location_to_location(&loc);
+        #[cfg(windows)]
+        assert_eq!(result.file_path, r"C:\Users\test\project\src\main.rs");
+        #[cfg(not(windows))]
         assert_eq!(result.file_path, "/home/user/project/src/main.rs");
         assert_eq!(result.line_start, 11);
         assert_eq!(result.line_end, 11);
