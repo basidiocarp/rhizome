@@ -320,6 +320,7 @@ fn editor_slug(editor: Editor) -> &'static str {
         Editor::CodexCli => "codex",
         Editor::GeminiCli => "gemini",
         Editor::CopilotCli => "copilot",
+        _ => "editor",
     }
 }
 

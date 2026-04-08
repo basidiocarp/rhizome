@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use serde_json::{Value, json};
+use spore::logging::{SpanContext, request_span, tool_span, workflow_span};
+use tracing::Instrument;
 use tracing::{debug, error, info, warn};
 
 use crate::tools::ToolDispatcher;
@@ -61,6 +63,8 @@ impl McpServer {
 
             let id = request.get("id").cloned();
             let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
+            let request_context = self.request_context(id.as_ref());
+            let _request_span = request_span(method, &request_context).entered();
 
             debug!("Received method: {method}");
 
@@ -80,24 +84,57 @@ impl McpServer {
 
     fn spawn_auto_export(&self) {
         let project_root = self.dispatcher.project_root().to_path_buf();
-        tokio::spawn(async move {
-            if !rhizome_core::hyphae::is_available() {
-                debug!("Hyphae not available, skipping auto-export");
-                return;
-            }
+        let span_context =
+            SpanContext::for_app("rhizome").with_workspace_root(project_root.display().to_string());
+        let workflow_span = workflow_span("auto_export_to_hyphae", &span_context);
 
-            let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
-            if !config.auto_export() {
-                debug!("Auto-export disabled in config");
-                return;
-            }
+        tokio::spawn(
+            async move {
+                if !rhizome_core::hyphae::is_available() {
+                    debug!("Hyphae not available, skipping auto-export");
+                    return;
+                }
 
-            info!("rhizome: starting auto-export to hyphae");
-            let backend = rhizome_treesitter::TreeSitterBackend::new();
-            let args = serde_json::json!({});
-            let backoff_seconds = [1_u64, 4, 16];
+                let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
+                if !config.auto_export() {
+                    debug!("Auto-export disabled in config");
+                    return;
+                }
 
-            for (attempt_idx, delay_seconds) in backoff_seconds.iter().copied().enumerate() {
+                info!("rhizome: starting auto-export to hyphae");
+                let backend = rhizome_treesitter::TreeSitterBackend::new();
+                let args = serde_json::json!({});
+                let backoff_seconds = [1_u64, 4, 16];
+
+                for (attempt_idx, delay_seconds) in backoff_seconds.iter().copied().enumerate() {
+                    match crate::tools::export_tools::export_to_hyphae(
+                        &backend,
+                        &args,
+                        &project_root,
+                    ) {
+                        Ok(result) => {
+                            if let Some(text) = result
+                                .get("content")
+                                .and_then(|c| c.as_array())
+                                .and_then(|a| a.first())
+                                .and_then(|o| o.get("text"))
+                                .and_then(|t| t.as_str())
+                            {
+                                info!("rhizome: hyphae auto-export complete: {text}");
+                            }
+                            return;
+                        }
+                        Err(error) => {
+                            debug!(
+                                "rhizome: hyphae auto-export attempt {} failed: {error}",
+                                attempt_idx + 1
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds))
+                                .await;
+                        }
+                    }
+                }
+
                 match crate::tools::export_tools::export_to_hyphae(&backend, &args, &project_root) {
                     Ok(result) => {
                         if let Some(text) = result
@@ -109,35 +146,14 @@ impl McpServer {
                         {
                             info!("rhizome: hyphae auto-export complete: {text}");
                         }
-                        return;
                     }
                     Err(error) => {
-                        debug!(
-                            "rhizome: hyphae auto-export attempt {} failed: {error}",
-                            attempt_idx + 1
-                        );
-                        tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
+                        warn!("rhizome: hyphae auto-export failed after 4 attempts: {error}");
                     }
                 }
             }
-
-            match crate::tools::export_tools::export_to_hyphae(&backend, &args, &project_root) {
-                Ok(result) => {
-                    if let Some(text) = result
-                        .get("content")
-                        .and_then(|c| c.as_array())
-                        .and_then(|a| a.first())
-                        .and_then(|o| o.get("text"))
-                        .and_then(|t| t.as_str())
-                    {
-                        info!("rhizome: hyphae auto-export complete: {text}");
-                    }
-                }
-                Err(error) => {
-                    warn!("rhizome: hyphae auto-export failed after 4 attempts: {error}");
-                }
-            }
-        });
+            .instrument(workflow_span),
+        );
     }
 
     fn handle_method(&self, method: &str, request: &Value, id: Option<Value>) -> Option<Value> {
@@ -146,7 +162,7 @@ impl McpServer {
             "tools/list" => self.handle_tools_list(),
             "tools/call" => {
                 let params = request.get("params").cloned().unwrap_or(json!({}));
-                self.handle_tools_call(&params)
+                self.handle_tools_call(&params, id.as_ref())
             }
             _ => Err(JsonRpcError {
                 code: -32601,
@@ -178,7 +194,7 @@ impl McpServer {
         Ok(json!({
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "rhizome", "version": "0.4.0", "instructions": instructions }
+            "serverInfo": { "name": "rhizome", "version": env!("CARGO_PKG_VERSION"), "instructions": instructions }
         }))
     }
 
@@ -237,7 +253,11 @@ impl McpServer {
         Ok(json!({ "tools": tool_schemas }))
     }
 
-    fn handle_tools_call(&self, params: &Value) -> std::result::Result<Value, JsonRpcError> {
+    fn handle_tools_call(
+        &self,
+        params: &Value,
+        request_id: Option<&Value>,
+    ) -> std::result::Result<Value, JsonRpcError> {
         let name = params
             .get("name")
             .and_then(|n| n.as_str())
@@ -262,6 +282,11 @@ impl McpServer {
         } else {
             name.to_string()
         };
+
+        let tool_context = self
+            .request_context(request_id)
+            .with_tool(effective_name.clone());
+        let _tool_span = tool_span(&effective_name, &tool_context).entered();
 
         match self.dispatcher.call_tool(&effective_name, arguments) {
             Ok(result) => Ok(result),
@@ -290,9 +315,61 @@ impl McpServer {
             None => json!({"jsonrpc": "2.0", "id": id, "result": null}),
         }
     }
+
+    fn base_span_context(&self) -> SpanContext {
+        SpanContext::for_app("rhizome")
+            .with_workspace_root(self.dispatcher.project_root().display().to_string())
+    }
+
+    fn request_context(&self, request_id: Option<&Value>) -> SpanContext {
+        let context = self.base_span_context();
+        match request_id_from_value(request_id) {
+            Some(request_id) => context.with_request_id(request_id),
+            None => context,
+        }
+    }
 }
 
 struct JsonRpcError {
     code: i32,
     message: String,
+}
+
+fn request_id_from_value(request_id: Option<&Value>) -> Option<String> {
+    match request_id? {
+        Value::Null => None,
+        Value::String(text) => Some(text.clone()),
+        value => Some(value.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn request_id_from_value_supports_jsonrpc_scalars() {
+        assert_eq!(
+            request_id_from_value(Some(&json!("req-42"))),
+            Some("req-42".into())
+        );
+        assert_eq!(request_id_from_value(Some(&json!(42))), Some("42".into()));
+        assert_eq!(
+            request_id_from_value(Some(&json!(true))),
+            Some("true".into())
+        );
+        assert_eq!(request_id_from_value(Some(&Value::Null)), None);
+        assert_eq!(request_id_from_value(None), None);
+    }
+
+    #[test]
+    fn request_context_carries_workspace_root_and_request_id() {
+        let server = McpServer::new(PathBuf::from("/tmp/project"), true);
+        let context = server.request_context(Some(&json!(7)));
+
+        assert_eq!(context.service.as_deref(), Some("rhizome"));
+        assert_eq!(context.request_id.as_deref(), Some("7"));
+        assert_eq!(context.workspace_root.as_deref(), Some("/tmp/project"));
+    }
 }

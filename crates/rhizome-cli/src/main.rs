@@ -545,6 +545,9 @@ fn resolve_lsp_install_server_config(
 
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
     let project_root = detect_project_root(project);
+    let span_context = spore::logging::SpanContext::for_app("rhizome")
+        .with_workspace_root(project_root.display().to_string());
+    let _runtime_span = spore::logging::root_span(&span_context).entered();
     info!(
         "Starting MCP server with project root: {}",
         project_root.display()
@@ -566,7 +569,7 @@ async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    spore::logging::init(tracing::Level::WARN);
+    spore::logging::init_app("rhizome", tracing::Level::WARN);
 
     let cli = Cli::parse();
 

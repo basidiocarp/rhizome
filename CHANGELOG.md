@@ -4,6 +4,18 @@ All notable changes to Rhizome are documented in this file.
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-04-08
+
+### Changed
+
+- **Shared Spore logging rollout**: Rhizome now consumes `spore v0.4.9`,
+  initializes logging with the app-aware path, and adds shared root, request,
+  tool, and workflow spans around MCP serve and auto-export flows.
+- **Runtime compatibility with non-exhaustive Spore editors**: Doctor now
+  handles future `spore::editors::Editor` variants without failing to compile.
+- **Accurate MCP version reporting**: `initialize` now reports the real MCP
+  crate version instead of the old hard-coded `0.4.0` string.
+
 ### Changed
 
 - **Docs cleanup**: Internal docs moved under `docs/`, and the README,
