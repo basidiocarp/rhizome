@@ -9,6 +9,9 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
+use tracing::Instrument;
+
+use spore::logging::{SpanContext, subprocess_span, workflow_span};
 
 use crate::convert::{path_to_lsp_uri, uri_to_file_path};
 use rhizome_core::LanguageServerConfig;
@@ -21,11 +24,21 @@ pub struct LspClient {
     initialized: bool,
     reader_handle: tokio::task::JoinHandle<()>,
     process: Child,
+    binary: String,
 }
 
 impl LspClient {
     /// Spawn a language server process and start the reader task.
-    pub async fn spawn(config: &LanguageServerConfig) -> Result<Self> {
+    pub async fn spawn(
+        config: &LanguageServerConfig,
+        workspace_root: Option<&Path>,
+    ) -> Result<Self> {
+        let mut span_context = SpanContext::for_app("rhizome").with_tool(&config.binary);
+        if let Some(root) = workspace_root {
+            span_context = span_context.with_workspace_root(root.display().to_string());
+        }
+
+        let _subprocess_span = subprocess_span(&config.binary, &span_context).entered();
         let mut child = Command::new(&config.binary)
             .args(&config.args)
             .stdin(std::process::Stdio::piped())
@@ -51,9 +64,13 @@ impl LspClient {
 
         let reader_pending = Arc::clone(&pending_requests);
         let reader_diags = Arc::clone(&diagnostics_cache);
-        let reader_handle = tokio::spawn(async move {
-            Self::reader_task(BufReader::new(stdout), reader_pending, reader_diags).await;
-        });
+        let reader_span = workflow_span("lsp_reader", &span_context);
+        let reader_handle = tokio::spawn(
+            async move {
+                Self::reader_task(BufReader::new(stdout), reader_pending, reader_diags).await;
+            }
+            .instrument(reader_span),
+        );
 
         Ok(Self {
             stdin: Arc::new(tokio::sync::Mutex::new(BufWriter::new(stdin))),
@@ -63,6 +80,7 @@ impl LspClient {
             initialized: false,
             reader_handle,
             process: child,
+            binary: config.binary.clone(),
         })
     }
 
@@ -72,6 +90,10 @@ impl LspClient {
         reason = "lsp_types::InitializeParams::root_path required by protocol; no non-deprecated alternative"
     )]
     pub async fn initialize(&mut self, workspace_root: &Path) -> Result<()> {
+        let span_context = SpanContext::for_app("rhizome")
+            .with_tool(&self.binary)
+            .with_workspace_root(workspace_root.display().to_string());
+        let _subprocess_span = subprocess_span("lsp_initialize", &span_context).entered();
         let uri = path_to_lsp_uri(workspace_root)?;
 
         let params = lsp_types::InitializeParams {

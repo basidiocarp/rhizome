@@ -151,7 +151,7 @@ async fn test_mock_lsp_initialize_and_document_symbols() {
     };
 
     // Spawn the mock server via LspClient
-    let mut client = rhizome_lsp::client::LspClient::spawn(&config)
+    let mut client = rhizome_lsp::client::LspClient::spawn(&config, Some(tmp.path()))
         .await
         .expect("Failed to spawn mock server");
 
@@ -219,7 +219,7 @@ async fn test_mock_lsp_handles_noisy_stdout_before_first_response() {
         initialization_options: None,
     };
 
-    let mut client = rhizome_lsp::client::LspClient::spawn(&config)
+    let mut client = rhizome_lsp::client::LspClient::spawn(&config, Some(tmp.path()))
         .await
         .expect("Failed to spawn noisy mock server");
 
@@ -262,7 +262,7 @@ async fn test_mock_lsp_rename_returns_workspace_edit_that_can_be_applied() {
         initialization_options: None,
     };
 
-    let mut client = rhizome_lsp::client::LspClient::spawn(&config)
+    let mut client = rhizome_lsp::client::LspClient::spawn(&config, Some(tmp.path()))
         .await
         .expect("Failed to spawn mock server");
 

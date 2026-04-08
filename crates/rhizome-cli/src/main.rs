@@ -559,6 +559,9 @@ fn cmd_lsp_install(project: Option<PathBuf>, language_name: &str) -> Result<()> 
     let language = Language::from_name(language_name)
         .with_context(|| format!("Unknown language: {language_name}"))?;
     let project_root = detect_project_root(project);
+    let span_context =
+        SpanContext::for_app("rhizome").with_workspace_root(project_root.display().to_string());
+    let _workflow_span = workflow_span("lsp_install", &span_context).entered();
     let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
 
     let server_config = resolve_lsp_install_server_config(&config, &language)

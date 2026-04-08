@@ -42,6 +42,10 @@ use in real sessions.
 
 > **Boundary:** `rhizome` owns code intelligence and structural editing tools.
 > It does not own memory, shell filtering, lifecycle capture, or installation.
+> Backend selection stays centralized in `rhizome-core::BackendSelector`;
+> `rhizome-mcp` routes tools through that shared policy instead of inventing
+> ad hoc LSP branches, and `rhizome-lsp` stays focused on live protocol
+> clients and translation.
 
 ---
 

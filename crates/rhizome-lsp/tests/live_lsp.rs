@@ -42,7 +42,7 @@ async fn test_rust_analyzer_go_to_definition() {
     };
 
     let workspace = project_root();
-    let mut client = rhizome_lsp::client::LspClient::spawn(&config)
+    let mut client = rhizome_lsp::client::LspClient::spawn(&config, Some(&workspace))
         .await
         .expect("Failed to spawn rust-analyzer");
 

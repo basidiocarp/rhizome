@@ -43,6 +43,19 @@ All five crates compile into the `rhizome` binary.
 - **`rhizome-cli`**: Binary entry point, status surfaces, and direct CLI
   commands.
 
+### Boundary Rules
+
+- `rhizome-core` owns backend selection, config, root detection, and code-graph
+  primitives.
+- `rhizome-mcp` owns tool routing and lazy backend startup; it should not make
+  ad hoc backend decisions outside the shared selector.
+- `rhizome-lsp` owns live language-server processes and protocol translation,
+  not domain policy.
+- Export stays on the shared tree-sitter/code-graph path unless a handoff
+  explicitly expands the contract.
+- If a new tool needs LSP semantics, classify it in `BackendSelector` first
+  and then wire the dispatcher to that classification.
+
 ---
 
 ## Core Abstraction

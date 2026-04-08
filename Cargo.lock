@@ -934,6 +934,7 @@ dependencies = [
  "rhizome-core",
  "serde",
  "serde_json",
+ "spore",
  "tempfile",
  "thiserror",
  "tokio",

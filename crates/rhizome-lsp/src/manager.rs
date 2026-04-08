@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use rhizome_core::Language;
+use spore::logging::{SpanContext, workflow_span};
 
 use crate::client::LspClient;
 
@@ -66,7 +67,11 @@ impl LanguageServerManager {
                     language,
                     workspace_root.display()
                 );
-                let mut client = LspClient::spawn(&config).await?;
+                let span_context = SpanContext::for_app("rhizome")
+                    .with_tool(config.binary.clone())
+                    .with_workspace_root(workspace_root.display().to_string());
+                let _workflow_span = workflow_span("lsp_startup", &span_context).entered();
+                let mut client = LspClient::spawn(&config, Some(workspace_root)).await?;
                 client.initialize(workspace_root).await?;
                 e.insert(client)
             }

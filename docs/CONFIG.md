@@ -244,7 +244,7 @@ Examples below use POSIX shell syntax. On PowerShell, set environment variables 
 | `RHIZOME_DISABLE_LSP_DOWNLOAD` | String | Disable auto-install (`1` or `true`) | `RHIZOME_DISABLE_LSP_DOWNLOAD=1` |
 | `RHIZOME_PROJECT` | Path | Override project root detection | `RHIZOME_PROJECT=/path/to/project` |
 | `RHIZOME_LOG` | String | Primary logging filter override | `RHIZOME_LOG=debug` |
-| `RUST_LOG` | String | Fallback logging filter if `RHIZOME_LOG` is unset | `RUST_LOG=info` |
+| `RUST_LOG` | String | Fallback logging filter if `RHIZOME_LOG` is unset | `RUST_LOG=warn` |
 
 ### RHIZOME_DISABLE_LSP_DOWNLOAD
 
@@ -293,7 +293,7 @@ RHIZOME_LOG=debug rhizome serve
 RHIZOME_LOG=rhizome_mcp::tools=debug rhizome serve
 
 # Fall back to the standard Rust override if needed
-RUST_LOG=info rhizome serve
+RUST_LOG=warn rhizome serve
 ```
 
 - **Levels**: `error`, `warn`, `info`, `debug`, `trace`
