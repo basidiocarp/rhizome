@@ -553,7 +553,7 @@ mod tests {
         collect_type_names(&symbols, &mut counts);
         assert_eq!(counts.get("Config"), Some(&2));
         assert_eq!(counts.get("Error"), Some(&1));
-        assert!(counts.get("run").is_none());
+        assert!(!counts.contains_key("run"));
     }
 
     #[test]

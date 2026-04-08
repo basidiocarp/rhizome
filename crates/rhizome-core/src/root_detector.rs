@@ -92,10 +92,10 @@ fn detect_rust_root(start: &Path, stop_at: &Path) -> PathBuf {
             if nearest_cargo.is_none() {
                 nearest_cargo = Some(dir.to_path_buf());
             }
-            if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
-                if content.contains("[workspace]") {
-                    workspace_root = Some(dir.to_path_buf());
-                }
+            if let Ok(content) = std::fs::read_to_string(&cargo_toml)
+                && content.contains("[workspace]")
+            {
+                workspace_root = Some(dir.to_path_buf());
             }
         }
 

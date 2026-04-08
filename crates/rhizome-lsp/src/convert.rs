@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 use rhizome_core::{Diagnostic, DiagnosticSeverity, Location, Symbol, SymbolKind};
 
 pub fn lsp_symbol_kind_to_symbol_kind(kind: lsp_types::SymbolKind) -> SymbolKind {

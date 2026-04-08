@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if, clippy::empty_line_after_doc_comments)]
+
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::Instant;

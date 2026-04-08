@@ -100,19 +100,18 @@ impl ParserlessBackend {
             bracket_depth = update_bracket_depth(bracket_depth, trimmed);
         }
 
-        if regions.is_empty() {
-            if let Some((line_index, line)) = lines
+        if regions.is_empty()
+            && let Some((line_index, line)) = lines
                 .iter()
                 .enumerate()
                 .find(|(_, line)| !line.trim().is_empty())
-            {
-                regions.push(CandidateRegion {
-                    line_index,
-                    line_end_index: lines.len().saturating_sub(1),
-                    depth: 0,
-                    label: compact_label(line.trim()),
-                });
-            }
+        {
+            regions.push(CandidateRegion {
+                line_index,
+                line_end_index: lines.len().saturating_sub(1),
+                depth: 0,
+                label: compact_label(line.trim()),
+            });
         }
 
         finalize_region_bounds(&mut regions, lines.len().saturating_sub(1));

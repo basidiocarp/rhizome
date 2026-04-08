@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 use anyhow::Result;
 use rhizome_core::{Language, Location, Symbol, SymbolKind};
 use streaming_iterator::StreamingIterator;
@@ -160,18 +162,14 @@ fn extract_doc_comment(node: tree_sitter::Node, source: &[u8]) -> Option<String>
 
     if comment_lines.is_empty() {
         // Check for Python docstrings (first child string in function/class body)
-        if let Some(body) = node.child_by_field_name("body") {
-            if let Some(first_child) = body.named_child(0) {
-                if first_child.kind() == "expression_statement" {
-                    if let Some(string_node) = first_child.named_child(0) {
-                        if string_node.kind() == "string" {
-                            if let Ok(text) = string_node.utf8_text(source) {
-                                return Some(text.to_string());
-                            }
-                        }
-                    }
-                }
-            }
+        if let Some(body) = node.child_by_field_name("body")
+            && let Some(first_child) = body.named_child(0)
+            && first_child.kind() == "expression_statement"
+            && let Some(string_node) = first_child.named_child(0)
+            && string_node.kind() == "string"
+            && let Ok(text) = string_node.utf8_text(source)
+        {
+            return Some(text.to_string());
         }
         return None;
     }
@@ -241,12 +239,12 @@ fn generic_kind_to_symbol_kind(kind: &str) -> Option<SymbolKind> {
 fn extract_node_name(node: tree_sitter::Node, source: &[u8]) -> String {
     // Try common field names for the symbol's name
     for field in &["name", "declarator", "pattern"] {
-        if let Some(name_node) = node.child_by_field_name(field) {
-            if let Ok(text) = name_node.utf8_text(source) {
-                let trimmed = text.trim();
-                if !trimmed.is_empty() && trimmed.len() < 200 {
-                    return trimmed.to_string();
-                }
+        if let Some(name_node) = node.child_by_field_name(field)
+            && let Ok(text) = name_node.utf8_text(source)
+        {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() && trimmed.len() < 200 {
+                return trimmed.to_string();
             }
         }
     }

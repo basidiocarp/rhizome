@@ -84,15 +84,15 @@ impl LanguageServerManager {
     pub async fn shutdown_all(&mut self) -> Result<()> {
         let keys: Vec<ClientKey> = self.clients.keys().cloned().collect();
         for key in keys {
-            if let Some(mut client) = self.clients.remove(&key) {
-                if let Err(e) = client.shutdown().await {
-                    tracing::warn!(
-                        "Error shutting down LSP for {:?} at {}: {}",
-                        key.0,
-                        key.1.display(),
-                        e
-                    );
-                }
+            if let Some(mut client) = self.clients.remove(&key)
+                && let Err(e) = client.shutdown().await
+            {
+                tracing::warn!(
+                    "Error shutting down LSP for {:?} at {}: {}",
+                    key.0,
+                    key.1.display(),
+                    e
+                );
             }
         }
         Ok(())

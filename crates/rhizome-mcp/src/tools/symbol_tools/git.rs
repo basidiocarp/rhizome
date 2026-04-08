@@ -1,3 +1,9 @@
+#![allow(
+    clippy::collapsible_if,
+    clippy::empty_line_after_doc_comments,
+    unused_imports
+)]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

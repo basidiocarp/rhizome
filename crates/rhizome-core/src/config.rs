@@ -20,17 +20,11 @@ pub struct LanguageConfig {
 }
 
 /// Export configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExportConfig {
     /// Whether to automatically export to Hyphae on MCP server startup
     #[serde(default)]
     pub auto_export: Option<bool>,
-}
-
-impl Default for ExportConfig {
-    fn default() -> Self {
-        Self { auto_export: None }
-    }
 }
 
 /// LSP configuration

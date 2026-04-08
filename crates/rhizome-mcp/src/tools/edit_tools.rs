@@ -675,10 +675,10 @@ pub fn create_file(args: &Value, project_root: &Path) -> Result<Value> {
         )));
     }
 
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| anyhow!("Failed to create directories: {e}"))?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent).map_err(|e| anyhow!("Failed to create directories: {e}"))?;
     }
 
     fs::write(&path, content).map_err(|e| anyhow!("Failed to write {}: {e}", path.display()))?;

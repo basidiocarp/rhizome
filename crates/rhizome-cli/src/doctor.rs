@@ -796,6 +796,7 @@ fn recv_line_delimited_response(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use std::fs;
@@ -882,7 +883,7 @@ args = ["serve"]
 
     #[test]
     fn summarize_lsp_binaries_deduplicates_shared_servers() {
-        let statuses = vec![
+        let statuses = [
             LanguageStatus {
                 language: Language::JavaScript,
                 tree_sitter: true,

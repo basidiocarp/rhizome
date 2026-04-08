@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 pub mod analysis;
 pub mod git;
 pub mod inspection;

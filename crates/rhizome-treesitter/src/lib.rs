@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 pub mod parser;
 pub mod queries;
 pub mod symbols;

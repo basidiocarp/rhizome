@@ -1,3 +1,9 @@
+#![allow(
+    clippy::collapsible_if,
+    clippy::empty_line_after_doc_comments,
+    unused_imports
+)]
+
 use std::fmt::Write;
 use std::path::Path;
 

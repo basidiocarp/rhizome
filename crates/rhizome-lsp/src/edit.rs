@@ -315,10 +315,10 @@ fn apply_text_edits(path: &Path, edits: &[TextEdit]) -> Result<()> {
 
     let mut previous_start = None;
     for (start, end, replacement) in spans {
-        if let Some(prev_start) = previous_start {
-            if end > prev_start {
-                anyhow::bail!("overlapping workspace edits for {}", path.display());
-            }
+        if let Some(prev_start) = previous_start
+            && end > prev_start
+        {
+            anyhow::bail!("overlapping workspace edits for {}", path.display());
         }
         content.replace_range(start..end, replacement);
         previous_start = Some(start);
@@ -399,6 +399,7 @@ fn utf16_column_to_offset(line: &str, column: u32) -> Result<usize> {
 }
 
 #[cfg(test)]
+#[allow(clippy::mutable_key_type)]
 mod tests {
     use std::collections::HashMap;
 

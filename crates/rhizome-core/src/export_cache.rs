@@ -148,11 +148,11 @@ fn cache_scope(project_root: &Path) -> String {
     let normalized_root = canonical_project_root(project_root);
     normalized_root.to_string_lossy().hash(&mut hasher);
 
-    if let Some(git_marker) = find_git_marker(&normalized_root) {
-        if let Some(context) = git_context(&git_marker) {
-            context.git_dir.to_string_lossy().hash(&mut hasher);
-            context.head.hash(&mut hasher);
-        }
+    if let Some(git_marker) = find_git_marker(&normalized_root)
+        && let Some(context) = git_context(&git_marker)
+    {
+        context.git_dir.to_string_lossy().hash(&mut hasher);
+        context.head.hash(&mut hasher);
     }
 
     format!("{:016x}", hasher.finish())
