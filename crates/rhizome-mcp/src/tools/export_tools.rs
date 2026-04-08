@@ -408,7 +408,8 @@ mod tests {
         let project_root = PathBuf::from("/tmp/example-project");
         let args = json!({ "path": "src" });
         let resolved = resolve_export_root(&args, &project_root).unwrap_err();
-        assert!(resolved.to_string().contains("/tmp/example-project/src"));
+        let expected = project_root.join("src").display().to_string();
+        assert!(resolved.to_string().contains(&expected));
     }
 
     #[test]
