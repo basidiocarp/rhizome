@@ -4,6 +4,24 @@ All notable changes to Rhizome are documented in this file.
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-04-08
+
+### Changed
+
+- **Foundation alignment**: README, config docs, troubleshooting, and
+  architecture notes now describe backend and transport boundaries more
+  explicitly.
+- **Boundary verification**: added focused coverage for backend selection and
+  repo-level architectural contracts.
+
+### Fixed
+
+- **Tracing depth**: non-serve CLI flows, installer boundaries, and LSP startup
+  paths now enter the shared root, workflow, and subprocess spans more
+  consistently.
+- **Operator docs**: runtime docs now match `RHIZOME_LOG` defaults and the real
+  warning-level behavior of the touched paths.
+
 ## [0.7.6] - 2026-04-08
 
 ### Fixed
