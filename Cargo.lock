@@ -1022,7 +1022,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "rhizome-cli"
-version = "0.7.8"
+version = "0.7.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "rhizome-core"
-version = "0.7.8"
+version = "0.7.9"
 dependencies = [
  "anyhow",
  "ignore",
@@ -1058,7 +1058,7 @@ dependencies = [
 
 [[package]]
 name = "rhizome-lsp"
-version = "0.7.8"
+version = "0.7.9"
 dependencies = [
  "anyhow",
  "lsp-types",
@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "rhizome-mcp"
-version = "0.7.8"
+version = "0.7.9"
 dependencies = [
  "anyhow",
  "ignore",
@@ -1092,7 +1092,7 @@ dependencies = [
 
 [[package]]
 name = "rhizome-treesitter"
-version = "0.7.8"
+version = "0.7.9"
 dependencies = [
  "anyhow",
  "criterion",
