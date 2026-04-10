@@ -34,7 +34,7 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
    ```
    Tools such as rename and reference-heavy operations need LSP to be fully useful.
 
-3. If the language only has weak tree-sitter coverage today, use [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md) to get the server working or add query coverage.
+3. If the language only has weak tree-sitter coverage today, use [language-setup.md](./language-setup.md) to get the server working or add query coverage.
 
 ### LSP-required tool says the server is unavailable
 
@@ -53,12 +53,20 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
    ```bash
    rhizome status
    ```
-   Then use [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md#path-2-lsp-languages-auto-install) for the install or manual override path.
+   Then use [language-setup.md](./language-setup.md#path-2-lsp-languages-auto-install) for the install or manual override path.
 
 3. Restart Rhizome after installing or changing config:
    ```bash
    rhizome serve
    ```
+
+4. If the live serve path still fails, raise logging and inspect stderr:
+   ```bash
+   RHIZOME_LOG=debug rhizome serve
+   ```
+   The LSP client now forwards child stderr and reports reader shutdown as an
+   explicit tool error, so the root cause should appear in the process logs
+   instead of disappearing as a silent transport drop.
 
 ### Auto-install fails or does nothing
 
@@ -230,7 +238,7 @@ Start with `rhizome status`. Most failures come from backend selection, a missin
    cat /path/to/project/.rhizome/config.toml
    ```
 
-3. If the root is wrong, fix the project markers using [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md).
+3. If the root is wrong, fix the project markers using [language-setup.md](./language-setup.md).
 
 ## Performance Issues
 
@@ -319,6 +327,6 @@ rhizome --help
 
 ## See also
 
-- [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md)
-- [CONFIG.md](./CONFIG.md)
-- [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [language-setup.md](./language-setup.md)
+- [config.md](./config.md)
+- [architecture.md](./architecture.md)

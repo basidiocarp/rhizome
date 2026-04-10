@@ -145,9 +145,10 @@ Symbol Extraction
     └─ Fallback to generic AST walk (symbols.rs:262)
 ```
 
-**Query patterns** (17 languages with full extraction):
+**Query patterns** (14 languages in the default build, 17 with `lang-all`):
 
-- Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, Ruby, PHP, Bash, C#, Elixir, Lua, Swift, Zig, Haskell
+- Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, Ruby, PHP, Bash, Elixir, Lua, Zig
+- Optional grammar pack: C#, Swift, Haskell
 - Each has a `.scm` query file in `crates/rhizome-treesitter/src/queries/`
 - Queries use tree-sitter capture groups: `@function`, `@struct_def`, `@import`, etc.
 
@@ -317,4 +318,3 @@ name = "rust"
 tree_sitter_query = "custom.scm"  # Override query pattern
 server_binary = "rust-analyzer"   # Override server binary
 ```
-

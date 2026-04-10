@@ -130,7 +130,8 @@ File: `crates/rhizome-treesitter/src/lib.rs`
 | Tier | Examples | Behavior |
 |------|----------|----------|
 | Query-backed | Rust, Python, TypeScript, Go, Java, C, C++, Ruby, PHP | Precise extraction with language-specific queries |
-| Generic fallback | Bash, C#, Elixir, Lua, Swift, Zig, Haskell | Walk common node types and infer structure |
+| Generic fallback | Bash, Elixir, Lua, Zig | Walk common node types and infer structure |
+| Optional grammar pack | C#, Swift, Haskell | Disabled in the default build; enable `rhizome-treesitter/lang-all` for offline parsing |
 | LSP-only | Terraform, Kotlin, Dart, Vue, Svelte, Astro, Typst, YAML | Tree-sitter is insufficient or unavailable, so deeper tools rely on LSP |
 
 ### Adding a Query Pattern

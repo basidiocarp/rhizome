@@ -83,12 +83,15 @@ impl ParserPool {
             ParserDialect::Language(Language::Ruby) => Ok(tree_sitter_ruby::LANGUAGE.into()),
             ParserDialect::Language(Language::Php) => Ok(tree_sitter_php::LANGUAGE_PHP.into()),
             ParserDialect::Language(Language::Bash) => Ok(tree_sitter_bash::LANGUAGE.into()),
+            #[cfg(feature = "lang-csharp")]
             ParserDialect::Language(Language::CSharp) => Ok(tree_sitter_c_sharp::LANGUAGE.into()),
             ParserDialect::Language(Language::Elixir) => Ok(tree_sitter_elixir::LANGUAGE.into()),
             // Kotlin: tree-sitter-kotlin uses incompatible tree-sitter version; uses generic fallback
             ParserDialect::Language(Language::Lua) => Ok(tree_sitter_lua::LANGUAGE.into()),
+            #[cfg(feature = "lang-swift")]
             ParserDialect::Language(Language::Swift) => Ok(tree_sitter_swift::LANGUAGE.into()),
             ParserDialect::Language(Language::Zig) => Ok(tree_sitter_zig::LANGUAGE.into()),
+            #[cfg(feature = "lang-haskell")]
             ParserDialect::Language(Language::Haskell) => Ok(tree_sitter_haskell::LANGUAGE.into()),
             ParserDialect::Language(lang) => Err(anyhow!("No tree-sitter grammar for {:?}", lang)),
         }

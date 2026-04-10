@@ -14,7 +14,7 @@ Shows a status table with `Tree-Sitter`, `LSP Server`, and `Status` columns. `Tr
 
 ## Path 1: Out-of-the-Box Languages (Tree-Sitter)
 
-These languages work immediately with zero setup:
+These languages work immediately with zero setup in the default build:
 
 | Language | Works With | Example |
 |----------|-----------|---------|
@@ -29,14 +29,24 @@ These languages work immediately with zero setup:
 | Ruby | All tree-sitter tools | Yes, full support |
 | PHP | All tree-sitter tools | Yes, full support |
 | Bash | All tree-sitter tools (dedicated query) | Yes, full support |
-| C# | All tree-sitter tools (dedicated query) | Yes, full support |
 | Elixir | All tree-sitter tools (dedicated query) | Yes, full support |
 | Lua | All tree-sitter tools (dedicated query) | Yes, full support |
-| Swift | All tree-sitter tools (dedicated query) | Yes, full support |
 | Zig | All tree-sitter tools (dedicated query) | Yes, full support |
-| Haskell | All tree-sitter tools (dedicated query) | Yes, full support |
 
 "Full support" means precise symbol extraction via dedicated query patterns or built-in tree-sitter extraction. Query patterns use language-specific grammar rules to extract exact symbol locations, kinds, and signatures. The generic fallback walks the AST and matches common node types like `function_definition` and `class_declaration`—useful, but less precise.
+
+### optional grammar pack
+
+The default build leaves the heaviest niche grammars out of the shipped
+tree-sitter set to keep compile time and binary size down. If you need offline
+tree-sitter support for these languages, build with
+`rhizome-treesitter/lang-all`.
+
+| Language | Default build | `lang-all` build |
+|----------|---------------|------------------|
+| C# | LSP-backed by default | Tree-sitter + LSP |
+| Swift | LSP-backed by default | Tree-sitter + LSP |
+| Haskell | LSP-backed by default | Tree-sitter + LSP |
 
 ## Path 2: LSP Languages (Auto-Install)
 
@@ -327,4 +337,4 @@ Example: `get_symbols` works, but `rename_symbol` fails. Check:
 3. **Test a tool**: `rhizome symbols <file>`
 4. **Export to Hyphae**: `rhizome export --project <project>`
 
-See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for common issues and fixes.
+See [troubleshooting.md](./troubleshooting.md) for common issues and fixes.

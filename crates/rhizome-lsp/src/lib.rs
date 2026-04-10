@@ -3,6 +3,7 @@ pub mod convert;
 pub mod edit;
 pub mod manager;
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -21,15 +22,16 @@ use crate::edit::{ApplyResult, PreviewResult, apply_workspace_edit, summarize_wo
 use crate::manager::LanguageServerManager;
 
 /// LSP-backed code intelligence. Wraps async LSP calls behind the sync
-/// `CodeIntelligence` trait using `Handle::block_on`.
+/// `CodeIntelligence` trait using a runtime-safe blocking wrapper.
 ///
 /// Manages multiple LSP clients keyed by (language, workspace_root) for
 /// monorepo support. The workspace root is either passed explicitly via
 /// root-aware methods or derived from the file path.
 ///
-/// **Important**: `CodeIntelligence` methods use `block_on` internally, so they
-/// must NOT be called from within a tokio async context. Use `spawn_blocking`
-/// from async code, or call the async methods on `LspClient` directly.
+/// **Important**: `CodeIntelligence` methods are safe to call from Rhizome's
+/// async serve path because the implementation uses `block_in_place` when a
+/// Tokio runtime is already active. Use the async `LspClient` methods directly
+/// only when you need finer-grained control.
 pub struct LspBackend {
     manager: Arc<tokio::sync::Mutex<LanguageServerManager>>,
     handle: tokio::runtime::Handle,
@@ -43,6 +45,17 @@ impl LspBackend {
             manager: Arc::new(tokio::sync::Mutex::new(LanguageServerManager::new())),
             handle,
             default_root: workspace_root,
+        }
+    }
+
+    fn run_blocking<F, T>(&self, future: F) -> Result<T>
+    where
+        F: Future<Output = Result<T>>,
+    {
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::block_in_place(|| self.handle.block_on(future))
+        } else {
+            self.handle.block_on(future)
         }
     }
 
@@ -64,7 +77,7 @@ impl LspBackend {
     pub fn get_symbols_with_root(&self, file: &Path, workspace_root: &Path) -> Result<Vec<Symbol>> {
         let file = file.to_path_buf();
         let root = workspace_root.to_path_buf();
-        self.handle.block_on(async {
+        self.run_blocking(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
@@ -103,7 +116,7 @@ impl LspBackend {
             line: position.line,
             character: position.column,
         };
-        self.handle.block_on(async {
+        self.run_blocking(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
@@ -126,7 +139,7 @@ impl LspBackend {
     ) -> Result<Vec<Diagnostic>> {
         let file = file.to_path_buf();
         let root = workspace_root.to_path_buf();
-        self.handle.block_on(async {
+        self.run_blocking(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
@@ -158,7 +171,7 @@ impl LspBackend {
             character: position.column,
         };
 
-        self.handle.block_on(async {
+        self.run_blocking(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
@@ -197,7 +210,7 @@ impl LspBackend {
             character: position.column,
         };
 
-        self.handle.block_on(async {
+        self.run_blocking(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
@@ -237,7 +250,7 @@ impl CodeIntelligence for LspBackend {
         let file = file.to_path_buf();
         let name = name.to_string();
         let root = self.default_root.clone();
-        self.handle.block_on(async {
+        self.run_blocking(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
             let client = mgr

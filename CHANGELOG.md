@@ -4,6 +4,23 @@ All notable changes to Rhizome are documented in this file.
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-04-09
+
+### Added
+
+- **Parser benchmarking**: Added a Criterion bench for tree-sitter symbol
+  parsing plus a dedicated tooling guide for performance investigation work.
+- **LSP runtime guidance**: Expanded the LSP guide and runtime safety coverage
+  so serve-mode failures surface more clearly for operators.
+
+### Changed
+
+- **Lean default grammar set**: The default tree-sitter build now ships a
+  smaller grammar set, with heavier language grammars available behind
+  `lang-all`.
+- **Docs structure**: Rhizome's docs now follow the lowercase path layout with
+  a central `docs/README.md` and clearer architecture/config references.
+
 ## [0.7.7] - 2026-04-08
 
 ### Changed

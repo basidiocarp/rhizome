@@ -1,6 +1,6 @@
 # Rhizome Roadmap
 
-This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../docs/ROADMAP.md) keeps the ecosystem sequencing and cross-repo priorities.
+This page is the Rhizome-specific backlog. The workspace [ROADMAP.md](../../docs/workspace/ROADMAP.md) keeps the ecosystem sequencing and cross-repo priorities.
 
 ## Recently Shipped
 

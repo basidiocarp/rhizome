@@ -22,9 +22,11 @@ pub struct LspClient {
     stdin: Arc<tokio::sync::Mutex<BufWriter<ChildStdin>>>,
     pending_requests: Arc<Mutex<HashMap<i64, oneshot::Sender<Value>>>>,
     diagnostics_cache: Arc<Mutex<HashMap<String, Vec<lsp_types::Diagnostic>>>>,
+    reader_error: Arc<Mutex<Option<String>>>,
     next_id: AtomicI64,
     initialized: bool,
     reader_handle: tokio::task::JoinHandle<()>,
+    stderr_handle: tokio::task::JoinHandle<()>,
     process: Child,
     binary: String,
 }
@@ -45,7 +47,7 @@ impl LspClient {
             .args(&config.args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .with_context(|| format!("Failed to spawn language server: {}", config.binary))?;
@@ -58,31 +60,56 @@ impl LspClient {
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("Failed to capture stdout"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to capture stderr"))?;
 
         let pending_requests: Arc<Mutex<HashMap<i64, oneshot::Sender<Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let diagnostics_cache: Arc<Mutex<HashMap<String, Vec<lsp_types::Diagnostic>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let reader_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let binary = config.binary.clone();
+        let reader_binary = binary.clone();
+        let stderr_binary = binary.clone();
 
         let reader_pending = Arc::clone(&pending_requests);
         let reader_diags = Arc::clone(&diagnostics_cache);
+        let reader_error_for_stdout = Arc::clone(&reader_error);
         let reader_span = workflow_span("lsp_reader", &span_context);
         let reader_handle = tokio::spawn(
             async move {
-                Self::reader_task(BufReader::new(stdout), reader_pending, reader_diags).await;
+                Self::reader_task(
+                    BufReader::new(stdout),
+                    reader_pending,
+                    reader_diags,
+                    reader_error_for_stdout,
+                    reader_binary,
+                )
+                .await;
             }
             .instrument(reader_span),
+        );
+        let stderr_span = workflow_span("lsp_stderr", &span_context);
+        let stderr_handle = tokio::spawn(
+            async move {
+                Self::stderr_task(BufReader::new(stderr), stderr_binary).await;
+            }
+            .instrument(stderr_span),
         );
 
         Ok(Self {
             stdin: Arc::new(tokio::sync::Mutex::new(BufWriter::new(stdin))),
             pending_requests,
             diagnostics_cache,
+            reader_error,
             next_id: AtomicI64::new(1),
             initialized: false,
             reader_handle,
+            stderr_handle,
             process: child,
-            binary: config.binary.clone(),
+            binary,
         })
     }
 
@@ -137,6 +164,15 @@ impl LspClient {
         &self,
         params: R::Params,
     ) -> Result<R::Result> {
+        if let Some(message) = self
+            .reader_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+        {
+            anyhow::bail!("{message}");
+        }
+
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
 
@@ -325,13 +361,18 @@ impl LspClient {
             .send_notification::<lsp_types::notification::Exit>(())
             .await;
         self.reader_handle.abort();
+        self.stderr_handle.abort();
         let _ = self.process.wait().await;
         Ok(())
     }
 
     /// Check if the language server process is still running.
     pub fn is_alive(&mut self) -> bool {
-        matches!(self.process.try_wait(), Ok(None))
+        self.reader_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_none()
+            && matches!(self.process.try_wait(), Ok(None))
     }
 
     /// Background task: reads JSON-RPC messages from stdout and dispatches responses.
@@ -339,6 +380,8 @@ impl LspClient {
         mut reader: BufReader<tokio::process::ChildStdout>,
         pending: Arc<Mutex<HashMap<i64, oneshot::Sender<Value>>>>,
         diagnostics_cache: Arc<Mutex<HashMap<String, Vec<lsp_types::Diagnostic>>>>,
+        reader_error: Arc<Mutex<Option<String>>>,
+        binary: String,
     ) {
         loop {
             // Read headers until blank line
@@ -346,9 +389,16 @@ impl LspClient {
             loop {
                 let mut line = String::new();
                 match reader.read_line(&mut line).await {
-                    Ok(0) => return, // EOF
+                    Ok(0) => {
+                        let message = format!("LSP server '{binary}' closed stdout unexpectedly");
+                        tracing::warn!("{message}");
+                        Self::mark_reader_failure(&pending, &reader_error, message);
+                        return;
+                    }
                     Err(e) => {
-                        tracing::debug!("LSP reader error: {}", e);
+                        let message = format!("LSP stdout reader error for '{binary}': {e}");
+                        tracing::warn!("{message}");
+                        Self::mark_reader_failure(&pending, &reader_error, message);
                         return;
                     }
                     Ok(_) => {}
@@ -371,7 +421,9 @@ impl LspClient {
             // Read body
             let mut body = vec![0u8; content_length];
             if let Err(e) = reader.read_exact(&mut body).await {
-                tracing::debug!("LSP reader failed to read body: {}", e);
+                let message = format!("LSP stdout body read failed for '{binary}': {e}");
+                tracing::warn!("{message}");
+                Self::mark_reader_failure(&pending, &reader_error, message);
                 return;
             }
 
@@ -411,6 +463,55 @@ impl LspClient {
                     tracing::trace!("LSP notification: {}", method);
                 }
             }
+        }
+    }
+
+    async fn stderr_task(mut reader: BufReader<tokio::process::ChildStderr>, binary: String) {
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line).await {
+                Ok(0) => {
+                    tracing::debug!("LSP stderr closed for '{binary}'");
+                    return;
+                }
+                Ok(_) => {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        tracing::warn!("LSP stderr [{binary}]: {trimmed}");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("LSP stderr read error for '{binary}': {e}");
+                    return;
+                }
+            }
+        }
+    }
+
+    fn mark_reader_failure(
+        pending: &Arc<Mutex<HashMap<i64, oneshot::Sender<Value>>>>,
+        reader_error: &Arc<Mutex<Option<String>>>,
+        message: String,
+    ) {
+        {
+            let mut state = reader_error.lock().unwrap_or_else(|p| p.into_inner());
+            if state.is_none() {
+                *state = Some(message.clone());
+            }
+        }
+
+        let mut pending = pending.lock().unwrap_or_else(|p| p.into_inner());
+        for (id, tx) in pending.drain() {
+            let response_message = message.clone();
+            let response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32000,
+                    "message": response_message,
+                }
+            });
+            let _ = tx.send(response);
         }
     }
 }

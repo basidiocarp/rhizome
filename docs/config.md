@@ -108,7 +108,7 @@ server_args = ["--stdio"]           # Single arg
 server_args = ["--stdio", "--log=verbose"]  # Multiple args
 ```
 
-- **Default**: Language-specific defaults (see [ARCHITECTURE.md](./ARCHITECTURE.md))
+- **Default**: Language-specific defaults (see [architecture.md](./architecture.md))
 - **Note**: Some servers require `--stdio` for JSON-RPC over stdin/stdout
 
 Common args by language:
@@ -378,7 +378,7 @@ server_args = []
 enabled = true
 ```
 
-See [LANGUAGE-SETUP.md](./LANGUAGE-SETUP.md) for complete language server defaults.
+See [language-setup.md](./language-setup.md) for complete language server defaults.
 
 ## Example Configurations
 

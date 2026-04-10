@@ -98,11 +98,14 @@ edit or export   ─►    tool handler          ─►    project-aware result
 | Tier | Languages | How it works |
 |------|-----------|-------------|
 | Full query patterns | 10 languages | Language-specific tree-sitter queries |
-| Generic fallback | 8 languages | Generic AST walker over common node types |
+| Generic fallback | 4 languages in the default build | Generic AST walker over common node types |
+| Optional grammar pack | 3 niche languages | `lang-all` enables C#, Swift, and Haskell tree-sitter support |
 | LSP only | 14 or more languages | Language server required |
 
 All 32 supported languages have LSP server configs, and 20 or more have
-auto-install recipes.
+auto-install recipes. The default binary keeps the heaviest niche grammars out
+of the shipped tree-sitter set; `C#`, `Swift`, and `Haskell` stay available
+through LSP unless you opt into `rhizome-treesitter/lang-all`.
 
 ---
 
@@ -188,20 +191,33 @@ traffic. Logs go to stderr so they do not corrupt the transport.
 ## Documentation
 
 - [docs/README.md](docs/README.md): docs index
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): backend and server architecture
-- [docs/CONFIG.md](docs/CONFIG.md): config file reference
-- [docs/LANGUAGE-SETUP.md](docs/LANGUAGE-SETUP.md): language and LSP setup details
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md): diagnostics and fixes
-- [docs/ROADMAP.md](docs/ROADMAP.md): planned work
-- [LSP-GUIDE.md](LSP-GUIDE.md): LSP-focused guidance
+- [docs/architecture.md](docs/architecture.md): backend and server architecture
+- [docs/config.md](docs/config.md): config file reference
+- [docs/language-setup.md](docs/language-setup.md): language and LSP setup details
+- [docs/troubleshooting.md](docs/troubleshooting.md): diagnostics and fixes
+- [docs/tooling.md](docs/tooling.md): repo-local tests and profiling
+- [docs/roadmap.md](docs/roadmap.md): planned work
+- [docs/lsp-guide.md](docs/lsp-guide.md): LSP-focused guidance
 
 ## Development
 
 ```bash
+# Fast test loop
+cargo nextest run --workspace
+
+# Targeted benchmark for tree-sitter symbol extraction
+cargo bench -p rhizome-treesitter --bench parse_symbols
+
+# Opt into every tree-sitter grammar when you need the niche language pack
+cargo build --workspace -p rhizome-cli --features rhizome-treesitter/lang-all
+
+# Full build and lint
 cargo build --release
-cargo test --all
 cargo clippy
 cargo fmt
+
+# Use command timing when you need to inspect a real command path
+time cargo run -p rhizome-cli --bin rhizome -- symbols /absolute/path/to/file.rs
 ```
 
 ## License

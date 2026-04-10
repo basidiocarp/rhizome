@@ -224,11 +224,14 @@ static CPP_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::ne
 static RUBY_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static PHP_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static BASH_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+#[cfg(feature = "lang-csharp")]
 static CSHARP_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static ELIXIR_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static LUA_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+#[cfg(feature = "lang-swift")]
 static SWIFT_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 static ZIG_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
+#[cfg(feature = "lang-haskell")]
 static HASKELL_COMPILED: OnceLock<Result<tree_sitter::Query, String>> = OnceLock::new();
 
 fn compile_query(lang: &tree_sitter::Language, source: &str) -> Result<tree_sitter::Query, String> {
@@ -296,6 +299,7 @@ pub fn get_query_for_file(lang: &Language, file_path: &str) -> Result<&'static t
             let ts_lang: tree_sitter::Language = tree_sitter_bash::LANGUAGE.into();
             BASH_COMPILED.get_or_init(|| compile_query(&ts_lang, BASH_QUERY))
         }
+        #[cfg(feature = "lang-csharp")]
         QueryDialect::Language(Language::CSharp) => {
             let ts_lang: tree_sitter::Language = tree_sitter_c_sharp::LANGUAGE.into();
             CSHARP_COMPILED.get_or_init(|| compile_query(&ts_lang, CSHARP_QUERY))
@@ -308,6 +312,7 @@ pub fn get_query_for_file(lang: &Language, file_path: &str) -> Result<&'static t
             let ts_lang: tree_sitter::Language = tree_sitter_lua::LANGUAGE.into();
             LUA_COMPILED.get_or_init(|| compile_query(&ts_lang, LUA_QUERY))
         }
+        #[cfg(feature = "lang-swift")]
         QueryDialect::Language(Language::Swift) => {
             let ts_lang: tree_sitter::Language = tree_sitter_swift::LANGUAGE.into();
             SWIFT_COMPILED.get_or_init(|| compile_query(&ts_lang, SWIFT_QUERY))
@@ -316,6 +321,7 @@ pub fn get_query_for_file(lang: &Language, file_path: &str) -> Result<&'static t
             let ts_lang: tree_sitter::Language = tree_sitter_zig::LANGUAGE.into();
             ZIG_COMPILED.get_or_init(|| compile_query(&ts_lang, ZIG_QUERY))
         }
+        #[cfg(feature = "lang-haskell")]
         QueryDialect::Language(Language::Haskell) => {
             let ts_lang: tree_sitter::Language = tree_sitter_haskell::LANGUAGE.into();
             HASKELL_COMPILED.get_or_init(|| compile_query(&ts_lang, HASKELL_QUERY))

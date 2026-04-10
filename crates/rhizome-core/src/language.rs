@@ -52,10 +52,7 @@ impl Language {
                 | Language::Ruby
                 | Language::Elixir
                 | Language::Zig
-                | Language::CSharp
-                | Language::Swift
                 | Language::Php
-                | Language::Haskell
                 | Language::Bash
                 | Language::Lua
         )
