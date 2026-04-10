@@ -190,7 +190,7 @@ impl McpServer {
     }
 
     fn handle_initialize(&self) -> std::result::Result<Value, JsonRpcError> {
-        let instructions = "Rhizome provides code intelligence — symbol extraction, definitions, references, diagnostics, and impact analysis. Top tools: get_symbols (file overview), get_definition (symbol source), find_references (cross-file), analyze_impact (change blast radius), search_symbols (global search), get_diagnostics (errors/warnings), and get_region (expand one structural region). Most tools require an absolute file path. Use get_structure for project overview. Use export_to_hyphae to push code graphs to Hyphae for persistent knowledge.";
+        let instructions = "Rhizome provides code intelligence — symbol extraction, definitions, references, diagnostics, impact analysis, and repo-understanding exports. Top tools: get_symbols (file overview), get_definition (symbol source), find_references (cross-file), analyze_impact (change blast radius), search_symbols (global search), get_diagnostics (errors/warnings), and get_region (expand one structural region). Most tools require an absolute file path. Use get_structure for project overview. Use export_to_hyphae to push code graphs to Hyphae for persistent knowledge, or export_repo_understanding for a typed repo-understanding artifact with explicit update class and repo-surface summary.";
         Ok(json!({
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
@@ -202,7 +202,7 @@ impl McpServer {
         if self.unified {
             let tool_schema = json!([{
                 "name": "rhizome",
-                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, analyze_impact, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_region, get_changed_files, rename_symbol, get_diagnostics, get_hover_info, replace_symbol_body, insert_after_symbol, insert_before_symbol, replace_lines, insert_at_line, delete_lines, create_file, copy_symbol, move_symbol, export_to_hyphae",
+                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, analyze_impact, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_region, get_changed_files, rename_symbol, get_diagnostics, get_hover_info, replace_symbol_body, insert_after_symbol, insert_before_symbol, replace_lines, insert_at_line, delete_lines, create_file, copy_symbol, move_symbol, export_to_hyphae, export_repo_understanding",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

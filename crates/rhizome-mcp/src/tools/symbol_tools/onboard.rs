@@ -131,6 +131,7 @@ pub fn rhizome_onboard(project_root: &Path) -> Result<Value> {
         "copy_symbol",
         "move_symbol",
         "export_to_hyphae",
+        "export_repo_understanding",
         "rhizome_onboard",
     ];
 
@@ -138,7 +139,9 @@ pub fn rhizome_onboard(project_root: &Path) -> Result<Value> {
         (fast, no deps), LSP (full-featured, auto-selected), and a parserless heuristic \
         fallback for outline-only reads. Start with get_symbols to list symbols in a file, \
         get_structure for a hierarchical view, or get_region to expand one section without \
-        reading the full file. Use export_to_hyphae to build a knowledge graph.";
+        reading the full file. Use export_to_hyphae to build a knowledge graph, or \
+        export_repo_understanding to capture repo surfaces and incremental update class in a \
+        typed understanding artifact.";
 
     let result = json!({
         "languages_supported": languages_supported,

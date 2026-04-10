@@ -98,6 +98,15 @@ enum Commands {
         #[arg(long, short)]
         project: Option<PathBuf>,
     },
+    /// Export a typed repo-understanding artifact
+    ExportUnderstanding {
+        /// Workspace/project root path
+        #[arg(long, short)]
+        project: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Show backend status per language
     Status {
         /// Workspace/project root path
@@ -166,6 +175,7 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Structure { .. } => "structure",
         Commands::Init { .. } => "init",
         Commands::Export { .. } => "export",
+        Commands::ExportUnderstanding { .. } => "export_understanding",
         Commands::Status { .. } => "status",
         Commands::SelfUpdate { .. } => "self_update",
         Commands::Doctor { .. } => "doctor",
@@ -187,6 +197,7 @@ fn command_span_context(command: &Commands) -> SpanContext {
     let workspace_root = match command {
         Commands::Serve { project, .. }
         | Commands::Export { project }
+        | Commands::ExportUnderstanding { project, .. }
         | Commands::Status { project }
         | Commands::Summarize { project, .. } => Some(detect_project_root(project.clone())),
         Commands::Lsp { action } => match action {
@@ -490,6 +501,46 @@ fn cmd_export(project: Option<PathBuf>) -> Result<()> {
     }
 }
 
+fn cmd_export_understanding(project: Option<PathBuf>, json_output: bool) -> Result<()> {
+    let project_root = detect_project_root(project);
+    let backend = TreeSitterBackend::new();
+    let args = serde_json::json!({});
+
+    match rhizome_mcp::tools::export_tools::export_repo_understanding(
+        &backend,
+        &args,
+        &project_root,
+    ) {
+        Ok(result) => {
+            if json_output {
+                let json = serde_json::to_string_pretty(&result)
+                    .context("Failed to serialize understanding export to JSON")?;
+                println!("{json}");
+            } else if let Some(text) = result
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|o| o.get("text"))
+                .and_then(|t| t.as_str())
+            {
+                println!("{text}");
+            }
+            if result
+                .get("isError")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Understanding export failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn cmd_status(project: Option<PathBuf>) -> Result<()> {
     let project_root = detect_project_root(project);
     let config = rhizome_core::RhizomeConfig::load(&project_root).unwrap_or_default();
@@ -635,6 +686,7 @@ async fn main() -> Result<()> {
         Commands::Structure { file } => cmd_structure(&file),
         Commands::Init { config, editor } => cmd_init(config, editor),
         Commands::Export { project } => cmd_export(project),
+        Commands::ExportUnderstanding { project, json } => cmd_export_understanding(project, json),
         Commands::Status { project } => cmd_status(project),
         Commands::SelfUpdate { check } => self_update::run(check),
         Commands::Doctor { fix } => doctor::run(fix),

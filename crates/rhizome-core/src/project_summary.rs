@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::backend::CodeIntelligence;
 use crate::error::Result;
 use crate::language::Language;
+use crate::repo_understanding::{RepoSurfaceSummary, classify_repo_surface};
 use crate::symbol::{Symbol, SymbolKind};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,6 +27,8 @@ pub struct ProjectSummary {
     pub modules: Vec<ModuleSummary>,
     pub test_files: usize,
     pub test_functions: usize,
+    #[serde(default)]
+    pub repo_surfaces: RepoSurfaceSummary,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,6 +222,7 @@ pub fn summarize_project(root: &Path, backend: &dyn CodeIntelligence) -> Result<
     let mut total_symbols: usize = 0;
     let mut test_files: usize = 0;
     let mut test_functions: usize = 0;
+    let mut repo_surfaces = RepoSurfaceSummary::default();
 
     for entry in walker {
         let entry = match entry {
@@ -228,6 +232,12 @@ pub fn summarize_project(root: &Path, backend: &dyn CodeIntelligence) -> Result<
 
         let path = entry.path();
         if !path.is_file() {
+            continue;
+        }
+
+        if let Some((kind, note)) = classify_repo_surface(path) {
+            let relative_path = path.strip_prefix(&root).unwrap_or(path);
+            repo_surfaces.record(relative_path, kind, note);
             continue;
         }
 
@@ -332,6 +342,7 @@ pub fn summarize_project(root: &Path, backend: &dyn CodeIntelligence) -> Result<
         modules,
         test_files,
         test_functions,
+        repo_surfaces,
     })
 }
 
@@ -398,6 +409,21 @@ impl ProjectSummary {
                     "  {}/ \u{2014} {} files, {} functions",
                     m.name, m.files, m.functions,
                 );
+            }
+        }
+
+        if !self.repo_surfaces.is_empty() {
+            let _ = writeln!(out);
+            let _ = writeln!(out, "Repo surfaces:");
+            let _ = writeln!(
+                out,
+                "  documentation: {}, configuration: {}, build: {}",
+                self.repo_surfaces.documentation_files,
+                self.repo_surfaces.configuration_files,
+                self.repo_surfaces.build_files,
+            );
+            for sample in &self.repo_surfaces.samples {
+                let _ = writeln!(out, "  {} ({}) - {}", sample.path, sample.kind, sample.note);
             }
         }
 
@@ -577,6 +603,7 @@ mod tests {
             }],
             test_files: 2,
             test_functions: 15,
+            repo_surfaces: RepoSurfaceSummary::default(),
         };
 
         let output = summary.format_display();
@@ -588,6 +615,34 @@ mod tests {
         assert!(output.contains("src/main.rs (main())"));
         assert!(output.contains("Config, Server"));
         assert!(output.contains("src/"));
+    }
+
+    #[test]
+    fn test_summarize_project_includes_repo_surfaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let src = root.join("src");
+        let docs = root.join("docs");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&docs).unwrap();
+        std::fs::write(src.join("main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(docs.join("README.md"), "# demo\n").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
+
+        let backend = MockBackend::new(vec![make_symbol("main", SymbolKind::Function)]);
+
+        let summary = summarize_project(root, &backend).unwrap();
+        assert_eq!(summary.total_files, 1);
+        assert_eq!(summary.repo_surfaces.documentation_files, 1);
+        assert_eq!(summary.repo_surfaces.configuration_files, 1);
+        assert!(
+            summary
+                .repo_surfaces
+                .samples
+                .iter()
+                .any(|sample| sample.path.ends_with("README.md"))
+        );
     }
 
     #[test]

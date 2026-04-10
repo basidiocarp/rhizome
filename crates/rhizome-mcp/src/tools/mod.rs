@@ -195,6 +195,9 @@ impl ToolDispatcher {
 
             // ── Export tools ────────────────────────────────────────────
             "export_to_hyphae" => export_tools::export_to_hyphae(&self.treesitter, &args, &root),
+            "export_repo_understanding" => {
+                export_tools::export_repo_understanding(&self.treesitter, &args, &root)
+            }
 
             // ── Onboarding ───────────────────────────────────────────────
             "rhizome_onboard" => symbol_tools::rhizome_onboard(&self.project_root),

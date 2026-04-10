@@ -10,6 +10,7 @@ pub mod language;
 pub mod parserless;
 pub mod paths;
 pub mod project_summary;
+pub mod repo_understanding;
 pub mod root_detector;
 pub mod symbol;
 
@@ -29,5 +30,9 @@ pub use paths::{
     augmented_path, global_config_path, managed_bin_dir, project_config_path, project_state_dir,
 };
 pub use project_summary::{EntryPoint, ModuleSummary, ProjectSummary, summarize_project};
+pub use repo_understanding::{
+    RepoSurfaceKind, RepoSurfaceNode, RepoSurfaceSummary, RepoUnderstandingArtifact,
+    UnderstandingUpdateClass, classify_repo_surface,
+};
 pub use root_detector::detect_workspace_root;
 pub use symbol::{Location, Symbol, SymbolKind, find_symbol_by_name};

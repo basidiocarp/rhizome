@@ -4,6 +4,21 @@ All notable changes to Rhizome are documented in this file.
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-04-10
+
+### Added
+
+- **Repo-understanding export surface**: Added typed repo-understanding artifacts
+  and summary exports so CLI and MCP clients can consume bounded analyzer
+  output directly.
+
+### Changed
+
+- **Incremental understanding summaries**: Project summaries now include
+  repo-surface summaries and incremental export classification metadata.
+- **Operator discoverability**: CLI, MCP onboarding, and export docs now point
+  at the richer analyzer-backed understanding flow more explicitly.
+
 ## [0.7.8] - 2026-04-09
 
 ### Added

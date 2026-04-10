@@ -5,7 +5,10 @@ use ignore::WalkBuilder;
 use rhizome_core::export_cache::ExportCache;
 use rhizome_core::graph::{CodeGraph, build_graph, merge_graphs};
 use rhizome_core::hyphae;
-use rhizome_core::{CodeIntelligence, Language, derive_export_identity};
+use rhizome_core::{
+    CodeIntelligence, Language, RepoUnderstandingArtifact, UnderstandingUpdateClass,
+    derive_export_identity, summarize_project,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -24,6 +27,7 @@ struct ExportSummary {
     project: String,
     memoir_name: String,
     export_root: String,
+    update_class: UnderstandingUpdateClass,
     supported_files: usize,
     files_processed: usize,
     files_skipped_cached: usize,
@@ -39,6 +43,21 @@ struct PreparedExport {
     cache: ExportCache,
 }
 
+#[derive(Debug, Serialize)]
+struct UnderstandingExportSummary {
+    status: &'static str,
+    project: String,
+    export_root: String,
+    update_class: UnderstandingUpdateClass,
+    files_processed: usize,
+    files_skipped_cached: usize,
+    files_failed: usize,
+    supported_files: usize,
+    failure_samples: Vec<String>,
+    warnings: Vec<String>,
+    artifact: RepoUnderstandingArtifact,
+}
+
 fn export_response(text: &str, summary: &ExportSummary) -> Value {
     json!({
         "content": [{ "type": "text", "text": text }],
@@ -51,6 +70,21 @@ fn export_error(message: &str, summary: &ExportSummary) -> Value {
         "isError": true,
         "content": [{ "type": "text", "text": message }],
         "export": summary,
+    })
+}
+
+fn understanding_response(text: &str, summary: &UnderstandingExportSummary) -> Value {
+    json!({
+        "content": [{ "type": "text", "text": text }],
+        "understanding": summary,
+    })
+}
+
+fn understanding_error(message: &str, summary: &UnderstandingExportSummary) -> Value {
+    json!({
+        "isError": true,
+        "content": [{ "type": "text", "text": message }],
+        "understanding": summary,
     })
 }
 
@@ -161,6 +195,11 @@ fn collect_export(
             project: project_name.to_string(),
             memoir_name: memoir_name.to_string(),
             export_root: export_root.display().to_string(),
+            update_class: UnderstandingUpdateClass::from_export_stats(
+                files_processed,
+                files_skipped_cached,
+                files_failed,
+            ),
             supported_files,
             files_processed,
             files_skipped_cached,
@@ -180,12 +219,13 @@ fn render_summary_text(
     match summary.status {
         "exported" => {
             let mut text = format!(
-                "Exported to memoir \"{}\": {} concepts, {} links. Files processed: {}, skipped (cached): {}.",
+                "Exported to memoir \"{}\": {} concepts, {} links. Files processed: {}, skipped (cached): {}. Update class: {}.",
                 summary.memoir_name,
                 concepts_created.unwrap_or(0),
                 links_created.unwrap_or(0),
                 summary.files_processed,
                 summary.files_skipped_cached,
+                summary.update_class,
             );
             if summary.files_failed > 0 {
                 text.push_str(&format!(" Files failed: {}.", summary.files_failed));
@@ -196,17 +236,17 @@ fn render_summary_text(
             text
         }
         "up_to_date" => format!(
-            "All {} supported files under {} are up to date — nothing to export.",
-            summary.files_skipped_cached, summary.export_root
+            "All {} supported files under {} are up to date — nothing to export. Update class: {}.",
+            summary.files_skipped_cached, summary.export_root, summary.update_class
         ),
         "empty" => format!(
-            "No supported source files found under {}.",
-            summary.export_root
+            "No supported source files found under {}. Update class: {}.",
+            summary.export_root, summary.update_class
         ),
         "failed" => {
             let mut text = format!(
-                "No files exported from {}. {} stale file(s) failed to analyze",
-                summary.export_root, summary.files_failed
+                "No files exported from {}. {} stale file(s) failed to analyze. Update class: {}",
+                summary.export_root, summary.files_failed, summary.update_class
             );
             if summary.files_skipped_cached > 0 {
                 text.push_str(&format!(
@@ -231,23 +271,42 @@ fn render_summary_text(
 }
 
 pub fn tool_schemas() -> Vec<ToolSchema> {
-    vec![ToolSchema {
-        name: "export_to_hyphae".into(),
-        description: "Export code graph to Hyphae for semantic knowledge storage. \
-            Walks the project (respecting .gitignore), extracts symbols, builds a concept graph, \
-            and sends it to Hyphae. Uses incremental caching to skip unchanged files."
-            .into(),
-        input_schema: json!({
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Optional path to export. Defaults to the project root."
-                }
-            },
-            "required": []
-        }),
-    }]
+    vec![
+        ToolSchema {
+            name: "export_to_hyphae".into(),
+            description: "Export code graph to Hyphae for semantic knowledge storage. \
+                Walks the project (respecting .gitignore), extracts symbols, builds a concept graph, \
+                and sends it to Hyphae. Uses incremental caching to skip unchanged files."
+                .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Optional path to export. Defaults to the project root."
+                    }
+                },
+                "required": []
+            }),
+        },
+        ToolSchema {
+            name: "export_repo_understanding".into(),
+            description: "Export a typed repo-understanding artifact with summary, repo-surface \
+                classification, and an explicit incremental update class. This is a bounded \
+                understanding payload for downstream consumers."
+                .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Optional path to analyze. Defaults to the project root."
+                    }
+                },
+                "required": []
+            }),
+        },
+    ]
 }
 
 pub fn export_to_hyphae(
@@ -314,6 +373,107 @@ pub fn export_to_hyphae(
             Ok(export_error(&text, &prepared.summary))
         }
     }
+}
+
+pub fn export_repo_understanding(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let export_root = match resolve_export_root(args, project_root) {
+        Ok(path) => path,
+        Err(err) => return Ok(tool_error(&err.to_string())),
+    };
+
+    let identity = derive_export_identity(project_root);
+    let mut prepared = collect_export(
+        backend,
+        project_root,
+        &export_root,
+        &identity.project,
+        &identity.memoir_name,
+    );
+
+    let understanding = summarize_project(&export_root, backend)?;
+    let artifact = RepoUnderstandingArtifact {
+        project: identity.project.clone(),
+        root: export_root.clone(),
+        update_class: prepared.summary.update_class,
+        summary: understanding,
+    };
+
+    if prepared.summary.files_processed > 0 {
+        let mut cache = prepared.cache;
+        for path in &prepared.processed_paths {
+            cache = cache.update(path);
+        }
+        if let Err(err) = cache.save(project_root) {
+            prepared
+                .summary
+                .warnings
+                .push(format!("Failed to update understanding cache: {err}"));
+        }
+    }
+
+    let export_summary = UnderstandingExportSummary {
+        status: prepared.summary.status,
+        project: artifact.project.clone(),
+        export_root: prepared.summary.export_root.clone(),
+        update_class: prepared.summary.update_class,
+        files_processed: prepared.summary.files_processed,
+        files_skipped_cached: prepared.summary.files_skipped_cached,
+        files_failed: prepared.summary.files_failed,
+        supported_files: prepared.summary.supported_files,
+        failure_samples: prepared.summary.failure_samples.clone(),
+        warnings: prepared.summary.warnings.clone(),
+        artifact,
+    };
+
+    let text = match prepared.summary.status {
+        "failed" => {
+            let mut message = format!(
+                "Repo understanding export failed for {}. Update class: {}.",
+                export_root.display(),
+                export_summary.update_class
+            );
+            if !export_summary.failure_samples.is_empty() {
+                message.push_str(&format!(
+                    " Examples: {}.",
+                    export_summary.failure_samples.join(" | ")
+                ));
+            }
+            message
+        }
+        "empty" => format!(
+            "No supported source files found under {}. Update class: {}.",
+            export_root.display(),
+            export_summary.update_class
+        ),
+        "up_to_date" => format!(
+            "Repo understanding is up to date under {}. Update class: {}.",
+            export_root.display(),
+            export_summary.update_class
+        ),
+        _ => format!(
+            "Exported repo understanding for {}. Update class: {}.",
+            export_root.display(),
+            export_summary.update_class
+        ),
+    };
+
+    let mut text = text;
+    if !export_summary.warnings.is_empty() {
+        text.push_str(&format!(
+            " Warnings: {}.",
+            export_summary.warnings.join(" | ")
+        ));
+    }
+
+    if prepared.summary.files_failed > 0 && prepared.summary.files_processed == 0 {
+        return Ok(understanding_error(&text, &export_summary));
+    }
+
+    Ok(understanding_response(&text, &export_summary))
 }
 
 #[cfg(test)]
@@ -572,6 +732,7 @@ mod tests {
             project: "demo".into(),
             memoir_name: "code:demo".into(),
             export_root: "/tmp/demo".into(),
+            update_class: UnderstandingUpdateClass::Unchanged,
             supported_files: 0,
             files_processed: 0,
             files_skipped_cached: 0,
@@ -582,5 +743,32 @@ mod tests {
 
         let text = render_summary_text(&summary, None, None);
         assert!(text.contains("No supported source files found"));
+        assert!(text.contains("Update class"));
+    }
+
+    #[test]
+    fn understanding_export_returns_typed_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path();
+        let src = project_root.join("src");
+        let docs = project_root.join("docs");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&docs).unwrap();
+        std::fs::write(src.join("main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(docs.join("README.md"), "# demo\n").unwrap();
+
+        let backend = MockBackend::new(HashMap::from([(
+            src.join("main.rs"),
+            Ok(vec![sample_symbol(&src.join("main.rs"))]),
+        )]));
+
+        let result = export_repo_understanding(&backend, &json!({}), project_root).unwrap();
+        assert!(result.get("understanding").is_some());
+        assert!(
+            result["understanding"]["artifact"]["summary"]["repo_surfaces"]["documentation_files"]
+                .as_u64()
+                .is_some()
+        );
+        assert!(result["understanding"]["update_class"].is_string());
     }
 }
