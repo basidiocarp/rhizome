@@ -78,6 +78,7 @@ Current direction:
 - Do not add backend-specific side paths when the capability should go through shared selection.
 - Treat Hyphae export changes as contract work and update `../septa/` in the same change.
 - Prefer real parser or language-server fixtures over synthetic token streams.
+- Validate septa contracts after changing any cross-project payload: `cd septa && bash validate-all.sh`
 
 ---
 
