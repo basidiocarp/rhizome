@@ -1,17 +1,16 @@
-#![allow(
-    clippy::collapsible_if,
-    clippy::empty_line_after_doc_comments,
-    unused_imports
-)]
+#![allow(clippy::collapsible_if, clippy::empty_line_after_doc_comments)]
 
 use std::fmt::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
-use rhizome_core::{CodeIntelligence, ParserlessBackend, ParserlessRegion, Symbol, SymbolKind};
+use rhizome_core::{
+    CodeIntelligence, HeuristicBackend, HeuristicRegion, ParserlessBackend, ParserlessRegion,
+    Symbol,
+};
 use serde_json::{Value, json};
 
-use super::{ToolSchema, required_str, resolve_project_path, tool_response};
+use super::{required_str, resolve_project_path, tool_response};
 
 pub fn get_symbols(
     backend: &dyn CodeIntelligence,
@@ -100,6 +99,51 @@ pub fn get_parserless_structure(
         "regions": parserless_region_values(&regions),
     });
     Ok(tool_response(&serde_json::to_string_pretty(&response)?))
+}
+
+pub fn get_heuristic_symbols(
+    backend: &HeuristicBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = required_str(args, "file")?;
+    let path = resolve_project_path(file, project_root)?;
+    let regions = backend.outline(&path)?;
+    let text = serde_json::to_string_pretty(&heuristic_region_values(&regions))?;
+    Ok(tool_response(&text))
+}
+
+pub fn get_heuristic_structure(
+    backend: &HeuristicBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = required_str(args, "file")?;
+    let path = resolve_project_path(file, project_root)?;
+    let regions = backend.outline(&path)?;
+    let response = json!({
+        "backend": "heuristic",
+        "heuristic": true,
+        "regions": heuristic_region_values(&regions),
+    });
+    Ok(tool_response(&serde_json::to_string_pretty(&response)?))
+}
+
+fn heuristic_region_values(regions: &[HeuristicRegion]) -> Vec<Value> {
+    regions
+        .iter()
+        .map(|region| {
+            json!({
+                "region_id": region.region_id,
+                "line": region.line,
+                "line_end": region.line_end,
+                "depth": region.depth,
+                "label": region.label,
+                "backend": "heuristic",
+                "heuristic": true,
+            })
+        })
+        .collect()
 }
 
 fn parserless_region_values(regions: &[ParserlessRegion]) -> Vec<Value> {

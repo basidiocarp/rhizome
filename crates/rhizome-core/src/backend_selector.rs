@@ -24,10 +24,14 @@ pub enum BackendRequirement {
 
 /// The resolved decision for a specific tool call.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ResolvedBackend {
     TreeSitter,
     Lsp,
+    /// Legacy -- only used for `region-*` ID lookup in `get_region`, never selected for new requests.
     Parserless,
+    /// Heuristic structural fallback using indentation and bracket counting.
+    Heuristic,
     /// LSP was required but the server binary wasn't found.
     LspUnavailable {
         binary: String,
@@ -109,7 +113,7 @@ impl BackendSelector {
                 if probe.available {
                     ResolvedBackend::Lsp
                 } else if parserless_supported(tool_name) && !language.tree_sitter_supported() {
-                    ResolvedBackend::Parserless
+                    ResolvedBackend::Heuristic
                 } else {
                     ResolvedBackend::TreeSitter
                 }
@@ -149,12 +153,14 @@ impl BackendSelector {
     }
 
     /// Pick the best outline fallback once tree-sitter cannot serve the request.
+    ///
+    /// Preference order: LSP > Heuristic.
     pub fn outline_fallback(&mut self, language: &Language) -> ResolvedBackend {
         let probe = self.probe_language(language);
         if probe.available {
             ResolvedBackend::Lsp
         } else {
-            ResolvedBackend::Parserless
+            ResolvedBackend::Heuristic
         }
     }
 }
@@ -392,11 +398,11 @@ mod tests {
     }
 
     #[test]
-    fn select_parserless_for_unknown_outline_tools() {
+    fn select_heuristic_for_unknown_outline_tools() {
         let config = RhizomeConfig::default();
         let mut selector = BackendSelector::new(config);
         let result = selector.select("get_structure", &Language::Other("text".into()));
-        assert_eq!(result, ResolvedBackend::Parserless);
+        assert_eq!(result, ResolvedBackend::Heuristic);
     }
 
     #[test]
@@ -414,6 +420,9 @@ mod tests {
             }
             ResolvedBackend::Parserless => {
                 panic!("rename_symbol should not resolve to parserless");
+            }
+            ResolvedBackend::Heuristic => {
+                panic!("rename_symbol should not resolve to heuristic");
             }
             ResolvedBackend::TreeSitter => {
                 panic!("rename_symbol should not resolve to tree-sitter");
@@ -435,11 +444,11 @@ mod tests {
     }
 
     #[test]
-    fn outline_fallback_prefers_lsp_then_parserless() {
+    fn outline_fallback_prefers_lsp_then_heuristic() {
         let config = RhizomeConfig::default();
         let mut selector = BackendSelector::new(config);
         let result = selector.outline_fallback(&Language::Other("text".into()));
-        assert_eq!(result, ResolvedBackend::Parserless);
+        assert_eq!(result, ResolvedBackend::Heuristic);
     }
 
     #[test]

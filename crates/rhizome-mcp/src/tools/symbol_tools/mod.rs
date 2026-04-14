@@ -1,5 +1,3 @@
-#![allow(unused_imports)]
-
 pub mod analysis;
 pub mod git;
 pub mod inspection;
@@ -8,7 +6,7 @@ pub mod onboard;
 pub mod params;
 pub mod query;
 
-pub(crate) use super::{ToolSchema, tool_error, tool_response};
+pub(crate) use super::{ToolSchema, tool_response};
 pub(crate) use params::{required_str, required_u32};
 
 pub(crate) use analysis::*;
@@ -20,8 +18,8 @@ pub(crate) use query::*;
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow};
-use serde_json::{Value, json};
+use anyhow::Result;
+use serde_json::json;
 
 pub(crate) fn resolve_project_path(file: &str, project_root: &Path) -> Result<PathBuf> {
     super::edit_tools::resolve_path(file, project_root)
@@ -31,7 +29,10 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
     vec![
         ToolSchema {
             name: "get_symbols".into(),
-            description: "List all symbols (functions, structs, classes, etc.) in a file".into(),
+            description: "List all symbols (functions, structs, classes, etc.) in a file. \
+                When the file type has no tree-sitter or LSP support, output falls back to \
+                heuristic analysis with region_id/label fields instead of name/qualified_name/stable_id."
+                .into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -308,12 +309,12 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         ToolSchema {
             name: "get_region".into(),
             description:
-                "Return the full text for a parserless region_id or semantic stable_id".into(),
+                "Return the full text for a heuristic (h-*), parserless (region-*), or semantic stable_id region".into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "file": { "type": "string", "description": "Path to the source file" },
-                    "region_id": { "type": "string", "description": "Parserless region_id (region-<line>) or semantic stable_id" }
+                    "region_id": { "type": "string", "description": "Heuristic region_id (h-<hash>-<line>), parserless region_id (region-<line>), or semantic stable_id" }
                 },
                 "required": ["file", "region_id"]
             }),

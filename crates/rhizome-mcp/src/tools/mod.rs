@@ -7,7 +7,9 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
-use rhizome_core::{BackendSelector, Language, ParserlessBackend, ResolvedBackend, RhizomeConfig};
+use rhizome_core::{
+    BackendSelector, HeuristicBackend, Language, ParserlessBackend, ResolvedBackend, RhizomeConfig,
+};
 use rhizome_treesitter::TreeSitterBackend;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -29,6 +31,7 @@ enum ActiveBackend {
     TreeSitter,
     Lsp,
     Parserless,
+    Heuristic,
     Error(String),
 }
 
@@ -44,6 +47,7 @@ enum ActiveBackend {
 pub struct ToolDispatcher {
     treesitter: TreeSitterBackend,
     parserless: ParserlessBackend,
+    heuristic: HeuristicBackend,
     lsp: RefCell<Option<rhizome_lsp::LspBackend>>,
     selector: RefCell<BackendSelector>,
     project_root: PathBuf,
@@ -55,6 +59,7 @@ impl ToolDispatcher {
         Self {
             treesitter: TreeSitterBackend::new(),
             parserless: ParserlessBackend::new(),
+            heuristic: HeuristicBackend::new(),
             lsp: RefCell::new(None),
             selector: RefCell::new(BackendSelector::new(config)),
             project_root,
@@ -83,23 +88,27 @@ impl ToolDispatcher {
             "get_symbols" => {
                 let ts = &self.treesitter;
                 let parserless = &self.parserless;
+                let heuristic = &self.heuristic;
                 self.dispatch_outline(
                     name,
                     &args,
                     |a| symbol_tools::get_symbols(ts, a, &root),
                     |lsp, a| symbol_tools::get_symbols(lsp, a, &root),
                     |a| symbol_tools::get_parserless_symbols(parserless, a, &root),
+                    |a| symbol_tools::get_heuristic_symbols(heuristic, a, &root),
                 )
             }
             "get_structure" => {
                 let ts = &self.treesitter;
                 let parserless = &self.parserless;
+                let heuristic = &self.heuristic;
                 self.dispatch_outline(
                     name,
                     &args,
                     |a| symbol_tools::get_structure(ts, a, &root),
                     |lsp, a| symbol_tools::get_structure(lsp, a, &root),
                     |a| symbol_tools::get_parserless_structure(parserless, a, &root),
+                    |a| symbol_tools::get_heuristic_structure(heuristic, a, &root),
                 )
             }
             "get_definition" => symbol_tools::get_definition(&self.treesitter, &args, &root),
@@ -127,11 +136,12 @@ impl ToolDispatcher {
             "get_region" => {
                 let ts = &self.treesitter;
                 let parserless = &self.parserless;
+                let heuristic = &self.heuristic;
                 self.dispatch_semantic_region(
                     name,
                     &args,
-                    |a| symbol_tools::get_region(ts, parserless, a, &root),
-                    |lsp, a| symbol_tools::get_region(lsp, parserless, a, &root),
+                    |a| symbol_tools::get_region(ts, parserless, heuristic, a, &root),
+                    |lsp, a| symbol_tools::get_region(lsp, parserless, heuristic, a, &root),
                 )
             }
             "get_changed_files" => symbol_tools::get_changed_files(&self.treesitter, &args, &root),
@@ -252,40 +262,50 @@ impl ToolDispatcher {
         }
     }
 
-    /// Dispatch for outline tools that can degrade to the parserless backend.
-    fn dispatch_outline<F, G, H>(
+    /// Dispatch for outline tools that can degrade to the heuristic or parserless backend.
+    fn dispatch_outline<F, G, H, I>(
         &self,
         tool_name: &str,
         args: &Value,
         ts_fn: F,
         lsp_fn: G,
         parserless_fn: H,
+        heuristic_fn: I,
     ) -> Result<Value>
     where
         F: FnOnce(&Value) -> Result<Value>,
         G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
         H: FnOnce(&Value) -> Result<Value>,
+        I: FnOnce(&Value) -> Result<Value>,
     {
         let lang = self
             .detect_language(args)
             .unwrap_or(Language::Other("unknown".into()));
 
         match self.resolve_backend(tool_name, args) {
+            ActiveBackend::Heuristic => heuristic_fn(args),
             ActiveBackend::Parserless => parserless_fn(args),
-            ActiveBackend::Lsp => self.try_lsp_or_parserless(args, lsp_fn, parserless_fn),
+            ActiveBackend::Lsp => self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn),
             ActiveBackend::TreeSitter => match ts_fn(args) {
                 Ok(value) => Ok(value),
                 Err(_) => match self.selector.borrow_mut().outline_fallback(&lang) {
-                    ResolvedBackend::Lsp => self.try_lsp_or_parserless(args, lsp_fn, parserless_fn),
+                    ResolvedBackend::Lsp => {
+                        self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn)
+                    }
+                    ResolvedBackend::Heuristic => heuristic_fn(args),
                     ResolvedBackend::Parserless => parserless_fn(args),
-                    _ => parserless_fn(args),
+                    // New variants default to heuristic until an explicit arm is added.
+                    _ => heuristic_fn(args),
                 },
             },
-            ActiveBackend::Error(_) => parserless_fn(args),
+            ActiveBackend::Error(_) => heuristic_fn(args),
         }
     }
 
     /// Dispatch for semantic region lookups: tree-sitter first, then LSP, never parserless.
+    ///
+    /// Parserless `region-*` and heuristic `h-*` region IDs are routed directly
+    /// to the function that knows how to resolve them.
     fn dispatch_semantic_region<F, G>(
         &self,
         _tool_name: &str,
@@ -300,12 +320,14 @@ impl ToolDispatcher {
         let lang = self
             .detect_language(args)
             .unwrap_or(Language::Other("unknown".into()));
-        let parserless_id = args
+        let region_id = args
             .get("region_id")
             .and_then(|value| value.as_str())
-            .is_some_and(|value| value.starts_with("region-"));
+            .unwrap_or("");
 
-        if parserless_id {
+        // Parserless or heuristic region IDs are handled directly by the
+        // ts_fn which delegates internally based on the ID prefix.
+        if region_id.starts_with("region-") || region_id.starts_with("h-") {
             return ts_fn(args);
         }
 
@@ -339,7 +361,7 @@ impl ToolDispatcher {
             ActiveBackend::TreeSitter => Ok(tool_error(&format!(
                 "{tool_name} requires an LSP server. Run `rhizome status` to check availability."
             ))),
-            ActiveBackend::Parserless => Ok(tool_error(&format!(
+            ActiveBackend::Parserless | ActiveBackend::Heuristic => Ok(tool_error(&format!(
                 "{tool_name} requires an LSP server. Run `rhizome status` to check availability."
             ))),
         }
@@ -357,9 +379,12 @@ impl ToolDispatcher {
             ResolvedBackend::TreeSitter => ActiveBackend::TreeSitter,
             ResolvedBackend::Lsp => ActiveBackend::Lsp,
             ResolvedBackend::Parserless => ActiveBackend::Parserless,
+            ResolvedBackend::Heuristic => ActiveBackend::Heuristic,
             ResolvedBackend::LspUnavailable { install_hint, .. } => {
                 ActiveBackend::Error(install_hint)
             }
+            // New variants default to heuristic until an explicit arm is added.
+            _ => ActiveBackend::Heuristic,
         }
     }
 
@@ -384,24 +409,24 @@ impl ToolDispatcher {
         }
     }
 
-    fn try_lsp_or_parserless<G, H>(
+    fn try_lsp_or_heuristic<G, I>(
         &self,
         args: &Value,
         lsp_fn: G,
-        parserless_fn: H,
+        heuristic_fn: I,
     ) -> Result<Value>
     where
         G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
-        H: FnOnce(&Value) -> Result<Value>,
+        I: FnOnce(&Value) -> Result<Value>,
     {
         self.ensure_lsp();
         let lsp = self.lsp.borrow();
         match lsp.as_ref() {
             Some(backend) => match lsp_fn(backend, args) {
                 Ok(value) => Ok(value),
-                Err(_) => parserless_fn(args),
+                Err(_) => heuristic_fn(args),
             },
-            None => parserless_fn(args),
+            None => heuristic_fn(args),
         }
     }
 

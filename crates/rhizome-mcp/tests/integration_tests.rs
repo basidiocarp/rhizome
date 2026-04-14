@@ -118,20 +118,20 @@ fn test_get_symbols_python() {
 }
 
 #[test]
-fn test_get_symbols_parserless_fallback_for_unsupported_file() {
+fn test_get_symbols_heuristic_fallback_for_unsupported_file() {
     let dispatcher = make_dispatcher();
     let result = dispatcher
         .call_tool("get_symbols", json!({ "file": fixture_path("sample.txt") }))
-        .expect("get_symbols should succeed with parserless fallback");
+        .expect("get_symbols should succeed with heuristic fallback");
 
     let text = extract_text(&result);
     assert!(
-        text.contains("\"backend\": \"parserless\""),
-        "Should expose parserless backend: {text}"
+        text.contains("\"backend\": \"heuristic\""),
+        "Should expose heuristic backend: {text}"
     );
     assert!(
-        text.contains("\"region_id\": \"region-1\""),
-        "Should expose stable region ids: {text}"
+        text.contains("\"region_id\": \"h-"),
+        "Should expose stable heuristic region ids: {text}"
     );
     assert!(
         text.contains("\"label\": \"section:\""),
@@ -228,23 +228,23 @@ fn test_get_structure() {
 }
 
 #[test]
-fn test_get_structure_parserless_fallback_for_unsupported_file() {
+fn test_get_structure_heuristic_fallback_for_unsupported_file() {
     let dispatcher = make_dispatcher();
     let result = dispatcher
         .call_tool(
             "get_structure",
             json!({ "file": fixture_path("sample.txt") }),
         )
-        .expect("get_structure should succeed with parserless fallback");
+        .expect("get_structure should succeed with heuristic fallback");
 
     let text = extract_text(&result);
     assert!(
-        text.contains("\"backend\": \"parserless\""),
-        "Should annotate parserless backend: {text}"
+        text.contains("\"backend\": \"heuristic\""),
+        "Should annotate heuristic backend: {text}"
     );
     assert!(
-        text.contains("\"region_id\": \"region-1\""),
-        "Should include region ids: {text}"
+        text.contains("\"region_id\": \"h-"),
+        "Should include heuristic region ids: {text}"
     );
     assert!(
         text.contains("\"label\": \"section:\""),
@@ -1045,6 +1045,55 @@ fn test_get_region_for_semantic_stable_id() {
     assert!(
         region_text.contains("config"),
         "Should include symbol source: {region_text}"
+    );
+}
+
+#[test]
+fn test_get_region_for_heuristic_outline() {
+    let dispatcher = make_dispatcher();
+
+    // Step 1: get heuristic outline for an unsupported file
+    let symbols_result = dispatcher
+        .call_tool("get_symbols", json!({ "file": fixture_path("sample.txt") }))
+        .expect("get_symbols should succeed with heuristic fallback");
+
+    let symbols_text = extract_text(&symbols_result);
+    let parsed: Value =
+        serde_json::from_str(&symbols_text).expect("heuristic symbols output should be JSON");
+    let regions = parsed.as_array().expect("heuristic output should be an array");
+
+    // Step 2: extract an h-* region ID
+    let region_id = regions
+        .iter()
+        .find_map(|r| {
+            r.get("region_id")
+                .and_then(|v| v.as_str())
+                .filter(|id| id.starts_with("h-"))
+                .map(|id| id.to_string())
+        })
+        .expect("should have at least one h-* region ID");
+
+    // Step 3: call get_region with that ID and verify the body
+    let result = dispatcher
+        .call_tool(
+            "get_region",
+            json!({ "file": fixture_path("sample.txt"), "region_id": region_id }),
+        )
+        .expect("get_region should succeed for heuristic h-* region ID");
+
+    let text = extract_text(&result);
+    assert!(
+        text.contains("\"backend\": \"heuristic\""),
+        "Should report heuristic backend: {text}"
+    );
+    assert!(
+        text.contains("\"body\""),
+        "Should include a body field: {text}"
+    );
+    // The first region should contain "section:" from sample.txt
+    assert!(
+        text.contains("section:"),
+        "Should include the region body text: {text}"
     );
 }
 

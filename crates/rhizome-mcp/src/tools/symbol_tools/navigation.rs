@@ -1,12 +1,12 @@
-#![allow(clippy::empty_line_after_doc_comments, unused_imports)]
+#![allow(clippy::empty_line_after_doc_comments)]
 
 use std::path::Path;
 
 use anyhow::Result;
-use rhizome_core::{CodeIntelligence, ParserlessBackend, Position, Symbol};
+use rhizome_core::{CodeIntelligence, HeuristicBackend, ParserlessBackend, Position, Symbol};
 use serde_json::{Value, json};
 
-use super::{ToolSchema, required_str, required_u32, resolve_project_path, tool_response};
+use super::{required_str, required_u32, resolve_project_path, tool_response};
 
 pub fn go_to_definition(
     backend: &dyn CodeIntelligence,
@@ -290,12 +290,30 @@ pub fn get_symbol_body(
 pub fn get_region(
     backend: &dyn CodeIntelligence,
     parserless: &ParserlessBackend,
+    heuristic: &HeuristicBackend,
     args: &Value,
     project_root: &Path,
 ) -> Result<Value> {
     let file = required_str(args, "file")?;
     let region_id = required_str(args, "region_id")?;
     let path = resolve_project_path(file, project_root)?;
+
+    if region_id.starts_with("h-") {
+        return match heuristic.get_region_text(&path, region_id) {
+            Ok(body) => {
+                let result = json!({
+                    "region_id": region_id,
+                    "backend": "heuristic",
+                    "heuristic": true,
+                    "body": body,
+                });
+                Ok(tool_response(&serde_json::to_string_pretty(&result)?))
+            }
+            Err(_) => Ok(tool_response(&format!(
+                "Region '{region_id}' not found in {file}"
+            ))),
+        };
+    }
 
     if region_id.starts_with("region-") {
         return match parserless.get_region_text(&path, region_id) {

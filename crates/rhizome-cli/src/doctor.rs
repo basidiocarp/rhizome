@@ -50,6 +50,26 @@ pub fn run(fix: bool) -> Result<()> {
     ));
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Heuristic Fallback
+    // ─────────────────────────────────────────────────────────────────────────
+    println!();
+    println!("\x1b[1mHeuristic Fallback\x1b[0m");
+    let non_ts_languages: Vec<&Language> = detected_languages
+        .iter()
+        .map(|(lang, _)| lang)
+        .filter(|lang| !lang.tree_sitter_supported())
+        .collect();
+    if non_ts_languages.is_empty() {
+        pass("All detected languages have tree-sitter support (heuristic fallback available but not needed)");
+    } else {
+        let names: Vec<String> = non_ts_languages.iter().map(|l| l.to_string()).collect();
+        pass(&format!(
+            "Heuristic structural fallback active for: {}",
+            names.join(", ")
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // LSP Servers
     // ─────────────────────────────────────────────────────────────────────────
     println!();

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use rhizome_core::{
-    CodeIntelligence, Language, ParserlessBackend, ParserlessRegion, Symbol, SymbolKind,
+    CodeIntelligence, HeuristicBackend, HeuristicRegion, Language, Symbol, SymbolKind,
 };
 use rhizome_mcp::McpServer;
 use rhizome_treesitter::TreeSitterBackend;
@@ -331,7 +331,7 @@ fn print_tree(symbols: &[Symbol], prefix: &str, is_last_set: &[bool]) {
     }
 }
 
-fn print_parserless_regions(regions: &[ParserlessRegion], tree: bool) {
+fn print_heuristic_regions(regions: &[HeuristicRegion], tree: bool) {
     for region in regions {
         let indent = "  ".repeat(region.depth as usize);
         if tree {
@@ -348,9 +348,9 @@ fn print_parserless_regions(regions: &[ParserlessRegion], tree: bool) {
     }
 }
 
-fn print_parserless_notice(file: &Path) {
+fn print_heuristic_notice(file: &Path) {
     eprintln!(
-        "Heuristic parserless fallback for {} (outline only, not semantic analysis).",
+        "Heuristic structural fallback for {} (outline only, not semantic analysis).",
         file.display()
     );
 }
@@ -360,12 +360,12 @@ fn cmd_symbols(file: &Path) -> Result<()> {
     match backend.get_symbols(file) {
         Ok(symbols) => print_symbols_flat(&symbols),
         Err(_) => {
-            let parserless = ParserlessBackend::new();
-            let regions = parserless
+            let heuristic = HeuristicBackend::new();
+            let regions = heuristic
                 .outline(file)
                 .with_context(|| format!("Failed to get symbols from {}", file.display()))?;
-            print_parserless_notice(file);
-            print_parserless_regions(&regions, false);
+            print_heuristic_notice(file);
+            print_heuristic_regions(&regions, false);
         }
     }
     Ok(())
@@ -376,12 +376,12 @@ fn cmd_structure(file: &Path) -> Result<()> {
     match backend.get_symbols(file) {
         Ok(symbols) => print_tree(&symbols, "", &[]),
         Err(_) => {
-            let parserless = ParserlessBackend::new();
-            let regions = parserless
+            let heuristic = HeuristicBackend::new();
+            let regions = heuristic
                 .outline(file)
                 .with_context(|| format!("Failed to get structure from {}", file.display()))?;
-            print_parserless_notice(file);
-            print_parserless_regions(&regions, true);
+            print_heuristic_notice(file);
+            print_heuristic_regions(&regions, true);
         }
     }
     Ok(())
