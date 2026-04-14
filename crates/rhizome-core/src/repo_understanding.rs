@@ -66,7 +66,80 @@ pub struct RepoUnderstandingArtifact {
     pub project: String,
     pub root: PathBuf,
     pub update_class: UnderstandingUpdateClass,
+    pub export_status: RepoUnderstandingExportStatus,
     pub summary: ProjectSummary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoUnderstandingExportOutcome {
+    CompleteSuccess,
+    PartialSuccess,
+    CachedReuse,
+    NoSupportedFiles,
+    FullFailure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoUnderstandingRefreshKind {
+    FullRefresh,
+    PartialRefresh,
+    CachedReuse,
+    NoRefresh,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoUnderstandingExportStatus {
+    pub outcome: RepoUnderstandingExportOutcome,
+    pub refresh_kind: RepoUnderstandingRefreshKind,
+    pub any_exports_succeeded: bool,
+    pub any_exports_failed: bool,
+    pub safe_to_consume: bool,
+}
+
+impl RepoUnderstandingExportStatus {
+    pub fn from_export_stats(
+        supported_files: usize,
+        files_processed: usize,
+        files_skipped_cached: usize,
+        files_failed: usize,
+    ) -> Self {
+        let any_exports_succeeded = files_processed > 0 || files_skipped_cached > 0;
+        let any_exports_failed = files_failed > 0;
+        let outcome = if supported_files == 0 {
+            RepoUnderstandingExportOutcome::NoSupportedFiles
+        } else if any_exports_failed {
+            if any_exports_succeeded {
+                RepoUnderstandingExportOutcome::PartialSuccess
+            } else {
+                RepoUnderstandingExportOutcome::FullFailure
+            }
+        } else if files_processed > 0 {
+            RepoUnderstandingExportOutcome::CompleteSuccess
+        } else {
+            RepoUnderstandingExportOutcome::CachedReuse
+        };
+        let refresh_kind = if files_processed > 0 {
+            if files_skipped_cached > 0 {
+                RepoUnderstandingRefreshKind::PartialRefresh
+            } else {
+                RepoUnderstandingRefreshKind::FullRefresh
+            }
+        } else if supported_files == 0 || any_exports_failed {
+            RepoUnderstandingRefreshKind::NoRefresh
+        } else {
+            RepoUnderstandingRefreshKind::CachedReuse
+        };
+
+        Self {
+            outcome,
+            refresh_kind,
+            any_exports_succeeded,
+            any_exports_failed,
+            safe_to_consume: supported_files > 0 && !any_exports_failed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,18 +165,30 @@ impl fmt::Display for UnderstandingUpdateClass {
 
 impl UnderstandingUpdateClass {
     pub fn from_export_stats(
+        supported_files: usize,
         files_processed: usize,
         files_skipped_cached: usize,
         files_failed: usize,
     ) -> Self {
-        if files_failed > 0 && files_processed == 0 {
-            Self::Failed
-        } else if files_processed > 0 && files_skipped_cached > 0 {
-            Self::Incremental
-        } else if files_processed > 0 {
-            Self::Fresh
-        } else {
-            Self::Unchanged
+        let export_status = RepoUnderstandingExportStatus::from_export_stats(
+            supported_files,
+            files_processed,
+            files_skipped_cached,
+            files_failed,
+        );
+
+        match export_status.outcome {
+            RepoUnderstandingExportOutcome::FullFailure => Self::Failed,
+            RepoUnderstandingExportOutcome::CachedReuse
+            | RepoUnderstandingExportOutcome::NoSupportedFiles => Self::Unchanged,
+            RepoUnderstandingExportOutcome::PartialSuccess => Self::Incremental,
+            RepoUnderstandingExportOutcome::CompleteSuccess => {
+                if files_skipped_cached > 0 {
+                    Self::Incremental
+                } else {
+                    Self::Fresh
+                }
+            }
         }
     }
 }
@@ -263,17 +348,70 @@ mod tests {
     #[test]
     fn update_class_tracks_incremental_and_failed_exports() {
         assert_eq!(
-            UnderstandingUpdateClass::from_export_stats(1, 1, 0),
+            UnderstandingUpdateClass::from_export_stats(2, 1, 1, 0),
             UnderstandingUpdateClass::Incremental
         );
         assert_eq!(
-            UnderstandingUpdateClass::from_export_stats(0, 0, 0),
+            UnderstandingUpdateClass::from_export_stats(0, 0, 0, 0),
             UnderstandingUpdateClass::Unchanged
         );
         assert_eq!(
-            UnderstandingUpdateClass::from_export_stats(0, 0, 1),
+            UnderstandingUpdateClass::from_export_stats(1, 0, 0, 1),
             UnderstandingUpdateClass::Failed
         );
+    }
+
+    #[test]
+    fn export_status_distinguishes_complete_partial_cached_and_failed_runs() {
+        let complete = RepoUnderstandingExportStatus::from_export_stats(2, 2, 0, 0);
+        assert_eq!(
+            complete.outcome,
+            RepoUnderstandingExportOutcome::CompleteSuccess
+        );
+        assert_eq!(
+            complete.refresh_kind,
+            RepoUnderstandingRefreshKind::FullRefresh
+        );
+        assert!(complete.any_exports_succeeded);
+        assert!(!complete.any_exports_failed);
+        assert!(complete.safe_to_consume);
+
+        let partial = RepoUnderstandingExportStatus::from_export_stats(3, 1, 1, 1);
+        assert_eq!(
+            partial.outcome,
+            RepoUnderstandingExportOutcome::PartialSuccess
+        );
+        assert_eq!(
+            partial.refresh_kind,
+            RepoUnderstandingRefreshKind::PartialRefresh
+        );
+        assert!(partial.any_exports_succeeded);
+        assert!(partial.any_exports_failed);
+        assert!(!partial.safe_to_consume);
+
+        let cached = RepoUnderstandingExportStatus::from_export_stats(3, 0, 3, 0);
+        assert_eq!(cached.outcome, RepoUnderstandingExportOutcome::CachedReuse);
+        assert_eq!(
+            cached.refresh_kind,
+            RepoUnderstandingRefreshKind::CachedReuse
+        );
+        assert!(cached.any_exports_succeeded);
+        assert!(!cached.any_exports_failed);
+        assert!(cached.safe_to_consume);
+
+        let empty = RepoUnderstandingExportStatus::from_export_stats(0, 0, 0, 0);
+        assert_eq!(empty.outcome, RepoUnderstandingExportOutcome::NoSupportedFiles);
+        assert_eq!(empty.refresh_kind, RepoUnderstandingRefreshKind::NoRefresh);
+        assert!(!empty.any_exports_succeeded);
+        assert!(!empty.any_exports_failed);
+        assert!(!empty.safe_to_consume);
+
+        let failed = RepoUnderstandingExportStatus::from_export_stats(2, 0, 0, 2);
+        assert_eq!(failed.outcome, RepoUnderstandingExportOutcome::FullFailure);
+        assert_eq!(failed.refresh_kind, RepoUnderstandingRefreshKind::NoRefresh);
+        assert!(!failed.any_exports_succeeded);
+        assert!(failed.any_exports_failed);
+        assert!(!failed.safe_to_consume);
     }
 
     #[test]

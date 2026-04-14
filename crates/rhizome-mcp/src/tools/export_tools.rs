@@ -6,8 +6,9 @@ use rhizome_core::export_cache::ExportCache;
 use rhizome_core::graph::{CodeGraph, build_graph, merge_graphs};
 use rhizome_core::hyphae;
 use rhizome_core::{
-    CodeIntelligence, Language, RepoUnderstandingArtifact, UnderstandingUpdateClass,
-    derive_export_identity, summarize_project,
+    CodeIntelligence, Language, RepoUnderstandingArtifact, RepoUnderstandingExportOutcome,
+    RepoUnderstandingExportStatus, UnderstandingUpdateClass, derive_export_identity,
+    summarize_project,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -28,6 +29,7 @@ struct ExportSummary {
     memoir_name: String,
     export_root: String,
     update_class: UnderstandingUpdateClass,
+    export_status: RepoUnderstandingExportStatus,
     supported_files: usize,
     files_processed: usize,
     files_skipped_cached: usize,
@@ -49,6 +51,7 @@ struct UnderstandingExportSummary {
     project: String,
     export_root: String,
     update_class: UnderstandingUpdateClass,
+    export_status: RepoUnderstandingExportStatus,
     files_processed: usize,
     files_skipped_cached: usize,
     files_failed: usize,
@@ -177,7 +180,9 @@ fn collect_export(
         }
     }
 
-    let status = if files_processed > 0 {
+    let status = if files_processed > 0 && files_failed > 0 {
+        "partial"
+    } else if files_processed > 0 {
         "exported"
     } else if files_failed > 0 {
         "failed"
@@ -196,6 +201,13 @@ fn collect_export(
             memoir_name: memoir_name.to_string(),
             export_root: export_root.display().to_string(),
             update_class: UnderstandingUpdateClass::from_export_stats(
+                supported_files,
+                files_processed,
+                files_skipped_cached,
+                files_failed,
+            ),
+            export_status: RepoUnderstandingExportStatus::from_export_stats(
+                supported_files,
                 files_processed,
                 files_skipped_cached,
                 files_failed,
@@ -216,8 +228,8 @@ fn render_summary_text(
     concepts_created: Option<usize>,
     links_created: Option<usize>,
 ) -> String {
-    match summary.status {
-        "exported" => {
+    match summary.export_status.outcome {
+        RepoUnderstandingExportOutcome::CompleteSuccess => {
             let mut text = format!(
                 "Exported to memoir \"{}\": {} concepts, {} links. Files processed: {}, skipped (cached): {}. Update class: {}.",
                 summary.memoir_name,
@@ -235,15 +247,35 @@ fn render_summary_text(
             }
             text
         }
-        "up_to_date" => format!(
+        RepoUnderstandingExportOutcome::CachedReuse => format!(
             "All {} supported files under {} are up to date — nothing to export. Update class: {}.",
             summary.files_skipped_cached, summary.export_root, summary.update_class
         ),
-        "empty" => format!(
+        RepoUnderstandingExportOutcome::NoSupportedFiles => format!(
             "No supported source files found under {}. Update class: {}.",
             summary.export_root, summary.update_class
         ),
-        "failed" => {
+        RepoUnderstandingExportOutcome::PartialSuccess => {
+            let mut text = format!(
+                "Export completed with degraded results for {}. Files processed: {}, skipped (cached): {}, failed: {}. Update class: {}.",
+                summary.export_root,
+                summary.files_processed,
+                summary.files_skipped_cached,
+                summary.files_failed,
+                summary.update_class
+            );
+            if !summary.failure_samples.is_empty() {
+                text.push_str(&format!(
+                    " Examples: {}.",
+                    summary.failure_samples.join(" | ")
+                ));
+            }
+            if !summary.warnings.is_empty() {
+                text.push_str(&format!(" Warnings: {}.", summary.warnings.join(" | ")));
+            }
+            text
+        }
+        RepoUnderstandingExportOutcome::FullFailure => {
             let mut text = format!(
                 "No files exported from {}. {} stale file(s) failed to analyze. Update class: {}",
                 summary.export_root, summary.files_failed, summary.update_class
@@ -266,7 +298,6 @@ fn render_summary_text(
             }
             text
         }
-        _ => unreachable!("unexpected export status"),
     }
 }
 
@@ -292,8 +323,9 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         ToolSchema {
             name: "export_repo_understanding".into(),
             description: "Export a typed repo-understanding artifact with summary, repo-surface \
-                classification, and an explicit incremental update class. This is a bounded \
-                understanding payload for downstream consumers."
+                classification, and a machine-facing export status contract. \
+                `update_class` remains a display label; `export_status` is the \
+                automation-safe trust signal for downstream consumers."
                 .into(),
             input_schema: json!({
                 "type": "object",
@@ -399,6 +431,7 @@ pub fn export_repo_understanding(
         project: identity.project.clone(),
         root: export_root.clone(),
         update_class: prepared.summary.update_class,
+        export_status: prepared.summary.export_status,
         summary: understanding,
     };
 
@@ -420,6 +453,7 @@ pub fn export_repo_understanding(
         project: artifact.project.clone(),
         export_root: prepared.summary.export_root.clone(),
         update_class: prepared.summary.update_class,
+        export_status: prepared.summary.export_status,
         files_processed: prepared.summary.files_processed,
         files_skipped_cached: prepared.summary.files_skipped_cached,
         files_failed: prepared.summary.files_failed,
@@ -429,8 +463,8 @@ pub fn export_repo_understanding(
         artifact,
     };
 
-    let text = match prepared.summary.status {
-        "failed" => {
+    let text = match export_summary.export_status.outcome {
+        RepoUnderstandingExportOutcome::FullFailure => {
             let mut message = format!(
                 "Repo understanding export failed for {}. Update class: {}.",
                 export_root.display(),
@@ -444,17 +478,24 @@ pub fn export_repo_understanding(
             }
             message
         }
-        "empty" => format!(
-            "No supported source files found under {}. Update class: {}.",
-            export_root.display(),
-            export_summary.update_class
-        ),
-        "up_to_date" => format!(
+        RepoUnderstandingExportOutcome::NoSupportedFiles => {
+            format!(
+                "No supported source files found under {}. Update class: {}.",
+                export_root.display(),
+                export_summary.update_class
+            )
+        }
+        RepoUnderstandingExportOutcome::CachedReuse => format!(
             "Repo understanding is up to date under {}. Update class: {}.",
             export_root.display(),
             export_summary.update_class
         ),
-        _ => format!(
+        RepoUnderstandingExportOutcome::PartialSuccess => format!(
+            "Exported degraded repo understanding for {}. Update class: {}.",
+            export_root.display(),
+            export_summary.update_class
+        ),
+        RepoUnderstandingExportOutcome::CompleteSuccess => format!(
             "Exported repo understanding for {}. Update class: {}.",
             export_root.display(),
             export_summary.update_class
@@ -616,6 +657,35 @@ mod tests {
     }
 
     #[test]
+    fn collect_export_reports_partial_success_with_machine_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh_file = dir.path().join("fresh.rs");
+        let broken_file = dir.path().join("broken.rs");
+        std::fs::write(&fresh_file, "fn fresh() {}").unwrap();
+        std::fs::write(&broken_file, "fn broken(").unwrap();
+
+        let backend = MockBackend::new(HashMap::from([
+            (fresh_file.clone(), Ok(vec![sample_symbol(&fresh_file)])),
+            (
+                broken_file.clone(),
+                Err(rhizome_core::RhizomeError::Other("parse failure".into())),
+            ),
+        ]));
+
+        let prepared = collect_export(&backend, dir.path(), dir.path(), "demo", "code:demo");
+        assert_eq!(prepared.summary.status, "partial");
+        assert_eq!(
+            prepared.summary.export_status.outcome,
+            RepoUnderstandingExportOutcome::PartialSuccess
+        );
+        assert!(prepared.summary.export_status.any_exports_succeeded);
+        assert!(prepared.summary.export_status.any_exports_failed);
+        assert!(!prepared.summary.export_status.safe_to_consume);
+        assert_eq!(prepared.summary.files_processed, 1);
+        assert_eq!(prepared.summary.files_failed, 1);
+    }
+
+    #[test]
     fn collect_export_includes_tree_sitter_supported_languages_beyond_old_allowlist() {
         let dir = tempfile::tempdir().unwrap();
         let supported_files = [
@@ -733,6 +803,7 @@ mod tests {
             memoir_name: "code:demo".into(),
             export_root: "/tmp/demo".into(),
             update_class: UnderstandingUpdateClass::Unchanged,
+            export_status: RepoUnderstandingExportStatus::from_export_stats(0, 0, 0, 0),
             supported_files: 0,
             files_processed: 0,
             files_skipped_cached: 0,
@@ -770,5 +841,103 @@ mod tests {
                 .is_some()
         );
         assert!(result["understanding"]["update_class"].is_string());
+        assert_eq!(
+            result["understanding"]["export_status"]["outcome"],
+            result["understanding"]["artifact"]["export_status"]["outcome"]
+        );
+        assert_eq!(
+            result["understanding"]["export_status"]["safe_to_consume"],
+            result["understanding"]["artifact"]["export_status"]["safe_to_consume"]
+        );
+    }
+
+    #[test]
+    fn understanding_export_marks_partial_results_as_degraded() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path();
+        let src = project_root.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let good = src.join("good.rs");
+        let bad = src.join("bad.rs");
+        std::fs::write(&good, "fn good() {}\n").unwrap();
+        std::fs::write(&bad, "fn bad(\n").unwrap();
+
+        let backend = MockBackend::new(HashMap::from([
+            (good.clone(), Ok(vec![sample_symbol(&good)])),
+            (
+                bad.clone(),
+                Err(rhizome_core::RhizomeError::Other("parse failure".into())),
+            ),
+        ]));
+
+        let result = export_repo_understanding(&backend, &json!({}), project_root).unwrap();
+        assert_eq!(result["understanding"]["status"], "partial");
+        assert_eq!(
+            result["understanding"]["export_status"]["outcome"],
+            "partial_success"
+        );
+        assert_eq!(
+            result["understanding"]["export_status"]["refresh_kind"],
+            "full_refresh"
+        );
+        assert_eq!(
+            result["understanding"]["export_status"]["safe_to_consume"],
+            false
+        );
+        assert_eq!(
+            result["understanding"]["artifact"]["export_status"]["outcome"],
+            "partial_success"
+        );
+    }
+
+    #[test]
+    fn understanding_export_distinguishes_cached_reuse_from_no_supported_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path();
+        let src = project_root.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let cached = src.join("cached.rs");
+        std::fs::write(&cached, "fn cached() {}\n").unwrap();
+
+        let cache = ExportCache::new().update(&cached);
+        cache.save(project_root).unwrap();
+
+        let backend = MockBackend::new(HashMap::new());
+        let cached_result = export_repo_understanding(&backend, &json!({}), project_root).unwrap();
+        assert_eq!(
+            cached_result["understanding"]["export_status"]["outcome"],
+            "cached_reuse"
+        );
+        assert_eq!(
+            cached_result["understanding"]["export_status"]["safe_to_consume"],
+            true
+        );
+        assert!(
+            cached_result["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("up to date")
+        );
+
+        let empty_dir = tempfile::tempdir().unwrap();
+        let empty_result = export_repo_understanding(&backend, &json!({}), empty_dir.path()).unwrap();
+        assert_eq!(
+            empty_result["understanding"]["export_status"]["outcome"],
+            "no_supported_files"
+        );
+        assert_eq!(
+            empty_result["understanding"]["export_status"]["refresh_kind"],
+            "no_refresh"
+        );
+        assert_eq!(
+            empty_result["understanding"]["export_status"]["safe_to_consume"],
+            false
+        );
+        assert!(
+            empty_result["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("No supported source files found")
+        );
     }
 }

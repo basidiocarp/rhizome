@@ -4,6 +4,21 @@ All notable changes to Rhizome are documented in this file.
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-04-14
+
+### Added
+
+- **Machine-facing export contract**: Repo-understanding exports now distinguish
+  `cached_reuse` from `no_supported_files`, expose the same typed status in CLI
+  and MCP surfaces, and include direct regression coverage for the JSON
+  contract.
+
+### Changed
+
+- **Orchestration guidance**: README and handoff documentation now treat
+  `export_status` as the automation-safe trust surface and keep `update_class`
+  as a display-only summary label.
+
 ## [0.7.9] - 2026-04-10
 
 ### Added

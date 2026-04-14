@@ -98,7 +98,7 @@ enum Commands {
         #[arg(long, short)]
         project: Option<PathBuf>,
     },
-    /// Export a typed repo-understanding artifact
+    /// Export a typed repo-understanding artifact with machine-facing export status
     ExportUnderstanding {
         /// Workspace/project root path
         #[arg(long, short)]
@@ -512,18 +512,9 @@ fn cmd_export_understanding(project: Option<PathBuf>, json_output: bool) -> Resu
         &project_root,
     ) {
         Ok(result) => {
-            if json_output {
-                let json = serde_json::to_string_pretty(&result)
-                    .context("Failed to serialize understanding export to JSON")?;
-                println!("{json}");
-            } else if let Some(text) = result
-                .get("content")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|o| o.get("text"))
-                .and_then(|t| t.as_str())
-            {
-                println!("{text}");
+            let output = format_understanding_output(&result, json_output)?;
+            if !output.is_empty() {
+                println!("{output}");
             }
             if result
                 .get("isError")
@@ -538,6 +529,22 @@ fn cmd_export_understanding(project: Option<PathBuf>, json_output: bool) -> Resu
             eprintln!("Understanding export failed: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+fn format_understanding_output(result: &serde_json::Value, json_output: bool) -> Result<String> {
+    if json_output {
+        serde_json::to_string_pretty(result)
+            .context("Failed to serialize understanding export to JSON")
+    } else {
+        Ok(result
+            .get("content")
+            .and_then(|c| c.as_array())
+            .and_then(|a| a.first())
+            .and_then(|o| o.get("text"))
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .to_string())
     }
 }
 
@@ -702,6 +709,7 @@ async fn main() -> Result<()> {
 mod tests {
     use super::*;
     use std::fs;
+    use serde_json::json;
 
     #[test]
     fn render_editor_snippet_uses_json_key_for_claude_code() {
@@ -780,6 +788,33 @@ mod tests {
                 },
             }),
             "lsp_install"
+        );
+    }
+
+    #[test]
+    fn format_understanding_output_preserves_machine_status_in_json_mode() {
+        let result = json!({
+            "content": [{ "type": "text", "text": "Repo understanding is up to date." }],
+            "understanding": {
+                "export_status": {
+                    "outcome": "cached_reuse",
+                    "refresh_kind": "cached_reuse",
+                    "any_exports_succeeded": true,
+                    "any_exports_failed": false,
+                    "safe_to_consume": true
+                }
+            }
+        });
+
+        let output = format_understanding_output(&result, true).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(
+            parsed["understanding"]["export_status"]["outcome"],
+            "cached_reuse"
+        );
+        assert_eq!(
+            parsed["understanding"]["export_status"]["safe_to_consume"],
+            true
         );
     }
 }

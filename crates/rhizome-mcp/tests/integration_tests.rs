@@ -1206,6 +1206,39 @@ fn test_export_tool_in_list() {
 }
 
 #[test]
+fn test_export_repo_understanding_exposes_machine_status_contract() {
+    let dir = tempfile::tempdir().unwrap();
+    let project_root = dir.path();
+    let src = project_root.join("src");
+    let docs = project_root.join("docs");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&docs).unwrap();
+    std::fs::write(src.join("main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(docs.join("README.md"), "# demo\n").unwrap();
+
+    let dispatcher = ToolDispatcher::new(project_root.to_path_buf());
+    let result = dispatcher
+        .call_tool("export_repo_understanding", json!({}))
+        .unwrap();
+
+    assert!(result.get("understanding").is_some());
+    assert_eq!(
+        result["understanding"]["export_status"]["outcome"],
+        result["understanding"]["artifact"]["export_status"]["outcome"]
+    );
+    assert_eq!(
+        result["understanding"]["export_status"]["refresh_kind"],
+        result["understanding"]["artifact"]["export_status"]["refresh_kind"]
+    );
+    assert_eq!(
+        result["understanding"]["export_status"]["safe_to_consume"],
+        result["understanding"]["artifact"]["export_status"]["safe_to_consume"]
+    );
+    assert!(result["understanding"]["update_class"].is_string());
+    assert!(result["understanding"]["artifact"]["update_class"].is_string());
+}
+
+#[test]
 fn test_export_unified_mode() {
     use rhizome_mcp::McpServer;
 

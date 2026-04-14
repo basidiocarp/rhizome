@@ -32,6 +32,7 @@ pub use paths::{
 pub use project_summary::{EntryPoint, ModuleSummary, ProjectSummary, summarize_project};
 pub use repo_understanding::{
     RepoSurfaceKind, RepoSurfaceNode, RepoSurfaceSummary, RepoUnderstandingArtifact,
+    RepoUnderstandingExportOutcome, RepoUnderstandingExportStatus, RepoUnderstandingRefreshKind,
     UnderstandingUpdateClass, classify_repo_surface,
 };
 pub use root_detector::detect_workspace_root;

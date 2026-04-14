@@ -153,6 +153,7 @@ rhizome structure <file>          show symbol tree
 rhizome status                    show backend status
 rhizome lsp install <language>    install an LSP server
 rhizome export                    export code graph to Hyphae
+rhizome export-understanding      export bounded repo understanding
 ```
 
 ---
@@ -185,6 +186,30 @@ RHIZOME_LOG=rhizome_mcp::tools=debug rhizome serve
 
 `rhizome serve` keeps stdout reserved for newline-delimited MCP JSON-RPC
 traffic. Logs go to stderr so they do not corrupt the transport.
+
+## Repo-Understanding Export Status
+
+`rhizome export-understanding --json` and the MCP `export_repo_understanding`
+tool emit two separate status surfaces:
+
+- `update_class`: display-only summary label for humans
+- `export_status`: machine-facing orchestration contract
+
+Use `export_status` for automation. It exposes:
+
+- `outcome`: `complete_success`, `partial_success`, `cached_reuse`, `no_supported_files`, or `full_failure`
+- `refresh_kind`: `full_refresh`, `partial_refresh`, `cached_reuse`, or `no_refresh`
+- `any_exports_succeeded` and `any_exports_failed`
+- `safe_to_consume`
+
+Orchestration rule: treat `partial_success` as a degraded input even when an
+artifact exists. Only auto-consume repo understanding when `safe_to_consume` is
+`true`.
+
+`cached_reuse` means Rhizome found supported files and reused the cached export
+without reprocessing them. `no_supported_files` is a bounded no-op result for
+paths that contain nothing exportable; do not treat it as equivalent to cached
+reuse.
 
 ---
 
