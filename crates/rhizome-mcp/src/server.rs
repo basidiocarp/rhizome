@@ -245,7 +245,8 @@ impl McpServer {
                 json!({
                     "name": t.name,
                     "description": t.description,
-                    "inputSchema": t.input_schema
+                    "inputSchema": t.input_schema,
+                    "annotations": t.annotations
                 })
             })
             .collect();
@@ -371,5 +372,44 @@ mod tests {
         assert_eq!(context.service.as_deref(), Some("rhizome"));
         assert_eq!(context.request_id.as_deref(), Some("7"));
         assert_eq!(context.workspace_root.as_deref(), Some("/tmp/project"));
+    }
+
+    #[test]
+    fn tool_schemas_include_annotations() {
+        let server = McpServer::new(PathBuf::from("/tmp/project"), false);
+        let tools = server.dispatcher.list_tools();
+
+        // Verify we have tools
+        assert!(!tools.is_empty(), "Should have at least one tool");
+
+        // Find a read-only tool and an edit tool
+        let read_only_tool = tools
+            .iter()
+            .find(|t| t.name == "get_symbols")
+            .expect("get_symbols tool should exist");
+
+        let edit_tool = tools
+            .iter()
+            .find(|t| t.name == "replace_symbol_body")
+            .expect("replace_symbol_body tool should exist");
+
+        // Verify read-only tool annotations
+        assert_eq!(read_only_tool.annotations.read_only_hint, true);
+        assert_eq!(read_only_tool.annotations.destructive_hint, false);
+        assert_eq!(read_only_tool.annotations.idempotent_hint, true);
+
+        // Verify edit tool annotations
+        assert_eq!(edit_tool.annotations.read_only_hint, false);
+        assert_eq!(edit_tool.annotations.destructive_hint, false);
+        assert_eq!(edit_tool.annotations.idempotent_hint, false);
+
+        // Verify that annotations serialize to JSON correctly
+        let serialized = serde_json::to_value(&read_only_tool.annotations)
+            .expect("Should serialize annotations to JSON");
+        assert_eq!(
+            serialized.get("readOnlyHint").and_then(|v| v.as_bool()),
+            Some(true),
+            "readOnlyHint should be present in JSON"
+        );
     }
 }

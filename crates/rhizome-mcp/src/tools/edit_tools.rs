@@ -6,7 +6,7 @@ use rhizome_core::CodeIntelligence;
 use serde_json::{Value, json};
 
 use super::symbol_tools::{required_str, required_u32};
-use super::{ToolSchema, tool_error, tool_response};
+use super::{ToolAnnotations, ToolSchema, tool_error, tool_response};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Param helpers
@@ -48,6 +48,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "symbol", "new_body"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: false,
+            },
         },
         ToolSchema {
             name: "insert_after_symbol".into(),
@@ -63,6 +68,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "symbol", "content"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: false,
+            },
         },
         ToolSchema {
             name: "insert_before_symbol".into(),
@@ -78,6 +88,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "symbol", "content"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: false,
+            },
         },
         ToolSchema {
             name: "replace_lines".into(),
@@ -94,6 +109,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "start_line", "end_line", "content"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: false,
+            },
         },
         ToolSchema {
             name: "insert_at_line".into(),
@@ -109,6 +129,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "line", "content"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: false,
+            },
         },
         ToolSchema {
             name: "delete_lines".into(),
@@ -124,6 +149,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "start_line", "end_line"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: true,
+                idempotent_hint: false,
+            },
         },
         ToolSchema {
             name: "create_file".into(),
@@ -139,6 +169,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "content"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "copy_symbol".into(),
@@ -156,6 +191,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["source_file", "symbol", "target_file", "target_symbol", "position"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: false,
+            },
         },
         ToolSchema {
             name: "move_symbol".into(),
@@ -173,6 +213,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["source_file", "symbol", "target_file", "target_symbol", "position"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: false,
+            },
         },
     ]
 }

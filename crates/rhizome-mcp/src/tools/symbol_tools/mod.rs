@@ -6,7 +6,7 @@ pub mod onboard;
 pub mod params;
 pub mod query;
 
-pub(crate) use super::{ToolSchema, tool_response};
+pub(crate) use super::{ToolAnnotations, ToolSchema, tool_response};
 pub(crate) use params::{required_str, required_u32};
 
 pub(crate) use analysis::*;
@@ -41,6 +41,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_structure".into(),
@@ -55,6 +60,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_definition".into(),
@@ -68,6 +78,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "symbol"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "search_symbols".into(),
@@ -80,6 +95,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["pattern"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "find_references".into(),
@@ -93,6 +113,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "line", "column"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "analyze_impact".into(),
@@ -106,6 +131,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "line", "column"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "go_to_definition".into(),
@@ -119,6 +149,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "line", "column"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_signature".into(),
@@ -131,6 +166,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "symbol"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_imports".into(),
@@ -142,6 +182,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_call_sites".into(),
@@ -154,6 +199,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         // --- New tools ---
         ToolSchema {
@@ -167,6 +217,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "line"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_exports".into(),
@@ -178,6 +233,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "summarize_file".into(),
@@ -189,6 +249,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_tests".into(),
@@ -200,6 +265,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_diff_symbols".into(),
@@ -214,6 +284,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": []
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_annotations".into(),
@@ -230,6 +305,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_complexity".into(),
@@ -242,6 +322,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_type_definitions".into(),
@@ -254,6 +339,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         // --- Batch 2 tools ---
         ToolSchema {
@@ -266,6 +356,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_parameters".into(),
@@ -278,6 +373,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_enclosing_class".into(),
@@ -291,6 +391,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "method"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_symbol_body".into(),
@@ -305,6 +410,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "symbol"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_region".into(),
@@ -318,6 +428,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "region_id"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_changed_files".into(),
@@ -331,6 +446,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": []
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "summarize_project".into(),
@@ -340,6 +460,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 "properties": {},
                 "required": []
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
     ]
 }

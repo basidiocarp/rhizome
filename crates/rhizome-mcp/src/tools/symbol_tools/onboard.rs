@@ -13,19 +13,6 @@ use super::{ToolSchema, tool_response};
 static PROJECT_SUMMARY_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
 const CACHE_TTL_SECS: u64 = 300;
 
-pub fn tool_schemas() -> Vec<ToolSchema> {
-    vec![ToolSchema {
-        name: "summarize_project".into(),
-        description: "Summarize project structure: entry points, key types, modules, test counts"
-            .into(),
-        input_schema: json!({
-            "type": "object",
-            "properties": {},
-            "required": []
-        }),
-    }]
-}
-
 pub fn summarize_project_tool(
     backend: &dyn CodeIntelligence,
     _args: &Value,
@@ -165,5 +152,10 @@ pub fn onboard_schema() -> ToolSchema {
             "type": "object",
             "properties": {}
         }),
+        annotations: super::ToolAnnotations {
+            read_only_hint: false,
+            destructive_hint: false,
+            idempotent_hint: true,
+        },
     }
 }

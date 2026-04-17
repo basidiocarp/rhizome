@@ -18,12 +18,22 @@ use serde_json::{Value, json};
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Annotations describing the semantics of an MCP tool.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolAnnotations {
+    pub read_only_hint: bool,
+    pub destructive_hint: bool,
+    pub idempotent_hint: bool,
+}
+
 /// Schema describing an MCP tool for the `tools/list` response.
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolSchema {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    pub annotations: ToolAnnotations,
 }
 
 /// Internal enum for resolved backend after lazy init.

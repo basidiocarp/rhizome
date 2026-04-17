@@ -13,7 +13,7 @@ use rhizome_core::{
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::{ToolSchema, tool_error};
+use super::{ToolAnnotations, ToolSchema, tool_error};
 
 fn is_supported_extension(path: &Path) -> bool {
     path.extension()
@@ -319,6 +319,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": []
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "export_repo_understanding".into(),
@@ -337,6 +342,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": []
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
     ]
 }

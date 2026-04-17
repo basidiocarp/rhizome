@@ -4,7 +4,7 @@ use anyhow::Result;
 use rhizome_core::{CodeIntelligence, Language, Position, detect_workspace_root};
 use serde_json::{Value, json};
 
-use super::{ToolSchema, edit_tools::resolve_path, tool_error, tool_response};
+use super::{ToolAnnotations, ToolSchema, edit_tools::resolve_path, tool_error, tool_response};
 
 // ---------------------------------------------------------------------------
 // Tool schemas
@@ -29,6 +29,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "line", "column", "new_name"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: false,
+            },
         },
         ToolSchema {
             name: "get_diagnostics".into(),
@@ -40,6 +45,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
         ToolSchema {
             name: "get_hover_info".into(),
@@ -54,6 +64,11 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 },
                 "required": ["file", "line", "column"]
             }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
         },
     ]
 }
