@@ -93,11 +93,13 @@ pub fn install_recipe(binary_name: &str) -> Option<InstallRecipe> {
         }),
 
         // ── Python ─────────────────────────────────────────────────────
+        // pyright is an npm package; npm --prefix places pyright-langserver in
+        // node_modules/.bin which rhizome's augmented PATH already covers.
         "pyright-langserver" | "pyright" => Some(InstallRecipe {
-            manager: "pipx",
+            manager: "npm",
             args: &["install", "pyright"],
             bin_env: None,
-            strategy: InstallStrategy::PipxOrPip,
+            strategy: InstallStrategy::NpmPrefix,
         }),
         "pylsp" => Some(InstallRecipe {
             manager: "pipx",
@@ -669,7 +671,8 @@ mod tests {
         assert_eq!(r.strategy, InstallStrategy::GemBinDir);
 
         let r = install_recipe("pyright-langserver").unwrap();
-        assert_eq!(r.strategy, InstallStrategy::PipxOrPip);
+        assert_eq!(r.strategy, InstallStrategy::NpmPrefix);
+        assert_eq!(r.manager, "npm");
 
         let r = install_recipe("rust-analyzer").unwrap();
         assert_eq!(r.strategy, InstallStrategy::ManagerOwned);
