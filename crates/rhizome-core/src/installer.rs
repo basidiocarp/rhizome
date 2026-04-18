@@ -160,12 +160,8 @@ pub fn install_recipe(binary_name: &str) -> Option<InstallRecipe> {
         // clangd and ccls require system package managers — skip auto-install
 
         // ── Elixir ─────────────────────────────────────────────────────
-        "elixir-ls" | "elixir_ls" => Some(InstallRecipe {
-            manager: "mix",
-            args: &["archive.install", "hex", "elixir_ls"],
-            bin_env: None,
-            strategy: InstallStrategy::ManagerOwned,
-        }),
+        // elixir-ls is not on hex.pm; it requires downloading a GitHub release
+        // and extracting the language_server.sh script — skip auto-install
 
         // ── Zig ────────────────────────────────────────────────────────
         // zls requires downloading from GitHub releases — skip auto-install
@@ -178,12 +174,8 @@ pub fn install_recipe(binary_name: &str) -> Option<InstallRecipe> {
             bin_env: None,
             strategy: InstallStrategy::DotnetToolPath,
         }),
-        "omnisharp" => Some(InstallRecipe {
-            manager: "dotnet",
-            args: &["tool", "install", "omnisharp", "--tool-path"],
-            bin_env: None,
-            strategy: InstallStrategy::DotnetToolPath,
-        }),
+        // omnisharp ships as platform-specific binaries from GitHub releases,
+        // not as a dotnet tool — skip auto-install
 
         // ── F# ────────────────────────────────────────────────────────
         "fsautocomplete" => Some(InstallRecipe {
