@@ -30,12 +30,12 @@ fn test_build_graph_from_rust_fixture() {
 
     let names: Vec<&str> = graph.nodes.iter().map(|n| n.name.as_str()).collect();
     assert!(
-        names.contains(&"Config"),
+        names.iter().any(|n| n.ends_with("::Config")),
         "Should contain Config struct: {:?}",
         names
     );
     assert!(
-        names.contains(&"process"),
+        names.iter().any(|n| n.ends_with("::process")),
         "Should contain process function: {:?}",
         names
     );
@@ -79,12 +79,12 @@ fn test_build_graph_from_typescript_fixture() {
 
     let names: Vec<&str> = graph.nodes.iter().map(|n| n.name.as_str()).collect();
     assert!(
-        names.contains(&"HttpClient"),
+        names.iter().any(|n| n.ends_with("::HttpClient")),
         "Should contain HttpClient class: {:?}",
         names
     );
     assert!(
-        names.contains(&"createClient"),
+        names.iter().any(|n| n.ends_with("::createClient")),
         "Should contain createClient function: {:?}",
         names
     );

@@ -71,11 +71,12 @@ fn language_from_extension(path: &Path) -> &'static str {
     }
 }
 
-fn module_name_from_path(path: &Path) -> String {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string()
+/// Generate a unique, stable node identifier for a symbol.
+/// Combines file path with the full qualified name (built from scope path + symbol name).
+fn node_id_for_symbol(symbol: &Symbol, file_path_str: &str, current_scope: &[String]) -> String {
+    let mut parts = current_scope.to_vec();
+    parts.push(symbol.name.clone());
+    format!("{}::{}", file_path_str, parts.join("::"))
 }
 
 fn labels_for_kind(kind: &SymbolKind) -> Vec<String> {
@@ -110,16 +111,16 @@ fn process_symbols(
     symbols: &[Symbol],
     file_path_str: &str,
     language: &str,
-    module_name: &str,
     nodes: &mut Vec<ConceptNode>,
     edges: &mut Vec<ConceptEdge>,
-    parent_name: Option<&str>,
+    parent_id: Option<&str>,
+    current_scope: &[String],
 ) {
     for symbol in symbols {
         let mut labels = labels_for_kind(&symbol.kind);
 
         if let Some(sig) = &symbol.signature {
-            if sig.starts_with("pub") {
+            if sig.starts_with("pub ") || sig.starts_with("pub(") {
                 labels.push("public".into());
             }
             if sig.contains("async") {
@@ -135,17 +136,19 @@ fn process_symbols(
         metadata.insert("line_end".into(), symbol.location.line_end.to_string());
         metadata.insert("language".into(), language.to_string());
 
+        let node_id = node_id_for_symbol(symbol, file_path_str, current_scope);
+
         nodes.push(ConceptNode {
-            name: symbol.name.clone(),
+            name: node_id.clone(),
             labels,
             description,
             metadata,
         });
 
-        if let Some(parent) = parent_name {
+        if let Some(parent) = parent_id {
             edges.push(ConceptEdge {
                 source: parent.to_string(),
-                target: symbol.name.clone(),
+                target: node_id.clone(),
                 relation: "contains".into(),
                 weight: WEIGHT_CONTAINS,
             });
@@ -153,43 +156,58 @@ fn process_symbols(
 
         if symbol.kind == SymbolKind::Import {
             edges.push(ConceptEdge {
-                source: module_name.to_string(),
-                target: symbol.name.clone(),
+                source: file_path_str.to_string(),
+                target: node_id.clone(),
                 relation: "imports".into(),
                 weight: WEIGHT_IMPORTS,
             });
         }
 
         if !symbol.children.is_empty() {
+            let mut child_scope = current_scope.to_vec();
+            child_scope.push(symbol.name.clone());
             process_symbols(
                 &symbol.children,
                 file_path_str,
                 language,
-                module_name,
                 nodes,
                 edges,
-                Some(&symbol.name),
+                Some(&node_id),
+                &child_scope,
             );
         }
     }
 }
 
 pub fn build_graph(project: &str, symbols: &[Symbol], file_path: &Path) -> CodeGraph {
-    let module_name = module_name_from_path(file_path);
     let language = language_from_extension(file_path);
     let file_path_str = file_path.to_string_lossy();
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
+    // Add a synthetic file-level node to anchor imports edges
+    let mut file_metadata = HashMap::new();
+    file_metadata.insert("file_path".into(), file_path_str.to_string());
+    file_metadata.insert("line_start".into(), "0".to_string());
+    file_metadata.insert("line_end".into(), "0".to_string());
+    file_metadata.insert("language".into(), language.to_string());
+
+    nodes.push(ConceptNode {
+        name: file_path_str.to_string(),
+        labels: vec!["file".into()],
+        description: String::new(),
+        metadata: file_metadata,
+    });
+
     process_symbols(
         symbols,
         &file_path_str,
         language,
-        &module_name,
         &mut nodes,
         &mut edges,
         None,
+        &[],
     );
 
     CodeGraph {
@@ -264,7 +282,7 @@ mod tests {
         let graph = build_graph("myproject", &symbols, Path::new("src/server.rs"));
 
         assert_eq!(graph.project, "myproject");
-        assert_eq!(graph.nodes.len(), 2);
+        assert_eq!(graph.nodes.len(), 3); // file-level node + 2 symbols
         assert_eq!(graph.edges.len(), 0);
     }
 
@@ -288,19 +306,20 @@ mod tests {
 
         let graph = build_graph("test", &symbols, Path::new("src/lib.rs"));
 
-        assert_eq!(graph.nodes[0].labels, vec!["function"]);
-        assert_eq!(graph.nodes[1].labels, vec!["struct", "type"]);
-        assert_eq!(graph.nodes[2].labels, vec!["enum", "type"]);
-        assert_eq!(graph.nodes[3].labels, vec!["trait", "interface"]);
-        assert_eq!(graph.nodes[4].labels, vec!["class", "type"]);
-        assert_eq!(graph.nodes[5].labels, vec!["interface"]);
-        assert_eq!(graph.nodes[6].labels, vec!["type"]);
-        assert_eq!(graph.nodes[7].labels, vec!["constant"]);
-        assert_eq!(graph.nodes[8].labels, vec!["variable"]);
-        assert_eq!(graph.nodes[9].labels, vec!["import"]);
-        assert_eq!(graph.nodes[10].labels, vec!["module"]);
-        assert_eq!(graph.nodes[11].labels, vec!["property"]);
-        assert_eq!(graph.nodes[12].labels, vec!["field"]);
+        // File-level node is at index 0, symbols start at index 1
+        assert_eq!(graph.nodes[1].labels, vec!["function"]);
+        assert_eq!(graph.nodes[2].labels, vec!["struct", "type"]);
+        assert_eq!(graph.nodes[3].labels, vec!["enum", "type"]);
+        assert_eq!(graph.nodes[4].labels, vec!["trait", "interface"]);
+        assert_eq!(graph.nodes[5].labels, vec!["class", "type"]);
+        assert_eq!(graph.nodes[6].labels, vec!["interface"]);
+        assert_eq!(graph.nodes[7].labels, vec!["type"]);
+        assert_eq!(graph.nodes[8].labels, vec!["constant"]);
+        assert_eq!(graph.nodes[9].labels, vec!["variable"]);
+        assert_eq!(graph.nodes[10].labels, vec!["import"]);
+        assert_eq!(graph.nodes[11].labels, vec!["module"]);
+        assert_eq!(graph.nodes[12].labels, vec!["property"]);
+        assert_eq!(graph.nodes[13].labels, vec!["field"]);
     }
 
     #[test]
@@ -308,7 +327,8 @@ mod tests {
         let symbols = vec![make_symbol("foo", SymbolKind::Function)];
         let graph = build_graph("proj", &symbols, Path::new("src/server.rs"));
 
-        let node = &graph.nodes[0];
+        // File-level node is at index 0, function symbol is at index 1
+        let node = &graph.nodes[1];
         assert_eq!(node.metadata.get("file_path").unwrap(), "src/server.rs");
         assert_eq!(node.metadata.get("line_start").unwrap(), "1");
         assert_eq!(node.metadata.get("line_end").unwrap(), "10");
@@ -321,7 +341,8 @@ mod tests {
         sym.signature = Some("pub fn serve()".into());
 
         let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
-        assert!(graph.nodes[0].labels.contains(&"public".to_string()));
+        // File-level node is at index 0, function symbol is at index 1
+        assert!(graph.nodes[1].labels.contains(&"public".to_string()));
     }
 
     #[test]
@@ -330,8 +351,9 @@ mod tests {
         sym.signature = Some("pub async fn fetch()".into());
 
         let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
-        assert!(graph.nodes[0].labels.contains(&"async".to_string()));
-        assert!(graph.nodes[0].labels.contains(&"public".to_string()));
+        // File-level node is at index 0, function symbol is at index 1
+        assert!(graph.nodes[1].labels.contains(&"async".to_string()));
+        assert!(graph.nodes[1].labels.contains(&"public".to_string()));
     }
 
     #[test]
@@ -341,7 +363,8 @@ mod tests {
         sym.doc_comment = Some("Does foo things".into());
 
         let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
-        assert_eq!(graph.nodes[0].description, "fn foo()\n\nDoes foo things");
+        // File-level node is at index 0, function symbol is at index 1
+        assert_eq!(graph.nodes[1].description, "fn foo()\n\nDoes foo things");
     }
 
     #[test]
@@ -350,7 +373,8 @@ mod tests {
         sym.signature = Some("fn foo()".into());
 
         let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
-        assert_eq!(graph.nodes[0].description, "fn foo()");
+        // File-level node is at index 0, function symbol is at index 1
+        assert_eq!(graph.nodes[1].description, "fn foo()");
     }
 
     #[test]
@@ -359,14 +383,16 @@ mod tests {
         sym.doc_comment = Some("Does foo things".into());
 
         let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
-        assert_eq!(graph.nodes[0].description, "Does foo things");
+        // File-level node is at index 0, function symbol is at index 1
+        assert_eq!(graph.nodes[1].description, "Does foo things");
     }
 
     #[test]
     fn test_description_neither() {
         let sym = make_symbol("foo", SymbolKind::Function);
         let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
-        assert_eq!(graph.nodes[0].description, "");
+        // File-level node is at index 0, function symbol is at index 1
+        assert_eq!(graph.nodes[1].description, "");
     }
 
     #[test]
@@ -375,8 +401,8 @@ mod tests {
         let graph = build_graph("proj", &symbols, Path::new("src/server.rs"));
 
         assert_eq!(graph.edges.len(), 1);
-        assert_eq!(graph.edges[0].source, "server");
-        assert_eq!(graph.edges[0].target, "serde");
+        assert_eq!(graph.edges[0].source, "src/server.rs");
+        assert_eq!(graph.edges[0].target, "src/server.rs::serde");
         assert_eq!(graph.edges[0].relation, "imports");
         assert_eq!(graph.edges[0].weight, WEIGHT_IMPORTS);
     }
@@ -389,10 +415,11 @@ mod tests {
 
         let graph = build_graph("proj", &[parent], Path::new("src/lib.rs"));
 
-        assert_eq!(graph.nodes.len(), 2);
+        // File-level node + parent + child = 3 nodes
+        assert_eq!(graph.nodes.len(), 3);
         assert_eq!(graph.edges.len(), 1);
-        assert_eq!(graph.edges[0].source, "MyStruct");
-        assert_eq!(graph.edges[0].target, "method_a");
+        assert_eq!(graph.edges[0].source, "src/lib.rs::MyStruct");
+        assert_eq!(graph.edges[0].target, "src/lib.rs::MyStruct::method_a");
         assert_eq!(graph.edges[0].relation, "contains");
         assert_eq!(graph.edges[0].weight, WEIGHT_CONTAINS);
     }
@@ -463,6 +490,40 @@ mod tests {
         let merged = merge_graphs(vec![graph]);
         assert_eq!(merged.nodes.len(), 1);
         assert!(merged.edges.is_empty());
+    }
+
+    #[test]
+    fn test_merge_graphs_preserves_imports_edges() {
+        // Verify that imports edges survive merge when the file-level node is present
+        let graph = CodeGraph {
+            project: "proj".into(),
+            nodes: vec![
+                ConceptNode {
+                    name: "src/server.rs".into(),
+                    labels: vec!["file".into()],
+                    description: String::new(),
+                    metadata: HashMap::new(),
+                },
+                ConceptNode {
+                    name: "src/server.rs::serde".into(),
+                    labels: vec!["import".into()],
+                    description: String::new(),
+                    metadata: HashMap::new(),
+                },
+            ],
+            edges: vec![ConceptEdge {
+                source: "src/server.rs".into(),
+                target: "src/server.rs::serde".into(),
+                relation: "imports".into(),
+                weight: WEIGHT_IMPORTS,
+            }],
+        };
+
+        let merged = merge_graphs(vec![graph]);
+        assert_eq!(merged.nodes.len(), 2);
+        assert_eq!(merged.edges.len(), 1);
+        assert_eq!(merged.edges[0].source, "src/server.rs");
+        assert_eq!(merged.edges[0].target, "src/server.rs::serde");
     }
 
     #[test]
