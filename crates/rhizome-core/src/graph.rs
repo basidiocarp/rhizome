@@ -33,41 +33,43 @@ pub struct CodeGraph {
     pub edges: Vec<ConceptEdge>,
 }
 
-fn language_from_extension(path: &Path) -> &'static str {
+fn language_from_extension(path: &Path) -> String {
     match path.extension().and_then(|e| e.to_str()) {
-        Some("rs") => "rust",
-        Some("py" | "pyi") => "python",
-        Some("js" | "jsx" | "mjs" | "cjs") => "javascript",
-        Some("ts" | "tsx" | "mts" | "cts") => "typescript",
-        Some("go") => "go",
-        Some("java") => "java",
-        Some("c" | "h") => "c",
-        Some("cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh") => "cpp",
-        Some("rb" | "rake" | "gemspec" | "ru") => "ruby",
-        Some("ex" | "exs") => "elixir",
-        Some("zig" | "zon") => "zig",
-        Some("cs") => "csharp",
-        Some("fs" | "fsi" | "fsx") => "fsharp",
-        Some("swift") => "swift",
-        Some("php") => "php",
-        Some("hs" | "lhs") => "haskell",
-        Some("sh" | "bash" | "zsh") => "bash",
-        Some("tf" | "tfvars") => "terraform",
-        Some("kt" | "kts") => "kotlin",
-        Some("dart") => "dart",
-        Some("lua") => "lua",
-        Some("clj" | "cljs" | "cljc") => "clojure",
-        Some("ml" | "mli") => "ocaml",
-        Some("jl") => "julia",
-        Some("nix") => "nix",
-        Some("gleam") => "gleam",
-        Some("vue") => "vue",
-        Some("svelte") => "svelte",
-        Some("astro") => "astro",
-        Some("prisma") => "prisma",
-        Some("typ" | "typc") => "typst",
-        Some("yaml" | "yml") => "yaml",
-        _ => "unknown",
+        Some("rs") => "rust".into(),
+        Some("py" | "pyi") => "python".into(),
+        Some("js" | "jsx" | "mjs" | "cjs") => "javascript".into(),
+        Some("ts" | "tsx" | "mts" | "cts") => "typescript".into(),
+        Some("go") => "go".into(),
+        Some("java") => "java".into(),
+        Some("c" | "h") => "c".into(),
+        Some("cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh") => "cpp".into(),
+        Some("rb" | "rake" | "gemspec" | "ru") => "ruby".into(),
+        Some("ex" | "exs") => "elixir".into(),
+        Some("zig" | "zon") => "zig".into(),
+        Some("cs") => "csharp".into(),
+        Some("fs" | "fsi" | "fsx") => "fsharp".into(),
+        Some("swift") => "swift".into(),
+        Some("php") => "php".into(),
+        Some("hs" | "lhs") => "haskell".into(),
+        Some("sh" | "bash" | "zsh") => "bash".into(),
+        Some("tf" | "tfvars") => "terraform".into(),
+        Some("kt" | "kts") => "kotlin".into(),
+        Some("dart") => "dart".into(),
+        Some("lua") => "lua".into(),
+        Some("clj" | "cljs" | "cljc") => "clojure".into(),
+        Some("ml" | "mli") => "ocaml".into(),
+        Some("jl") => "julia".into(),
+        Some("nix") => "nix".into(),
+        Some("gleam") => "gleam".into(),
+        Some("vue") => "vue".into(),
+        Some("svelte") => "svelte".into(),
+        Some("astro") => "astro".into(),
+        Some("prisma") => "prisma".into(),
+        Some("typ" | "typc") => "typst".into(),
+        Some("yaml" | "yml") => "yaml".into(),
+        // Use the full file path as fallback to prevent node collision
+        // when multiple files share the same unrecognized extension.
+        _ => path.to_string_lossy().into_owned(),
     }
 }
 
@@ -191,7 +193,7 @@ pub fn build_graph(project: &str, symbols: &[Symbol], file_path: &Path) -> CodeG
     file_metadata.insert("file_path".into(), file_path_str.to_string());
     file_metadata.insert("line_start".into(), "0".to_string());
     file_metadata.insert("line_end".into(), "0".to_string());
-    file_metadata.insert("language".into(), language.to_string());
+    file_metadata.insert("language".into(), language.clone());
 
     nodes.push(ConceptNode {
         name: file_path_str.to_string(),
@@ -203,7 +205,7 @@ pub fn build_graph(project: &str, symbols: &[Symbol], file_path: &Path) -> CodeG
     process_symbols(
         symbols,
         &file_path_str,
-        language,
+        &language,
         &mut nodes,
         &mut edges,
         None,

@@ -107,7 +107,6 @@ pub fn rhizome_onboard(project_root: &Path) -> Result<Value> {
         "find_references",
         "get_diagnostics",
         "rename_symbol",
-        "get_hover_info",
         "replace_symbol_body",
         "insert_after_symbol",
         "insert_before_symbol",

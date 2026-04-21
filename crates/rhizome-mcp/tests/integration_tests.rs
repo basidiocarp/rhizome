@@ -22,10 +22,10 @@ fn make_dispatcher() -> ToolDispatcher {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_list_tools_returns_40_tools() {
+fn test_list_tools_returns_39_tools() {
     let dispatcher = make_dispatcher();
     let tools = dispatcher.list_tools();
-    assert_eq!(tools.len(), 40, "Expected 40 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 39, "Expected 39 tools, got {}", tools.len());
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"get_symbols"));
@@ -40,7 +40,6 @@ fn test_list_tools_returns_40_tools() {
     assert!(names.contains(&"get_call_sites"));
     assert!(names.contains(&"rename_symbol"));
     assert!(names.contains(&"get_diagnostics"));
-    assert!(names.contains(&"get_hover_info"));
     // Batch 1 tools
     assert!(names.contains(&"get_scope"));
     assert!(names.contains(&"get_exports"));
@@ -373,30 +372,6 @@ fn test_rename_symbol_no_lsp() {
             json!({ "file": fixture_path("sample.rs"), "line": 2, "column": 11, "new_name": "Settings" }),
         )
         .expect("rename_symbol should succeed (returning error message)");
-
-    assert!(
-        result
-            .get("isError")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        "Should return isError=true"
-    );
-    let text = extract_text(&result);
-    assert!(
-        text.contains("LSP") && text.contains("require"),
-        "Should indicate LSP is required: {text}"
-    );
-}
-
-#[test]
-fn test_get_hover_info_no_lsp() {
-    let dispatcher = make_dispatcher();
-    let result = dispatcher
-        .call_tool(
-            "get_hover_info",
-            json!({ "file": fixture_path("sample.rs"), "line": 2, "column": 11 }),
-        )
-        .expect("get_hover_info should succeed (returning error message)");
 
     assert!(
         result
@@ -1162,8 +1137,8 @@ fn test_expanded_mode_tools_list_returns_40_tools() {
         .expect("Should have tools array");
     assert_eq!(
         tools.len(),
-        40,
-        "Expanded mode should return 40 tools, got {}",
+        39,
+        "Expanded mode should return 39 tools, got {}",
         tools.len()
     );
 }

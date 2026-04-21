@@ -14,6 +14,28 @@ use serde_json::{Value, json};
 use super::navigation::find_innermost_scope;
 use super::{ToolSchema, tool_response};
 
+/// Validates that a git ref argument contains only safe characters.
+///
+/// Accepts refs that match `[a-zA-Z0-9/_\-.~^@{} ]+`. This covers branch
+/// names, tags, commit SHAs, and common revision syntax while rejecting
+/// flag-like values (e.g. `--exec=cmd`).
+fn validate_git_ref(r: &str) -> Result<()> {
+    if r.is_empty() {
+        return Err(anyhow::anyhow!("git ref must not be empty"));
+    }
+    if r.bytes().all(|b| {
+        b.is_ascii_alphanumeric()
+            || matches!(b, b'/' | b'_' | b'-' | b'.' | b'~' | b'^' | b'@' | b'{' | b'}' | b' ')
+    }) {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "invalid git ref {:?}: contains characters not allowed in a ref",
+            r
+        ))
+    }
+}
+
 pub fn get_diff_symbols(
     backend: &dyn CodeIntelligence,
     args: &Value,
@@ -22,6 +44,13 @@ pub fn get_diff_symbols(
     let file_filter = args.get("file").and_then(|v| v.as_str());
     let ref1 = args.get("ref1").and_then(|v| v.as_str());
     let ref2 = args.get("ref2").and_then(|v| v.as_str());
+
+    if let Some(r) = ref1 {
+        validate_git_ref(r)?;
+    }
+    if let Some(r) = ref2 {
+        validate_git_ref(r)?;
+    }
 
     let mut cmd = Command::new("git");
     cmd.current_dir(project_root);
@@ -163,6 +192,13 @@ pub fn get_changed_files(
 ) -> Result<Value> {
     let ref1 = args.get("ref1").and_then(|v| v.as_str());
     let ref2 = args.get("ref2").and_then(|v| v.as_str());
+
+    if let Some(r) = ref1 {
+        validate_git_ref(r)?;
+    }
+    if let Some(r) = ref2 {
+        validate_git_ref(r)?;
+    }
 
     // Get list of changed files
     let mut name_cmd = Command::new("git");

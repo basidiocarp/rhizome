@@ -197,8 +197,17 @@ pub fn get_annotations(
         for tag in &tags {
             let tag_upper = tag.to_uppercase();
             if let Some(pos) = upper.find(&tag_upper) {
-                // Extract the message after the tag
-                let after_tag = &line[pos + tag.len()..];
+                // Translate the byte offset found in the uppercased string back
+                // to a char count, then find the corresponding byte offset in the
+                // original line. This avoids slicing mid-char when the uppercase
+                // form of a character differs in byte length from the original.
+                let char_offset = upper[..pos].chars().count();
+                let byte_offset_in_line = line
+                    .char_indices()
+                    .nth(char_offset + tag_upper.chars().count())
+                    .map(|(b, _)| b)
+                    .unwrap_or(line.len());
+                let after_tag = &line[byte_offset_in_line..];
                 let message = after_tag
                     .trim_start_matches([':', ' ', ']'])
                     .trim_end_matches(['*', '/'])

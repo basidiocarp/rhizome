@@ -557,7 +557,7 @@ fn cmd_status(project: Option<PathBuf>) -> Result<()> {
 
     let installer = selector.installer();
     println!("\nBackend selection: tree-sitter (default) -> auto-upgrade to LSP when needed");
-    println!("LSP-required tools: rename_symbol, get_hover_info");
+    println!("LSP-required tools: rename_symbol");
     println!("LSP-preferred tools: find_references, get_diagnostics");
     println!(
         "\nAuto-install: {}",

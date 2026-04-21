@@ -51,25 +51,6 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 idempotent_hint: true,
             },
         },
-        ToolSchema {
-            name: "get_hover_info".into(),
-            description: "Get hover information (type info, docs) for a position (requires LSP)"
-                .into(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "file": { "type": "string", "description": "Path to the source file" },
-                    "line": { "type": "number", "description": "Line number (0-based)" },
-                    "column": { "type": "number", "description": "Column number (0-based)" }
-                },
-                "required": ["file", "line", "column"]
-            }),
-            annotations: ToolAnnotations {
-                read_only_hint: true,
-                destructive_hint: false,
-                idempotent_hint: true,
-            },
-        },
     ]
 }
 
@@ -152,13 +133,15 @@ pub fn get_diagnostics(
     treesitter: &dyn CodeIntelligence,
     lsp: Option<&rhizome_lsp::LspBackend>,
     args: &Value,
+    project_root: &Path,
 ) -> Result<Value> {
     let file = args
         .get("file")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
 
-    let path = Path::new(file);
+    let path_buf = resolve_path(file, project_root)?;
+    let path = path_buf.as_path();
 
     // Prefer LSP diagnostics if available
     let backend: &dyn CodeIntelligence = match lsp {
@@ -189,27 +172,9 @@ pub fn get_diagnostics(
     Ok(tool_response(&text))
 }
 
-/// Get hover info at a position (LSP only).
-pub fn get_hover_info(lsp: Option<&rhizome_lsp::LspBackend>, _args: &Value) -> Result<Value> {
-    match lsp {
-        Some(_lsp_backend) => {
-            // Full hover implementation would use the LSP hover request.
-            Ok(tool_error(
-                "LSP hover is not yet fully wired. \
-                 Install rust-analyzer for Rust or pyright for Python support.",
-            ))
-        }
-        None => Ok(lsp_required_error("get_hover_info")),
-    }
-}
-
 fn lsp_required_error(tool_name: &str) -> Value {
     let suggestion = match tool_name {
         "rename_symbol" => {
-            "LSP required for this operation. \
-             Install rust-analyzer for Rust or pyright for Python support."
-        }
-        "get_hover_info" => {
             "LSP required for this operation. \
              Install rust-analyzer for Rust or pyright for Python support."
         }

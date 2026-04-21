@@ -65,7 +65,10 @@ pub struct ToolDispatcher {
 
 impl ToolDispatcher {
     pub fn new(project_root: PathBuf) -> Self {
-        let config = RhizomeConfig::load(&project_root).unwrap_or_default();
+        let config = RhizomeConfig::load(&project_root).unwrap_or_else(|err| {
+            tracing::warn!("failed to load rhizome config from {}: {err}", project_root.display());
+            RhizomeConfig::default()
+        });
         Self {
             treesitter: TreeSitterBackend::new(),
             parserless: ParserlessBackend::new(),
@@ -180,20 +183,18 @@ impl ToolDispatcher {
             }
             "get_diagnostics" => {
                 let ts = &self.treesitter;
+                let r = root.clone();
                 self.dispatch_auto(
                     name,
                     &args,
-                    |a| file_tools::get_diagnostics(ts, None, a),
-                    |lsp, a| file_tools::get_diagnostics(ts, Some(lsp), a),
+                    |a| file_tools::get_diagnostics(ts, None, a, &r),
+                    |lsp, a| file_tools::get_diagnostics(ts, Some(lsp), a, &r),
                 )
             }
 
             // ── LSP-required tools ──────────────────────────────────────
             "rename_symbol" => self.dispatch_lsp_required(name, &args, |lsp, a| {
                 file_tools::rename_symbol(Some(lsp), a, &root)
-            }),
-            "get_hover_info" => self.dispatch_lsp_required(name, &args, |lsp, a| {
-                file_tools::get_hover_info(Some(lsp), a)
             }),
 
             // ── Edit tools ─────────────────────────────────────────────

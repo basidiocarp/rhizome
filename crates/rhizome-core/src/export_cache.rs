@@ -1,5 +1,4 @@
-use std::collections::{HashMap, hash_map::DefaultHasher};
-use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -143,19 +142,26 @@ fn canonical_project_root(project_root: &Path) -> PathBuf {
     std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf())
 }
 
+/// Stable FNV-1a 64-bit hash. Does not depend on Rust version or platform,
+/// so cache file names remain valid across toolchain upgrades.
+fn fnv1a_64(data: &[u8]) -> u64 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    data.iter().fold(OFFSET, |h, &b| (h ^ b as u64).wrapping_mul(PRIME))
+}
+
 fn cache_scope(project_root: &Path) -> String {
-    let mut hasher = DefaultHasher::new();
     let normalized_root = canonical_project_root(project_root);
-    normalized_root.to_string_lossy().hash(&mut hasher);
+    let mut bytes = normalized_root.to_string_lossy().into_owned().into_bytes();
 
     if let Some(git_marker) = find_git_marker(&normalized_root)
         && let Some(context) = git_context(&git_marker)
     {
-        context.git_dir.to_string_lossy().hash(&mut hasher);
-        context.head.hash(&mut hasher);
+        bytes.extend_from_slice(context.git_dir.to_string_lossy().as_bytes());
+        bytes.extend_from_slice(context.head.as_bytes());
     }
 
-    format!("{:016x}", hasher.finish())
+    format!("{:016x}", fnv1a_64(&bytes))
 }
 
 fn find_git_marker(start: &Path) -> Option<PathBuf> {

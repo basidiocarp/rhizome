@@ -52,7 +52,7 @@ impl ParserPool {
                 .map_err(|e| anyhow!("Failed to set language: {}", e))?;
             self.parsers.insert(dialect.clone(), parser);
         }
-        Ok(self.parsers.get_mut(&dialect).unwrap())
+        Ok(self.parsers.get_mut(&dialect).expect("just inserted"))
     }
 
     fn dialect_for_file(lang: &Language, file: &Path) -> ParserDialect {

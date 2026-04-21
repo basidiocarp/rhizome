@@ -202,7 +202,7 @@ impl McpServer {
         if self.unified {
             let tool_schema = json!([{
                 "name": "rhizome",
-                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, analyze_impact, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_region, get_changed_files, rename_symbol, get_diagnostics, get_hover_info, replace_symbol_body, insert_after_symbol, insert_before_symbol, replace_lines, insert_at_line, delete_lines, create_file, copy_symbol, move_symbol, export_to_hyphae, export_repo_understanding",
+                "description": "Code intelligence tool. Commands: get_symbols, get_structure, get_definition, search_symbols, find_references, analyze_impact, go_to_definition, get_signature, get_imports, get_call_sites, get_scope, get_exports, summarize_file, get_tests, get_diff_symbols, get_annotations, get_complexity, get_type_definitions, get_dependencies, get_parameters, get_enclosing_class, get_symbol_body, get_region, get_changed_files, rename_symbol, get_diagnostics, replace_symbol_body, insert_after_symbol, insert_before_symbol, replace_lines, insert_at_line, delete_lines, create_file, copy_symbol, move_symbol, export_to_hyphae, export_repo_understanding",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
