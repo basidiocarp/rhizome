@@ -56,6 +56,26 @@ All five crates compile into the `rhizome` binary.
 - If a new tool needs LSP semantics, classify it in `BackendSelector` first
   and then wire the dispatcher to that classification.
 
+### Backend Boundary Rules
+
+Backend-specific logic must always flow through `rhizome-core::BackendSelector`:
+
+1. **No bypass of shared selection**: New analyzer, export, or edit tools must not
+   import `rhizome-lsp` or `rhizome-treesitter` directly. Always route through
+   `BackendSelector` and `CodeIntelligence`.
+
+2. **`rhizome-core` is the boundary**: Higher-level crates (`rhizome-mcp`,
+   `rhizome-cli`, `rhizome-lsp`) depend on `rhizome-core`, never the reverse.
+   Core must not depend on transport or tool-specific layers.
+   **Enforcement**: `rhizome-core/Cargo.toml` deliberately omits dependencies on
+   `rhizome-lsp` or `rhizome-mcp`. This structural constraint is verified by
+   `crates/rhizome-core/tests/backend_boundary.rs`.
+
+3. **Tool classification comes first**: Before implementing a new tool, classify
+   it in `BackendSelector::tool_requirement()` as `TreeSitter`, `PrefersLsp`,
+   or `RequiresLsp`. Then wire the dispatcher to that classification. Do not
+   special-case backend selection inside tool implementations.
+
 ---
 
 ## Core Abstraction
