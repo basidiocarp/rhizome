@@ -541,4 +541,102 @@ mod tests {
         let g = build_graph("p", &symbols, Path::new("src/app.go"));
         assert_eq!(g.nodes[0].metadata.get("language").unwrap(), "go");
     }
+
+    #[test]
+    fn test_same_function_name_different_files_no_collision() {
+        // Bug 1: Two functions with the same name in different files should produce
+        // distinct nodes with their own file paths and line numbers.
+        let symbols_file1 = vec![make_symbol("new", SymbolKind::Function)];
+        let symbols_file2 = vec![make_symbol("new", SymbolKind::Function)];
+
+        let graph1 = build_graph("proj", &symbols_file1, Path::new("src/file1.rs"));
+        let graph2 = build_graph("proj", &symbols_file2, Path::new("src/file2.rs"));
+
+        let merged = merge_graphs(vec![graph1, graph2]);
+
+        // Should have 3 nodes: 2 file-level nodes + 2 function nodes
+        assert_eq!(merged.nodes.len(), 4);
+
+        // Extract the function nodes (skip file-level nodes at index 0 and 2)
+        let func_nodes: Vec<_> = merged
+            .nodes
+            .iter()
+            .filter(|n| n.labels.contains(&"function".to_string()))
+            .collect();
+
+        assert_eq!(func_nodes.len(), 2, "Should have 2 function nodes for 'new'");
+
+        // Verify they have different identities (include file path)
+        let names: Vec<_> = func_nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_ne!(names[0], names[1], "Function nodes should have different names");
+
+        // Verify they retain correct file paths
+        assert_eq!(
+            func_nodes[0].metadata.get("file_path").unwrap(),
+            "src/file1.rs"
+        );
+        assert_eq!(
+            func_nodes[1].metadata.get("file_path").unwrap(),
+            "src/file2.rs"
+        );
+    }
+
+    #[test]
+    fn test_public_label_not_applied_to_similar_names() {
+        // Bug 3: Symbols named "publish" or "pub_key" should not be marked public.
+        let mut sym_publish = make_symbol("publish", SymbolKind::Function);
+        sym_publish.signature = Some("fn publish()".into());
+
+        let mut sym_pub_key = make_symbol("pub_key", SymbolKind::Function);
+        sym_pub_key.signature = Some("fn pub_key()".into());
+
+        let mut sym_public_api = make_symbol("public_api", SymbolKind::Function);
+        sym_public_api.signature = Some("fn public_api()".into());
+
+        let graph = build_graph("proj", &[sym_publish, sym_pub_key, sym_public_api], Path::new("src/lib.rs"));
+
+        // File-level node is at index 0, function symbols start at index 1
+        let publish_node = &graph.nodes[1];
+        let pub_key_node = &graph.nodes[2];
+        let public_api_node = &graph.nodes[3];
+
+        // None of these should have the "public" label
+        assert!(
+            !publish_node.labels.contains(&"public".to_string()),
+            "publish() should not be labeled public"
+        );
+        assert!(
+            !pub_key_node.labels.contains(&"public".to_string()),
+            "pub_key() should not be labeled public"
+        );
+        assert!(
+            !public_api_node.labels.contains(&"public".to_string()),
+            "public_api() should not be labeled public"
+        );
+    }
+
+    #[test]
+    fn test_actual_public_keyword_adds_label() {
+        // Verify that actual "pub " and "pub(" keywords DO add the public label.
+        let mut sym_pub_fn = make_symbol("my_public_fn", SymbolKind::Function);
+        sym_pub_fn.signature = Some("pub fn my_public_fn()".into());
+
+        let mut sym_pub_crate_fn = make_symbol("my_crate_fn", SymbolKind::Function);
+        sym_pub_crate_fn.signature = Some("pub(crate) fn my_crate_fn()".into());
+
+        let graph = build_graph("proj", &[sym_pub_fn, sym_pub_crate_fn], Path::new("src/lib.rs"));
+
+        let pub_fn_node = &graph.nodes[1];
+        let pub_crate_fn_node = &graph.nodes[2];
+
+        // Both should have the "public" label
+        assert!(
+            pub_fn_node.labels.contains(&"public".to_string()),
+            "pub fn should be labeled public"
+        );
+        assert!(
+            pub_crate_fn_node.labels.contains(&"public".to_string()),
+            "pub(crate) fn should be labeled public"
+        );
+    }
 }
