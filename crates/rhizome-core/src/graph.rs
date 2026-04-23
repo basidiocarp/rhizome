@@ -564,11 +564,18 @@ mod tests {
             .filter(|n| n.labels.contains(&"function".to_string()))
             .collect();
 
-        assert_eq!(func_nodes.len(), 2, "Should have 2 function nodes for 'new'");
+        assert_eq!(
+            func_nodes.len(),
+            2,
+            "Should have 2 function nodes for 'new'"
+        );
 
         // Verify they have different identities (include file path)
         let names: Vec<_> = func_nodes.iter().map(|n| n.name.as_str()).collect();
-        assert_ne!(names[0], names[1], "Function nodes should have different names");
+        assert_ne!(
+            names[0], names[1],
+            "Function nodes should have different names"
+        );
 
         // Verify they retain correct file paths
         assert_eq!(
@@ -593,7 +600,11 @@ mod tests {
         let mut sym_public_api = make_symbol("public_api", SymbolKind::Function);
         sym_public_api.signature = Some("fn public_api()".into());
 
-        let graph = build_graph("proj", &[sym_publish, sym_pub_key, sym_public_api], Path::new("src/lib.rs"));
+        let graph = build_graph(
+            "proj",
+            &[sym_publish, sym_pub_key, sym_public_api],
+            Path::new("src/lib.rs"),
+        );
 
         // File-level node is at index 0, function symbols start at index 1
         let publish_node = &graph.nodes[1];
@@ -624,7 +635,11 @@ mod tests {
         let mut sym_pub_crate_fn = make_symbol("my_crate_fn", SymbolKind::Function);
         sym_pub_crate_fn.signature = Some("pub(crate) fn my_crate_fn()".into());
 
-        let graph = build_graph("proj", &[sym_pub_fn, sym_pub_crate_fn], Path::new("src/lib.rs"));
+        let graph = build_graph(
+            "proj",
+            &[sym_pub_fn, sym_pub_crate_fn],
+            Path::new("src/lib.rs"),
+        );
 
         let pub_fn_node = &graph.nodes[1];
         let pub_crate_fn_node = &graph.nodes[2];

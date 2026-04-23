@@ -708,8 +708,8 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use serde_json::json;
+    use std::fs;
 
     #[test]
     fn render_editor_snippet_uses_json_key_for_claude_code() {

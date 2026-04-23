@@ -1035,7 +1035,9 @@ fn test_get_region_for_heuristic_outline() {
     let symbols_text = extract_text(&symbols_result);
     let parsed: Value =
         serde_json::from_str(&symbols_text).expect("heuristic symbols output should be JSON");
-    let regions = parsed.as_array().expect("heuristic output should be an array");
+    let regions = parsed
+        .as_array()
+        .expect("heuristic output should be an array");
 
     // Step 2: extract an h-* region ID
     let region_id = regions

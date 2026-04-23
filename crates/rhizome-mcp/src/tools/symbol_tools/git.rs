@@ -25,7 +25,10 @@ fn validate_git_ref(r: &str) -> Result<()> {
     }
     if r.bytes().all(|b| {
         b.is_ascii_alphanumeric()
-            || matches!(b, b'/' | b'_' | b'-' | b'.' | b'~' | b'^' | b'@' | b'{' | b'}' | b' ')
+            || matches!(
+                b,
+                b'/' | b'_' | b'-' | b'.' | b'~' | b'^' | b'@' | b'{' | b'}' | b' '
+            )
     }) {
         Ok(())
     } else {

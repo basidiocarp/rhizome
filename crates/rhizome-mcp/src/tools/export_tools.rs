@@ -930,7 +930,8 @@ mod tests {
         );
 
         let empty_dir = tempfile::tempdir().unwrap();
-        let empty_result = export_repo_understanding(&backend, &json!({}), empty_dir.path()).unwrap();
+        let empty_result =
+            export_repo_understanding(&backend, &json!({}), empty_dir.path()).unwrap();
         assert_eq!(
             empty_result["understanding"]["export_status"]["outcome"],
             "no_supported_files"

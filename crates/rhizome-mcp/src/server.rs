@@ -394,14 +394,14 @@ mod tests {
             .expect("replace_symbol_body tool should exist");
 
         // Verify read-only tool annotations
-        assert_eq!(read_only_tool.annotations.read_only_hint, true);
-        assert_eq!(read_only_tool.annotations.destructive_hint, false);
-        assert_eq!(read_only_tool.annotations.idempotent_hint, true);
+        assert!(read_only_tool.annotations.read_only_hint);
+        assert!(!read_only_tool.annotations.destructive_hint);
+        assert!(read_only_tool.annotations.idempotent_hint);
 
         // Verify edit tool annotations
-        assert_eq!(edit_tool.annotations.read_only_hint, false);
-        assert_eq!(edit_tool.annotations.destructive_hint, false);
-        assert_eq!(edit_tool.annotations.idempotent_hint, false);
+        assert!(!edit_tool.annotations.read_only_hint);
+        assert!(!edit_tool.annotations.destructive_hint);
+        assert!(!edit_tool.annotations.idempotent_hint);
 
         // Verify that annotations serialize to JSON correctly
         let serialized = serde_json::to_value(&read_only_tool.annotations)

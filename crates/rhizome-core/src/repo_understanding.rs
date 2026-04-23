@@ -400,7 +400,10 @@ mod tests {
         assert!(cached.safe_to_consume);
 
         let empty = RepoUnderstandingExportStatus::from_export_stats(0, 0, 0, 0);
-        assert_eq!(empty.outcome, RepoUnderstandingExportOutcome::NoSupportedFiles);
+        assert_eq!(
+            empty.outcome,
+            RepoUnderstandingExportOutcome::NoSupportedFiles
+        );
         assert_eq!(empty.refresh_kind, RepoUnderstandingRefreshKind::NoRefresh);
         assert!(!empty.any_exports_succeeded);
         assert!(!empty.any_exports_failed);

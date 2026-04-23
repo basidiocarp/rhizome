@@ -22,8 +22,8 @@ pub use backend_selector::{BackendRequirement, BackendSelector, LanguageStatus, 
 pub use config::RhizomeConfig;
 pub use error::{Result, RhizomeError};
 pub use export_cache::{ExportCache, ExportIdentity, derive_export_identity};
-pub use heuristic::{HeuristicBackend, HeuristicRegion};
 pub use graph::{CodeGraph, ConceptEdge, ConceptNode};
+pub use heuristic::{HeuristicBackend, HeuristicRegion};
 pub use hyphae::ExportResult;
 pub use installer::{LspInstaller, install_recipe, manual_install_hint};
 pub use language::{Language, LanguageServerConfig};

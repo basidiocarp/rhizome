@@ -127,10 +127,8 @@ impl HeuristicBackend {
         // If no structural lines were found, create a single region from the
         // first non-empty line spanning the whole file.
         if regions.is_empty()
-            && let Some((line_index, line)) = lines
-                .iter()
-                .enumerate()
-                .find(|(_, l)| !l.trim().is_empty())
+            && let Some((line_index, line)) =
+                lines.iter().enumerate().find(|(_, l)| !l.trim().is_empty())
         {
             let trimmed = line.trim();
             regions.push(CandidateRegion {
@@ -429,7 +427,9 @@ mod tests {
                 .any(|region| region.label.contains("fn process"))
         );
         assert!(
-            first.iter().all(|region| region.region_id.starts_with("h-")),
+            first
+                .iter()
+                .all(|region| region.region_id.starts_with("h-")),
             "region IDs must use the h-{{hash}}-{{line}} format"
         );
     }
@@ -447,7 +447,12 @@ mod tests {
             // Format: h-{16-hex-chars}-{line_number}
             assert!(region.region_id.starts_with("h-"));
             let parts: Vec<&str> = region.region_id.splitn(3, '-').collect();
-            assert_eq!(parts.len(), 3, "region_id should have 3 parts: {}", region.region_id);
+            assert_eq!(
+                parts.len(),
+                3,
+                "region_id should have 3 parts: {}",
+                region.region_id
+            );
             assert_eq!(parts[0], "h");
             assert_eq!(parts[1].len(), 16, "hash should be 16 hex digits");
             assert!(
@@ -498,15 +503,17 @@ mod tests {
     #[test]
     fn code_intelligence_get_symbols_works() {
         let dir = TempDir::new().unwrap();
-        let file = write_file(
-            &dir,
-            "demo.rs",
-            "fn main() {\n    println!(\"hi\");\n}\n",
-        );
+        let file = write_file(&dir, "demo.rs", "fn main() {\n    println!(\"hi\");\n}\n");
 
         let backend = HeuristicBackend::new();
         let symbols = backend.get_symbols(&file).unwrap();
         assert!(!symbols.is_empty());
-        assert!(symbols[0].signature.as_ref().unwrap().contains("[heuristic]"));
+        assert!(
+            symbols[0]
+                .signature
+                .as_ref()
+                .unwrap()
+                .contains("[heuristic]")
+        );
     }
 }

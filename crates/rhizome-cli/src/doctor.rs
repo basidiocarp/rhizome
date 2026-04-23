@@ -60,7 +60,9 @@ pub fn run(fix: bool) -> Result<()> {
         .filter(|lang| !lang.tree_sitter_supported())
         .collect();
     if non_ts_languages.is_empty() {
-        pass("All detected languages have tree-sitter support (heuristic fallback available but not needed)");
+        pass(
+            "All detected languages have tree-sitter support (heuristic fallback available but not needed)",
+        );
     } else {
         let names: Vec<String> = non_ts_languages.iter().map(|l| l.to_string()).collect();
         pass(&format!(

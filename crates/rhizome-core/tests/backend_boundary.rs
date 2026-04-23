@@ -52,7 +52,8 @@ fn tool_requirement_stays_centralized_for_the_current_dispatch_surface() {
         );
     }
 
-    for tool in ["rename_symbol"] {
+    {
+        let tool = "rename_symbol";
         assert_eq!(
             tool_requirement(tool),
             BackendRequirement::RequiresLsp,

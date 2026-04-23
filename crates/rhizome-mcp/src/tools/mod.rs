@@ -66,7 +66,10 @@ pub struct ToolDispatcher {
 impl ToolDispatcher {
     pub fn new(project_root: PathBuf) -> Self {
         let config = RhizomeConfig::load(&project_root).unwrap_or_else(|err| {
-            tracing::warn!("failed to load rhizome config from {}: {err}", project_root.display());
+            tracing::warn!(
+                "failed to load rhizome config from {}: {err}",
+                project_root.display()
+            );
             RhizomeConfig::default()
         });
         Self {
@@ -300,9 +303,7 @@ impl ToolDispatcher {
             ActiveBackend::TreeSitter => match ts_fn(args) {
                 Ok(value) => Ok(value),
                 Err(_) => match self.selector.borrow_mut().outline_fallback(&lang) {
-                    ResolvedBackend::Lsp => {
-                        self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn)
-                    }
+                    ResolvedBackend::Lsp => self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn),
                     ResolvedBackend::Heuristic => heuristic_fn(args),
                     ResolvedBackend::Parserless => parserless_fn(args),
                     // New variants default to heuristic until an explicit arm is added.
@@ -420,12 +421,7 @@ impl ToolDispatcher {
         }
     }
 
-    fn try_lsp_or_heuristic<G, I>(
-        &self,
-        args: &Value,
-        lsp_fn: G,
-        heuristic_fn: I,
-    ) -> Result<Value>
+    fn try_lsp_or_heuristic<G, I>(&self, args: &Value, lsp_fn: G, heuristic_fn: I) -> Result<Value>
     where
         G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
         I: FnOnce(&Value) -> Result<Value>,

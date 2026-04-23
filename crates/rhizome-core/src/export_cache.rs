@@ -147,7 +147,8 @@ fn canonical_project_root(project_root: &Path) -> PathBuf {
 fn fnv1a_64(data: &[u8]) -> u64 {
     const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
     const PRIME: u64 = 0x0000_0100_0000_01b3;
-    data.iter().fold(OFFSET, |h, &b| (h ^ b as u64).wrapping_mul(PRIME))
+    data.iter()
+        .fold(OFFSET, |h, &b| (h ^ b as u64).wrapping_mul(PRIME))
 }
 
 fn cache_scope(project_root: &Path) -> String {
