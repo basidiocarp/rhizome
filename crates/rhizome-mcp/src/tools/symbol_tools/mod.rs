@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod blast_radius;
 pub mod git;
 pub mod inspection;
 pub mod navigation;
@@ -10,6 +11,7 @@ pub(crate) use super::{ToolAnnotations, ToolSchema, tool_response};
 pub(crate) use params::{required_str, required_u32};
 
 pub(crate) use analysis::*;
+pub(crate) use blast_radius::{simulate_change, simulate_change_schema};
 pub(crate) use git::*;
 pub(crate) use inspection::*;
 pub(crate) use navigation::*;
@@ -466,6 +468,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 idempotent_hint: true,
             },
         },
+        simulate_change_schema(),
     ]
 }
 

@@ -184,6 +184,15 @@ impl ToolDispatcher {
                     |lsp, a| symbol_tools::analyze_impact(lsp, a, &root),
                 )
             }
+            "rhizome_simulate_change" => {
+                let ts = &self.treesitter;
+                self.dispatch_auto(
+                    name,
+                    &args,
+                    |a| symbol_tools::simulate_change(ts, a, &root),
+                    |lsp, a| symbol_tools::simulate_change(lsp, a, &root),
+                )
+            }
             "get_diagnostics" => {
                 let ts = &self.treesitter;
                 let r = root.clone();

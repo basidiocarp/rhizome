@@ -308,11 +308,11 @@ pub fn summarize_project(root: &Path, backend: &dyn CodeIntelligence) -> Result<
 
     // Sort languages by file count descending
     let mut languages: Vec<(String, usize)> = lang_counts.into_iter().collect();
-    languages.sort_by(|a, b| b.1.cmp(&a.1));
+    languages.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     // Top referenced types
     let mut type_list: Vec<(String, usize)> = type_counts.into_iter().collect();
-    type_list.sort_by(|a, b| b.1.cmp(&a.1));
+    type_list.sort_by_key(|b| std::cmp::Reverse(b.1));
     let key_types: Vec<String> = type_list
         .into_iter()
         .take(TOP_TYPES_COUNT)
@@ -329,7 +329,7 @@ pub fn summarize_project(root: &Path, backend: &dyn CodeIntelligence) -> Result<
             description: String::new(),
         })
         .collect();
-    modules.sort_by(|a, b| b.files.cmp(&a.files));
+    modules.sort_by_key(|b| std::cmp::Reverse(b.files));
 
     Ok(ProjectSummary {
         name: project_name,

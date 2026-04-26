@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod backend_selector;
+pub mod blast_radius;
 pub mod change_classifier;
 pub mod config;
 pub mod error;
@@ -21,6 +22,7 @@ pub use backend::{
     BackendCapabilities, CodeIntelligence, Diagnostic, DiagnosticSeverity, Position,
 };
 pub use backend_selector::{BackendRequirement, BackendSelector, LanguageStatus, ResolvedBackend};
+pub use blast_radius::{BlastRadius, SymbolRef, compute_risk_score, is_test_file};
 pub use change_classifier::{ChangeClass, classify_change};
 pub use config::RhizomeConfig;
 pub use error::{Result, RhizomeError};
