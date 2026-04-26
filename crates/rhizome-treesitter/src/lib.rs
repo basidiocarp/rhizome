@@ -12,8 +12,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ignore::WalkBuilder;
 use lru::LruCache;
 use rhizome_core::{
-    BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Result,
-    RhizomeError, Symbol, SymbolKind,
+    BackendCapabilities, CodeIntelligence, Diagnostic, Fingerprint, Language, Location, Position,
+    Result, RhizomeError, Symbol, SymbolKind, classify_change,
     export_cache::{scoped_cache_dir, scoped_cache_path},
     find_symbol_by_name,
 };
@@ -29,7 +29,7 @@ use crate::symbols::extract_symbols;
 /// Key: (canonicalized path, file mtime). Capacity: 100 entries.
 type ParseCache = Mutex<LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>>;
 type WorkspaceCache = Mutex<LruCache<PathBuf, WorkspaceSymbolIndex>>;
-const WORKSPACE_INDEX_SCHEMA_VERSION: u32 = 1;
+const WORKSPACE_INDEX_SCHEMA_VERSION: u32 = 2;
 
 fn shared_cache() -> &'static ParseCache {
     // Lazy-initialized static cache - created once per process lifetime
@@ -53,6 +53,8 @@ struct WorkspaceSymbolIndex {
 struct IndexedFileSymbols {
     fingerprint: FileFingerprint,
     symbols: Vec<Symbol>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sig_fingerprint: Option<Fingerprint>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -215,11 +217,25 @@ impl TreeSitterBackend {
 
             match self.get_symbols(&file) {
                 Ok(symbols) => {
+                    let mtime_nanos = fingerprint.modified_nanos;
+                    let size_bytes = fingerprint.size_bytes;
+                    let path_str = canonical_path.to_string_lossy().to_string();
+                    let new_sig_fp =
+                        compute_fingerprint(&path_str, &symbols, mtime_nanos, size_bytes);
+
+                    // Classify the change relative to the prior fingerprint
+                    let prior_sig_fp = index
+                        .files
+                        .get(&canonical_path_str)
+                        .and_then(|e| e.sig_fingerprint.as_ref());
+                    let _change_class = classify_change(prior_sig_fp, &new_sig_fp);
+
                     index.files.insert(
                         canonical_path_str,
                         IndexedFileSymbols {
                             fingerprint,
                             symbols,
+                            sig_fingerprint: Some(new_sig_fp),
                         },
                     );
                     index_changed = true;
@@ -301,6 +317,50 @@ fn system_time_to_nanos(time: SystemTime) -> Option<u128> {
     time.duration_since(UNIX_EPOCH)
         .ok()
         .map(|duration| duration.as_nanos())
+}
+
+/// Compute a signature-level fingerprint from already-parsed symbols and file metadata.
+///
+/// signature_hash = sorted top-level symbol names joined with commas (deterministic, no hashing dep)
+/// content_hash = "mtime_nanos,size_bytes" (proxy for content identity)
+fn compute_fingerprint(
+    path: &str,
+    symbols: &[Symbol],
+    mtime_nanos: u128,
+    size_bytes: u64,
+) -> Fingerprint {
+    let mut exports = std::collections::BTreeSet::new();
+    let mut imports = std::collections::BTreeSet::new();
+
+    for sym in symbols {
+        match sym.kind {
+            SymbolKind::Import => {
+                imports.insert(sym.name.clone());
+            }
+            _ => {
+                exports.insert(sym.name.clone());
+            }
+        }
+    }
+
+    // signature_hash: prefix each entry by kind so exports and imports cannot collide
+    // (e.g. exports={"A","B"} + imports={"C"} ≠ exports={"A","B","C"} + imports={})
+    let sig_parts: Vec<String> = exports
+        .iter()
+        .map(|s| format!("e:{s}"))
+        .chain(imports.iter().map(|s| format!("i:{s}")))
+        .collect();
+    let signature_hash = sig_parts.join(",");
+
+    let content_hash = format!("{},{}", mtime_nanos, size_bytes);
+
+    Fingerprint {
+        path: path.to_string(),
+        signature_hash,
+        content_hash,
+        exports,
+        imports,
+    }
 }
 
 #[cfg(test)]

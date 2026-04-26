@@ -1,8 +1,10 @@
 pub mod backend;
 pub mod backend_selector;
+pub mod change_classifier;
 pub mod config;
 pub mod error;
 pub mod export_cache;
+pub mod fingerprint;
 pub mod graph;
 pub mod heuristic;
 pub mod hyphae;
@@ -19,9 +21,11 @@ pub use backend::{
     BackendCapabilities, CodeIntelligence, Diagnostic, DiagnosticSeverity, Position,
 };
 pub use backend_selector::{BackendRequirement, BackendSelector, LanguageStatus, ResolvedBackend};
+pub use change_classifier::{ChangeClass, classify_change};
 pub use config::RhizomeConfig;
 pub use error::{Result, RhizomeError};
 pub use export_cache::{ExportCache, ExportIdentity, derive_export_identity};
+pub use fingerprint::Fingerprint;
 pub use graph::{CodeGraph, ConceptEdge, ConceptNode};
 pub use heuristic::{HeuristicBackend, HeuristicRegion};
 pub use hyphae::ExportResult;
