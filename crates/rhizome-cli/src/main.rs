@@ -555,19 +555,18 @@ fn cmd_status(project: Option<PathBuf>) -> Result<()> {
     let statuses = selector.status();
     print_status_table("Rhizome Backend Status", &statuses);
 
-    let installer = selector.installer();
     println!("\nBackend selection: tree-sitter (default) -> auto-upgrade to LSP when needed");
     println!("LSP-required tools: rename_symbol");
     println!("LSP-preferred tools: find_references, get_diagnostics");
     println!(
         "\nAuto-install: {}",
-        if installer.is_disabled() {
-            "disabled"
-        } else {
+        if selector.lsp_download_enabled() {
             "enabled (set RHIZOME_DISABLE_LSP_DOWNLOAD=1 to disable)"
+        } else {
+            "disabled"
         }
     );
-    println!("Managed bin dir: {}", installer.bin_dir().display());
+    println!("Managed bin dir: {}", selector.lsp_bin_dir().display());
 
     Ok(())
 }
@@ -639,7 +638,7 @@ fn cmd_lsp_install(project: Option<PathBuf>, language_name: &str) -> Result<()> 
         Ok(None) => {
             anyhow::bail!(
                 "LSP server installation skipped. Auto-install may be disabled. \
-                 Set RHIZOME_DISABLE_LSP_DOWNLOAD=0 and ensure package manager is available."
+                 Unset RHIZOME_DISABLE_LSP_DOWNLOAD and ensure package manager is available."
             );
         }
         Err(e) => {

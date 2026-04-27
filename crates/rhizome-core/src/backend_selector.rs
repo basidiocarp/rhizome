@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use crate::installer::manual_install_hint as lsp_server_hint;
 
 use serde::Serialize;
 
 use crate::config::RhizomeConfig;
-use crate::installer::LspInstaller;
 use crate::language::Language;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,7 +36,8 @@ pub enum ResolvedBackend {
     /// LSP was required but the server binary wasn't found.
     LspUnavailable {
         binary: String,
-        install_hint: String,
+        /// Human-readable hint for how to make the server available.
+        hint: String,
     },
 }
 
@@ -63,25 +65,38 @@ struct ServerProbe {
 
 pub struct BackendSelector {
     config: RhizomeConfig,
-    installer: LspInstaller,
+    bin_dir: PathBuf,
+    lsp_disabled: bool,
     cache: HashMap<Language, ServerProbe>,
 }
 
 impl BackendSelector {
     pub fn new(config: RhizomeConfig) -> Self {
-        let installer = LspInstaller::from_env(
-            config.lsp.disable_download.unwrap_or(false),
-            config.lsp.bin_dir.clone(),
-        );
+        let env_disabled = std::env::var("RHIZOME_DISABLE_LSP_DOWNLOAD")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let lsp_disabled = config.lsp.disable_download.unwrap_or(false) || env_disabled;
+        let bin_dir = config
+            .lsp
+            .bin_dir
+            .clone()
+            .unwrap_or_else(crate::paths::managed_bin_dir);
         Self {
             config,
-            installer,
+            bin_dir,
+            lsp_disabled,
             cache: HashMap::new(),
         }
     }
 
-    pub fn installer(&self) -> &LspInstaller {
-        &self.installer
+    /// The managed LSP binary directory.
+    pub fn lsp_bin_dir(&self) -> &Path {
+        &self.bin_dir
+    }
+
+    /// Whether LSP server auto-download is currently enabled.
+    pub fn lsp_download_enabled(&self) -> bool {
+        !self.lsp_disabled
     }
 
     /// Determine which backend to use for a given tool and language.
@@ -97,14 +112,14 @@ impl BackendSelector {
                 }
             }
             BackendRequirement::RequiresLsp => {
-                let install_bin_dir = self.installer.bin_dir().to_path_buf();
+                let bin_dir = self.bin_dir.clone();
                 let probe = self.probe_language(language);
                 if probe.available {
                     ResolvedBackend::Lsp
                 } else {
                     ResolvedBackend::LspUnavailable {
                         binary: probe.binary.clone(),
-                        install_hint: install_hint(&probe.binary, &install_bin_dir),
+                        hint: lsp_unavailable_hint(&probe.binary, &bin_dir),
                     }
                 }
             }
@@ -126,7 +141,7 @@ impl BackendSelector {
         all_languages()
             .iter()
             .map(|lang: &Language| {
-                let probe = find_server(lang, &self.config, &self.installer);
+                let probe = find_server(lang, &self.config, &self.bin_dir);
                 LanguageStatus {
                     language: lang.clone(),
                     tree_sitter: lang.tree_sitter_supported()
@@ -139,14 +154,14 @@ impl BackendSelector {
             .collect()
     }
 
-    /// Probe a language, attempting auto-install if not found.
+    /// Probe a language for binary availability (read-only, no auto-install).
     fn probe_language(&mut self, language: &Language) -> &ServerProbe {
         let refresh_probe = self
             .cache
             .get(language)
             .is_none_or(|probe| !probe.available);
         if refresh_probe {
-            let probe = probe_server(language, &self.config, &self.installer);
+            let probe = find_server(language, &self.config, &self.bin_dir);
             self.cache.insert(language.clone(), probe);
         }
         &self.cache[language]
@@ -229,11 +244,7 @@ fn all_languages() -> &'static [Language] {
 
 /// Find-only: check if binary exists in PATH (including the managed rhizome bin dir).
 /// Does NOT attempt to install missing servers.
-fn find_server(
-    language: &Language,
-    config: &RhizomeConfig,
-    installer: &LspInstaller,
-) -> ServerProbe {
+fn find_server(language: &Language, config: &RhizomeConfig, bin_dir: &Path) -> ServerProbe {
     let server_config = config.get_server_config(language);
 
     let binary = match &server_config {
@@ -247,7 +258,7 @@ fn find_server(
         }
     };
 
-    match installer.find_binary(&binary) {
+    match find_binary_in_path(&binary, bin_dir) {
         Some(path) => ServerProbe {
             binary,
             available: true,
@@ -261,57 +272,20 @@ fn find_server(
     }
 }
 
-/// Find-or-install: check if binary exists, attempt auto-install if not.
-/// Used when a tool actually needs the LSP server.
-fn probe_server(
-    language: &Language,
-    config: &RhizomeConfig,
-    installer: &LspInstaller,
-) -> ServerProbe {
-    let server_config = config.get_server_config(language);
-
-    let binary = match &server_config {
-        Some(cfg) => cfg.binary.clone(),
-        None => {
-            return ServerProbe {
-                binary: "(none)".into(),
-                available: false,
-                path: None,
-            };
-        }
-    };
-
-    // Try to find or auto-install the server
-    match installer.ensure_server(language, &binary) {
-        Ok(Some(path)) => ServerProbe {
-            binary,
-            available: true,
-            path: Some(path),
-        },
-        Err(e) => {
-            tracing::warn!("Failed to probe/install {}: {e:#}", binary);
-            ServerProbe {
-                binary,
-                available: false,
-                path: None,
-            }
-        }
-        Ok(None) => ServerProbe {
-            binary,
-            available: false,
-            path: None,
-        },
-    }
+/// Check if a binary exists in PATH augmented with the managed bin dir.
+fn find_binary_in_path(name: &str, bin_dir: &Path) -> Option<PathBuf> {
+    let augmented = crate::paths::augmented_path(bin_dir);
+    which::which_in(name, Some(augmented), ".").ok()
 }
 
-fn install_hint(binary: &str, bin_dir: &std::path::Path) -> String {
-    let cmd = crate::installer::manual_install_hint(binary, bin_dir);
+fn lsp_unavailable_hint(binary: &str, bin_dir: &Path) -> String {
+    let cmd = lsp_server_hint(binary, bin_dir);
     format!(
         "{binary} not found. Manual install: {cmd}. \
-         Auto-install may have failed — check RHIZOME_DISABLE_LSP_DOWNLOAD \
-         and package manager availability."
+         Unset RHIZOME_DISABLE_LSP_DOWNLOAD to enable auto-install."
     )
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Display for Language

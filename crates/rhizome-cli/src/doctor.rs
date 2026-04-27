@@ -41,7 +41,7 @@ pub fn run(fix: bool) -> Result<()> {
     let statuses = selector.status();
     let relevant_statuses =
         relevant_lsp_statuses(&statuses, &detected_language_set, &configured_languages);
-    let installer = selector.installer();
+    let lsp_bin_dir = selector.lsp_bin_dir().to_path_buf();
 
     println!("\x1b[1mTree-Sitter Backends\x1b[0m");
     let tree_sitter_languages = statuses.iter().filter(|status| status.tree_sitter).count();
@@ -101,7 +101,7 @@ pub fn run(fix: bool) -> Result<()> {
                 "{} not found ({}) — install: {}",
                 binary.binary,
                 format_languages(&binary.languages),
-                manual_install_hint(&binary.binary, installer.bin_dir())
+                manual_install_hint(&binary.binary, &lsp_bin_dir)
             ));
             warnings += 1;
         }

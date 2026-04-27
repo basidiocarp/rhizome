@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use spore::logging::{SpanContext, subprocess_span, tool_span};
 use tracing::{debug, info, warn};
@@ -458,16 +459,15 @@ impl LspInstaller {
             }
         }
 
-        let output = command
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .map_err(|e| {
-                RhizomeError::Other(format!(
-                    "Failed to run {} for {binary_name}: {}",
-                    recipe.manager, e
-                ))
-            })?;
+        // Use a bounded timeout (5 minutes) so a hung package manager cannot
+        // block the server indefinitely. The child is killed and reaped on timeout.
+        const TIMEOUT: Duration = Duration::from_secs(300);
+        let output = run_with_timeout(command, TIMEOUT).map_err(|e| {
+            RhizomeError::Other(format!(
+                "Failed to run {} for {binary_name}: {}",
+                recipe.manager, e
+            ))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -561,15 +561,16 @@ fn run_pip_install(
     package: &str,
     prefix_dir: &Path,
 ) -> std::io::Result<std::process::Output> {
-    let output = Command::new(pip)
+    const TIMEOUT: Duration = Duration::from_secs(300);
+
+    let mut first = Command::new(pip);
+    first
         .arg("install")
         .arg("--prefix")
         .arg(prefix_dir)
         .arg("--break-system-packages")
-        .arg(package)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()?;
+        .arg(package);
+    let output = run_with_timeout(first, TIMEOUT)?;
 
     if output.status.success() {
         return Ok(output);
@@ -579,17 +580,55 @@ fn run_pip_install(
     if stderr.contains("no such option: --break-system-packages")
         || stderr.contains("unrecognized arguments: --break-system-packages")
     {
-        return Command::new(pip)
-            .arg("install")
-            .arg("--prefix")
-            .arg(prefix_dir)
-            .arg(package)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output();
+        let mut second = Command::new(pip);
+        second.arg("install").arg("--prefix").arg(prefix_dir).arg(package);
+        return run_with_timeout(second, TIMEOUT);
     }
 
     Ok(output)
+}
+
+/// Spawn a command and wait for it to finish, killing and reaping it if the
+/// timeout elapses.  Returns an `io::Error` with kind `TimedOut` on timeout.
+fn run_with_timeout(mut cmd: Command, timeout: Duration) -> std::io::Result<std::process::Output> {
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let deadline = Instant::now() + timeout;
+    let poll_interval = Duration::from_millis(250);
+
+    loop {
+        match child.try_wait()? {
+            Some(status) => {
+                // Process finished — collect output.
+                let stdout = child.stdout.take().map(|mut r| {
+                    let mut buf = Vec::new();
+                    std::io::Read::read_to_end(&mut r, &mut buf).ok();
+                    buf
+                }).unwrap_or_default();
+                let stderr = child.stderr.take().map(|mut r| {
+                    let mut buf = Vec::new();
+                    std::io::Read::read_to_end(&mut r, &mut buf).ok();
+                    buf
+                }).unwrap_or_default();
+                return Ok(std::process::Output { status, stdout, stderr });
+            }
+            None => {
+                if Instant::now() >= deadline {
+                    // Kill the child and reap it to avoid zombies.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "subprocess timed out",
+                    ));
+                }
+                std::thread::sleep(poll_interval);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

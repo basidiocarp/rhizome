@@ -83,9 +83,10 @@ impl ToolDispatcher {
     }
 
     pub fn call_tool(&self, name: &str, args: Value) -> Result<Value> {
-        // Callers may pass an optional `root` to analyze files in a project
-        // other than the server's configured project_root (e.g., when rhizome
-        // is registered globally and used across multiple projects).
+        // Callers may pass an optional `root` to scope tool calls to a sub-path
+        // of the server's configured project root. Absolute roots that point
+        // outside the configured project are rejected to prevent path-traversal
+        // via hostile `root` overrides (e.g., root = "/" or root = "/tmp").
         let root: PathBuf = args
             .get("root")
             .and_then(|v| v.as_str())
@@ -98,6 +99,16 @@ impl ToolDispatcher {
                 }
             })
             .unwrap_or_else(|| self.project_root.clone());
+
+        // Validate that the resolved root stays within the configured project root.
+        // This is the boundary guard for all root_override attempts.
+        if let Err(e) = edit_tools::ensure_within_project_root(&root, &self.project_root) {
+            return Err(anyhow!(
+                "root_override rejected: {e}. \
+                 The `root` argument must stay within the server's configured project root ({})",
+                self.project_root.display()
+            ));
+        }
 
         match name {
             // ── Symbol tools ────────────────────────────────────────────
@@ -401,8 +412,8 @@ impl ToolDispatcher {
             ResolvedBackend::Lsp => ActiveBackend::Lsp,
             ResolvedBackend::Parserless => ActiveBackend::Parserless,
             ResolvedBackend::Heuristic => ActiveBackend::Heuristic,
-            ResolvedBackend::LspUnavailable { install_hint, .. } => {
-                ActiveBackend::Error(install_hint)
+            ResolvedBackend::LspUnavailable { hint, .. } => {
+                ActiveBackend::Error(hint)
             }
             // New variants default to heuristic until an explicit arm is added.
             _ => ActiveBackend::Heuristic,
@@ -481,4 +492,202 @@ pub(crate) fn tool_error(message: &str) -> Value {
         "isError": true,
         "content": [{ "type": "text", "text": message }]
     })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Root boundary and write_boundary tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_dispatcher(project_root: std::path::PathBuf) -> ToolDispatcher {
+        ToolDispatcher::new(project_root)
+    }
+
+    /// Helper: assert a tool call with the given args returns an error whose
+    /// message mentions "root_override" (boundary rejection).
+    fn assert_root_override_rejected(dispatcher: &ToolDispatcher, tool: &str, args: Value) {
+        let result = dispatcher.call_tool(tool, args);
+        match result {
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("root_override"),
+                    "Expected root_override rejection for {tool}, got: {msg}"
+                );
+            }
+            Ok(_) => panic!("{tool}: expected root_override rejection, but call succeeded"),
+        }
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_read_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // Hostile root "/" must not escape the configured project root.
+        let args = json!({ "file": "src/main.rs", "root": "/" });
+        assert_root_override_rejected(&dispatcher, "get_symbols", args);
+    }
+
+    #[test]
+    fn root_override_tmp_rejected_for_read_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // A sibling root like "/tmp" must be rejected for read tools too.
+        let args = json!({ "file": "src/main.rs", "root": "/tmp" });
+        assert_root_override_rejected(&dispatcher, "get_symbols", args);
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_write_tool_create_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // write_boundary: create_file must not accept a root outside the configured root.
+        let args = json!({ "path": "evil.sh", "content": "rm -rf /", "root": "/" });
+        assert_root_override_rejected(&dispatcher, "create_file", args);
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_write_tool_replace_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // write_boundary: replace_lines with hostile root is rejected.
+        let args = json!({
+            "file": "src/main.rs",
+            "start_line": 1,
+            "end_line": 1,
+            "new_content": "malicious",
+            "root": "/"
+        });
+        assert_root_override_rejected(&dispatcher, "replace_lines", args);
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_export_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // Export tools must not escape the configured project root.
+        let args = json!({ "root": "/" });
+        assert_root_override_rejected(&dispatcher, "export_to_hyphae", args);
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_write_tool_insert_at_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // write_boundary: insert_at_line must not accept a root outside the configured root.
+        let args = json!({
+            "file": "src/main.rs",
+            "line": 1,
+            "content": "malicious content",
+            "root": "/"
+        });
+        assert_root_override_rejected(&dispatcher, "insert_at_line", args);
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_write_tool_delete_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // write_boundary: delete_lines must not accept a root outside the configured root.
+        let args = json!({
+            "file": "src/main.rs",
+            "start_line": 1,
+            "end_line": 5,
+            "root": "/"
+        });
+        assert_root_override_rejected(&dispatcher, "delete_lines", args);
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_write_tool_replace_symbol_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // write_boundary: replace_symbol_body must not accept a root outside the configured root.
+        let args = json!({
+            "file": "src/main.rs",
+            "symbol": "main",
+            "new_body": "fn main() { panic!(\"pwned\"); }",
+            "root": "/"
+        });
+        assert_root_override_rejected(&dispatcher, "replace_symbol_body", args);
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_write_tool_insert_after_symbol() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // write_boundary: insert_after_symbol must not accept a root outside the configured root.
+        let args = json!({
+            "file": "src/main.rs",
+            "symbol": "main",
+            "content": "fn evil() {}",
+            "root": "/"
+        });
+        assert_root_override_rejected(&dispatcher, "insert_after_symbol", args);
+    }
+
+    #[test]
+    fn root_override_slash_rejected_for_write_tool_copy_symbol() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = make_dispatcher(dir.path().to_path_buf());
+
+        // write_boundary: copy_symbol must not accept a root outside the configured root.
+        let args = json!({
+            "source_file": "src/main.rs",
+            "symbol": "main",
+            "target_file": "src/other.rs",
+            "root": "/"
+        });
+        assert_root_override_rejected(&dispatcher, "copy_symbol", args);
+    }
+
+    #[test]
+    fn valid_configured_root_is_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path().to_path_buf();
+        let dispatcher = make_dispatcher(project_root.clone());
+
+        // The configured root itself must be accepted (no root arg → uses default).
+        // We use a tool that won't fail on a missing file but will pass the boundary check.
+        let args = json!({ "file": "src/main.rs" });
+        // The call may succeed or fail with a file-not-found error, but NOT with a root_override error.
+        if let Err(e) = dispatcher.call_tool("get_symbols", args) {
+            let msg = e.to_string();
+            assert!(
+                !msg.contains("root_override"),
+                "Valid root should not trigger root_override rejection: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn root_override_subpath_within_project_is_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path().to_path_buf();
+        std::fs::create_dir_all(project_root.join("src")).unwrap();
+        let dispatcher = make_dispatcher(project_root.clone());
+
+        // A sub-path of the configured root must pass the boundary check.
+        let sub_root = project_root.join("src").display().to_string();
+        let args = json!({ "file": "main.rs", "root": sub_root });
+        if let Err(e) = dispatcher.call_tool("get_symbols", args) {
+            let msg = e.to_string();
+            assert!(
+                !msg.contains("root_override"),
+                "Sub-path of configured root should not be rejected: {msg}"
+            );
+        }
+    }
 }
