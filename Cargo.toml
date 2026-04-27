@@ -13,7 +13,7 @@ edition = "2024"
 rust-version = "1.85"
 
 [workspace.dependencies]
-spore = { git = "https://github.com/basidiocarp/spore", tag = "v0.4.11" }
+spore = { git = "https://github.com/basidiocarp/spore", rev = "0bc2e878010e75e30e26fa517d747e97d59628b0" }
 thiserror = "2"
 toml = "1.1"
 
