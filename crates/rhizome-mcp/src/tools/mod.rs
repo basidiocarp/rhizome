@@ -412,9 +412,7 @@ impl ToolDispatcher {
             ResolvedBackend::Lsp => ActiveBackend::Lsp,
             ResolvedBackend::Parserless => ActiveBackend::Parserless,
             ResolvedBackend::Heuristic => ActiveBackend::Heuristic,
-            ResolvedBackend::LspUnavailable { hint, .. } => {
-                ActiveBackend::Error(hint)
-            }
+            ResolvedBackend::LspUnavailable { hint, .. } => ActiveBackend::Error(hint),
             // New variants default to heuristic until an explicit arm is added.
             _ => ActiveBackend::Heuristic,
         }

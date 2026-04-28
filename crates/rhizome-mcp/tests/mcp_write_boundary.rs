@@ -77,7 +77,12 @@ fn read_tools_reject_root_override_slash() {
     let dir = tempfile::tempdir().unwrap();
     let dispatcher = ToolDispatcher::new(dir.path().to_path_buf());
     // Read tools must also enforce the configured project root boundary.
-    for tool in &["get_symbols", "search_symbols", "get_imports", "summarize_file"] {
+    for tool in &[
+        "get_symbols",
+        "search_symbols",
+        "get_imports",
+        "summarize_file",
+    ] {
         let args = json!({ "file": "src/main.rs", "root": "/" });
         assert_root_override_rejected(&dispatcher, tool, args);
     }

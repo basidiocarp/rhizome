@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::symbol::{Symbol, SymbolKind};
 
@@ -330,7 +330,10 @@ mod tests {
 
         // File-level node is at index 0, function symbol is at index 1
         let node = &graph.nodes[1];
-        assert_eq!(node.metadata.get("file_path").unwrap(), &json!("src/server.rs"));
+        assert_eq!(
+            node.metadata.get("file_path").unwrap(),
+            &json!("src/server.rs")
+        );
         assert_eq!(node.metadata.get("line_start").unwrap(), &json!(1));
         assert_eq!(node.metadata.get("line_end").unwrap(), &json!(10));
         assert_eq!(node.metadata.get("language").unwrap(), &json!("rust"));
@@ -532,10 +535,16 @@ mod tests {
         let symbols = vec![make_symbol("foo", SymbolKind::Function)];
 
         let g = build_graph("p", &symbols, Path::new("src/app.py"));
-        assert_eq!(g.nodes[0].metadata.get("language").unwrap(), &json!("python"));
+        assert_eq!(
+            g.nodes[0].metadata.get("language").unwrap(),
+            &json!("python")
+        );
 
         let g = build_graph("p", &symbols, Path::new("src/app.ts"));
-        assert_eq!(g.nodes[0].metadata.get("language").unwrap(), &json!("typescript"));
+        assert_eq!(
+            g.nodes[0].metadata.get("language").unwrap(),
+            &json!("typescript")
+        );
 
         let g = build_graph("p", &symbols, Path::new("src/app.go"));
         assert_eq!(g.nodes[0].metadata.get("language").unwrap(), &json!("go"));

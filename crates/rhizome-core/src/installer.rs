@@ -581,7 +581,11 @@ fn run_pip_install(
         || stderr.contains("unrecognized arguments: --break-system-packages")
     {
         let mut second = Command::new(pip);
-        second.arg("install").arg("--prefix").arg(prefix_dir).arg(package);
+        second
+            .arg("install")
+            .arg("--prefix")
+            .arg(prefix_dir)
+            .arg(package);
         return run_with_timeout(second, TIMEOUT);
     }
 
@@ -603,17 +607,29 @@ fn run_with_timeout(mut cmd: Command, timeout: Duration) -> std::io::Result<std:
         match child.try_wait()? {
             Some(status) => {
                 // Process finished — collect output.
-                let stdout = child.stdout.take().map(|mut r| {
-                    let mut buf = Vec::new();
-                    std::io::Read::read_to_end(&mut r, &mut buf).ok();
-                    buf
-                }).unwrap_or_default();
-                let stderr = child.stderr.take().map(|mut r| {
-                    let mut buf = Vec::new();
-                    std::io::Read::read_to_end(&mut r, &mut buf).ok();
-                    buf
-                }).unwrap_or_default();
-                return Ok(std::process::Output { status, stdout, stderr });
+                let stdout = child
+                    .stdout
+                    .take()
+                    .map(|mut r| {
+                        let mut buf = Vec::new();
+                        std::io::Read::read_to_end(&mut r, &mut buf).ok();
+                        buf
+                    })
+                    .unwrap_or_default();
+                let stderr = child
+                    .stderr
+                    .take()
+                    .map(|mut r| {
+                        let mut buf = Vec::new();
+                        std::io::Read::read_to_end(&mut r, &mut buf).ok();
+                        buf
+                    })
+                    .unwrap_or_default();
+                return Ok(std::process::Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
             }
             None => {
                 if Instant::now() >= deadline {
