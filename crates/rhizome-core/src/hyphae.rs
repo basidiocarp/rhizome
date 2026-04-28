@@ -58,9 +58,14 @@ pub fn is_available() -> bool {
 
 /// Export a code graph to Hyphae by spawning `hyphae serve` and sending a
 /// JSON-RPC request over its stdio transport.
+///
+/// `prune` controls whether Hyphae removes concepts not present in this graph.
+/// Pass `false` for incremental exports where only changed files are included —
+/// otherwise unchanged concepts from cached files are incorrectly deleted.
 pub fn export_graph(
     graph_json: &serde_json::Value,
     identity: &ExportIdentity,
+    prune: bool,
 ) -> Result<ExportResult> {
     let span_context = SpanContext::for_app("rhizome")
         .with_tool("hyphae_export")
@@ -90,7 +95,7 @@ pub fn export_graph(
     let result = client
         .call_tool(
             "hyphae_import_code_graph",
-            build_import_arguments(&project, graph_json, identity),
+            build_import_arguments(&project, graph_json, identity, prune),
         )
         .map_err(|e| {
             RhizomeError::Other(format!("Failed to call hyphae_import_code_graph: {}", e))
@@ -115,6 +120,7 @@ fn build_import_arguments(
     project: &serde_json::Value,
     graph_json: &serde_json::Value,
     identity: &ExportIdentity,
+    prune: bool,
 ) -> serde_json::Value {
     let mut arguments = serde_json::Map::from_iter([
         (
@@ -124,6 +130,7 @@ fn build_import_arguments(
         ("project".to_string(), project.clone()),
         ("nodes".to_string(), graph_json["nodes"].clone()),
         ("edges".to_string(), graph_json["edges"].clone()),
+        ("prune".to_string(), serde_json::Value::Bool(prune)),
     ]);
 
     arguments.insert(
@@ -169,7 +176,7 @@ mod tests {
             "tools/call",
             serde_json::json!({
                 "name": "hyphae_import_code_graph",
-                "arguments": build_import_arguments(&graph["project"], &graph, &identity)
+                "arguments": build_import_arguments(&graph["project"], &graph, &identity, true)
             }),
         );
 
@@ -203,7 +210,7 @@ mod tests {
             worktree_id: None,
         };
 
-        let arguments = build_import_arguments(&graph["project"], &graph, &identity);
+        let arguments = build_import_arguments(&graph["project"], &graph, &identity, true);
 
         assert_eq!(arguments["schema_version"], "1.0");
         assert_eq!(arguments["project"], "myapp");
@@ -245,13 +252,29 @@ mod tests {
             project_root: "/repo/test".to_string(),
             worktree_id: Some("main".to_string()),
         };
-        let result = export_graph(&graph, &identity);
+        let result = export_graph(&graph, &identity, true);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("not found"),
             "Expected 'not found' in error, got: {err_msg}"
         );
+    }
+
+    #[test]
+    fn build_import_arguments_includes_prune_true_for_full_exports() {
+        let graph = serde_json::json!({"project": "myapp", "nodes": [], "edges": []});
+        let identity = test_identity();
+        let args = build_import_arguments(&graph["project"], &graph, &identity, true);
+        assert_eq!(args["prune"], serde_json::Value::Bool(true));
+    }
+
+    #[test]
+    fn build_import_arguments_includes_prune_false_for_incremental_exports() {
+        let graph = serde_json::json!({"project": "myapp", "nodes": [], "edges": []});
+        let identity = test_identity();
+        let args = build_import_arguments(&graph["project"], &graph, &identity, false);
+        assert_eq!(args["prune"], serde_json::Value::Bool(false));
     }
 
     #[test]

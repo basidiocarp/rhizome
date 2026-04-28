@@ -50,6 +50,16 @@ cargo clippy
 cargo fmt --check
 ```
 
+Optional live tests (require an installed language server or hyphae):
+
+```bash
+# Requires rust-analyzer in PATH
+cargo test -p rhizome-lsp --test live_lsp -- --ignored
+
+# Requires hyphae in PATH
+cargo test -p rhizome-mcp -- test_export_to_hyphae_e2e --ignored
+```
+
 ---
 
 ## Repo Architecture

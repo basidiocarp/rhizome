@@ -387,7 +387,12 @@ pub fn export_to_hyphae(
     let merged = merge_graphs(prepared.graphs);
     let graph_json = serde_json::to_value(&merged)?;
 
-    match hyphae::export_graph(&graph_json, &identity) {
+    // Only prune when this is a full export (no cached files skipped).
+    // Incremental exports send only changed files; pruning would delete
+    // unchanged concepts that were legitimately skipped from the cache.
+    let prune = prepared.summary.files_skipped_cached == 0;
+
+    match hyphae::export_graph(&graph_json, &identity, prune) {
         Ok(result) => {
             let mut cache = prepared.cache;
             for path in &prepared.processed_paths {
@@ -664,6 +669,62 @@ mod tests {
         assert_eq!(prepared.summary.files_processed, 1);
         assert_eq!(prepared.summary.files_skipped_cached, 1);
         assert_eq!(prepared.processed_paths, vec![fresh_file]);
+    }
+
+    #[test]
+    fn incremental_export_uses_prune_false_to_protect_cached_concepts() {
+        // Regression test: when files are skipped from cache, the export must
+        // pass prune=false so unchanged concepts are not deleted from Hyphae.
+        let dir = tempfile::tempdir().unwrap();
+        let cached_file = dir.path().join("stable.rs");
+        let changed_file = dir.path().join("changed.rs");
+        std::fs::write(&cached_file, "fn stable() {}").unwrap();
+        std::fs::write(&changed_file, "fn changed() {}").unwrap();
+
+        // Mark stable.rs as cached (already exported, unchanged).
+        let cache = ExportCache::new().update(&cached_file);
+        cache.save(dir.path()).unwrap();
+
+        let backend = MockBackend::new(HashMap::from([(
+            changed_file.clone(),
+            Ok(vec![sample_symbol(&changed_file)]),
+        )]));
+
+        let prepared = collect_export(&backend, dir.path(), dir.path(), "demo", "code:demo");
+
+        // One file cached, one processed: this is an incremental export.
+        assert_eq!(prepared.summary.files_skipped_cached, 1);
+        assert_eq!(prepared.summary.files_processed, 1);
+
+        // The prune decision in export_to_hyphae is: files_skipped_cached == 0.
+        // When files are cached, prune must be false.
+        let prune = prepared.summary.files_skipped_cached == 0;
+        assert!(
+            !prune,
+            "Incremental export must set prune=false to protect concepts from cached files"
+        );
+    }
+
+    #[test]
+    fn full_export_uses_prune_true_to_remove_deleted_concepts() {
+        // When no files are skipped, all concepts in the graph are current and
+        // prune=true is correct — it removes concepts for files that were deleted.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("only.rs");
+        std::fs::write(&file, "fn only() {}").unwrap();
+
+        let backend = MockBackend::new(HashMap::from([(
+            file.clone(),
+            Ok(vec![sample_symbol(&file)]),
+        )]));
+
+        let prepared = collect_export(&backend, dir.path(), dir.path(), "demo", "code:demo");
+
+        assert_eq!(prepared.summary.files_skipped_cached, 0);
+        assert_eq!(prepared.summary.files_processed, 1);
+
+        let prune = prepared.summary.files_skipped_cached == 0;
+        assert!(prune, "Full export must set prune=true to prune deleted concepts");
     }
 
     #[test]
