@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::symbol::{Symbol, SymbolKind};
 
@@ -15,7 +16,7 @@ pub struct ConceptNode {
     pub name: String,
     pub labels: Vec<String>,
     pub description: String,
-    pub metadata: HashMap<String, String>,
+    pub metadata: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,10 +134,10 @@ fn process_symbols(
         let description = build_description(&symbol.signature, &symbol.doc_comment);
 
         let mut metadata = HashMap::new();
-        metadata.insert("file_path".into(), file_path_str.to_string());
-        metadata.insert("line_start".into(), symbol.location.line_start.to_string());
-        metadata.insert("line_end".into(), symbol.location.line_end.to_string());
-        metadata.insert("language".into(), language.to_string());
+        metadata.insert("file_path".into(), json!(file_path_str.to_string()));
+        metadata.insert("line_start".into(), json!(symbol.location.line_start));
+        metadata.insert("line_end".into(), json!(symbol.location.line_end));
+        metadata.insert("language".into(), json!(language.to_string()));
 
         let node_id = node_id_for_symbol(symbol, file_path_str, current_scope);
 
@@ -190,10 +191,8 @@ pub fn build_graph(project: &str, symbols: &[Symbol], file_path: &Path) -> CodeG
 
     // Add a synthetic file-level node to anchor imports edges
     let mut file_metadata = HashMap::new();
-    file_metadata.insert("file_path".into(), file_path_str.to_string());
-    file_metadata.insert("line_start".into(), "0".to_string());
-    file_metadata.insert("line_end".into(), "0".to_string());
-    file_metadata.insert("language".into(), language.clone());
+    file_metadata.insert("file_path".into(), json!(file_path_str.to_string()));
+    file_metadata.insert("language".into(), json!(language.clone()));
 
     nodes.push(ConceptNode {
         name: file_path_str.to_string(),
@@ -331,10 +330,10 @@ mod tests {
 
         // File-level node is at index 0, function symbol is at index 1
         let node = &graph.nodes[1];
-        assert_eq!(node.metadata.get("file_path").unwrap(), "src/server.rs");
-        assert_eq!(node.metadata.get("line_start").unwrap(), "1");
-        assert_eq!(node.metadata.get("line_end").unwrap(), "10");
-        assert_eq!(node.metadata.get("language").unwrap(), "rust");
+        assert_eq!(node.metadata.get("file_path").unwrap(), &json!("src/server.rs"));
+        assert_eq!(node.metadata.get("line_start").unwrap(), &json!(1));
+        assert_eq!(node.metadata.get("line_end").unwrap(), &json!(10));
+        assert_eq!(node.metadata.get("language").unwrap(), &json!("rust"));
     }
 
     #[test]
@@ -533,13 +532,13 @@ mod tests {
         let symbols = vec![make_symbol("foo", SymbolKind::Function)];
 
         let g = build_graph("p", &symbols, Path::new("src/app.py"));
-        assert_eq!(g.nodes[0].metadata.get("language").unwrap(), "python");
+        assert_eq!(g.nodes[0].metadata.get("language").unwrap(), &json!("python"));
 
         let g = build_graph("p", &symbols, Path::new("src/app.ts"));
-        assert_eq!(g.nodes[0].metadata.get("language").unwrap(), "typescript");
+        assert_eq!(g.nodes[0].metadata.get("language").unwrap(), &json!("typescript"));
 
         let g = build_graph("p", &symbols, Path::new("src/app.go"));
-        assert_eq!(g.nodes[0].metadata.get("language").unwrap(), "go");
+        assert_eq!(g.nodes[0].metadata.get("language").unwrap(), &json!("go"));
     }
 
     #[test]
@@ -580,11 +579,11 @@ mod tests {
         // Verify they retain correct file paths
         assert_eq!(
             func_nodes[0].metadata.get("file_path").unwrap(),
-            "src/file1.rs"
+            &json!("src/file1.rs")
         );
         assert_eq!(
             func_nodes[1].metadata.get("file_path").unwrap(),
-            "src/file2.rs"
+            &json!("src/file2.rs")
         );
     }
 

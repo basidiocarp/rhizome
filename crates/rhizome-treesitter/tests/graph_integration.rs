@@ -59,7 +59,7 @@ fn test_build_graph_from_python_fixture() {
     // Verify language metadata is set correctly
     for node in &graph.nodes {
         assert_eq!(
-            node.metadata.get("language").map(String::as_str),
+            node.metadata.get("language").and_then(|v| v.as_str()),
             Some("python"),
             "Python fixture nodes should have language=python"
         );
@@ -91,7 +91,7 @@ fn test_build_graph_from_typescript_fixture() {
 
     for node in &graph.nodes {
         assert_eq!(
-            node.metadata.get("language").map(String::as_str),
+            node.metadata.get("language").and_then(|v| v.as_str()),
             Some("typescript"),
             "TypeScript fixture nodes should have language=typescript"
         );

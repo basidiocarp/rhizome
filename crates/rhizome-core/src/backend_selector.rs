@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::installer::manual_install_hint as lsp_server_hint;
-
 use serde::Serialize;
 
 use crate::config::RhizomeConfig;
@@ -136,7 +134,7 @@ impl BackendSelector {
         }
     }
 
-    /// Get status for all known languages (find-only, no auto-install).
+    /// Get status for all known languages (find-only, no auto-download).
     pub fn status(&mut self) -> Vec<LanguageStatus> {
         all_languages()
             .iter()
@@ -154,7 +152,7 @@ impl BackendSelector {
             .collect()
     }
 
-    /// Probe a language for binary availability (read-only, no auto-install).
+    /// Probe a language for binary availability (read-only, no auto-download).
     fn probe_language(&mut self, language: &Language) -> &ServerProbe {
         let refresh_probe = self
             .cache
@@ -243,7 +241,7 @@ fn all_languages() -> &'static [Language] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Find-only: check if binary exists in PATH (including the managed rhizome bin dir).
-/// Does NOT attempt to install missing servers.
+/// Does NOT attempt to download or configure missing servers.
 fn find_server(language: &Language, config: &RhizomeConfig, bin_dir: &Path) -> ServerProbe {
     let server_config = config.get_server_config(language);
 
@@ -278,11 +276,10 @@ fn find_binary_in_path(name: &str, bin_dir: &Path) -> Option<PathBuf> {
     which::which_in(name, Some(augmented), ".").ok()
 }
 
-fn lsp_unavailable_hint(binary: &str, bin_dir: &Path) -> String {
-    let cmd = lsp_server_hint(binary, bin_dir);
+fn lsp_unavailable_hint(binary: &str, _bin_dir: &Path) -> String {
     format!(
-        "{binary} not found. Manual install: {cmd}. \
-         Unset RHIZOME_DISABLE_LSP_DOWNLOAD to enable auto-install."
+        "{binary} not found. \
+         Unset RHIZOME_DISABLE_LSP_DOWNLOAD to enable automatic server download."
     )
 }
 
@@ -386,7 +383,7 @@ mod tests {
                 assert_eq!(binary, "jdtls");
             }
             ResolvedBackend::Lsp => {
-                // jdtls happens to be installed — that's fine
+                // jdtls happens to be available — that's fine
             }
             ResolvedBackend::Parserless => {
                 panic!("rename_symbol should not resolve to parserless");
@@ -408,7 +405,7 @@ mod tests {
         let result = selector.select("get_diagnostics", &Language::Java);
         match result {
             ResolvedBackend::TreeSitter => {} // expected fallback
-            ResolvedBackend::Lsp => {}        // jdtls installed — also ok
+            ResolvedBackend::Lsp => {}        // jdtls available — also ok
             _ => panic!("PrefersLsp should not produce LspUnavailable"),
         }
     }
