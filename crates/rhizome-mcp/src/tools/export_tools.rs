@@ -724,7 +724,10 @@ mod tests {
         assert_eq!(prepared.summary.files_processed, 1);
 
         let prune = prepared.summary.files_skipped_cached == 0;
-        assert!(prune, "Full export must set prune=true to prune deleted concepts");
+        assert!(
+            prune,
+            "Full export must set prune=true to prune deleted concepts"
+        );
     }
 
     #[test]
