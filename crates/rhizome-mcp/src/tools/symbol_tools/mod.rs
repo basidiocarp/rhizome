@@ -468,6 +468,23 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 idempotent_hint: true,
             },
         },
+        ToolSchema {
+            name: "get_chunk_boundaries".into(),
+            description: "Get AST-based chunk boundaries for a file using tree-sitter".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "strategy": { "type": "string", "enum": ["Function", "Class", "TopLevel", "Semantic"], "description": "Chunking strategy (default: Function)" }
+                },
+                "required": ["file"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
         simulate_change_schema(),
     ]
 }

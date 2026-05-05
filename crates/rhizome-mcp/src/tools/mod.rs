@@ -160,6 +160,9 @@ impl ToolDispatcher {
                 symbol_tools::get_enclosing_class(&self.treesitter, &args, &root)
             }
             "get_symbol_body" => symbol_tools::get_symbol_body(&self.treesitter, &args, &root),
+            "get_chunk_boundaries" => {
+                symbol_tools::get_chunk_boundaries(&self.treesitter, &args, &root)
+            }
             "get_region" => {
                 let ts = &self.treesitter;
                 let parserless = &self.parserless;

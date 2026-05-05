@@ -398,3 +398,67 @@ fn is_exported(sym: &Symbol, ext: &str) -> bool {
         _ => true,
     }
 }
+
+/// Get AST-based chunk boundaries for a file.
+///
+/// Returns a filtered set of symbols suitable for code chunking, tagged with
+/// start and end line numbers. Strategy determines which symbol kinds are included:
+/// - Function: Function and Method symbols
+/// - Class: Class and Struct symbols
+/// - TopLevel: all top-level symbols
+/// - Semantic: same as TopLevel for now
+pub fn get_chunk_boundaries(
+    backend: &dyn CodeIntelligence,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = required_str(args, "file")?;
+    let strategy = args
+        .get("strategy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Function");
+
+    let path = resolve_project_path(file, project_root)?;
+    let symbols = backend.get_symbols(&path)?;
+
+    let boundaries: Vec<Value> = symbols
+        .iter()
+        .filter_map(|sym| filter_symbol_for_chunking(sym, strategy))
+        .collect();
+
+    let response = json!({ "boundaries": boundaries });
+    let text = serde_json::to_string_pretty(&response)?;
+    Ok(tool_response(&text))
+}
+
+/// Filter symbols based on the chunking strategy.
+///
+/// Returns Some(boundary_json) if the symbol matches the strategy, None otherwise.
+fn filter_symbol_for_chunking(sym: &Symbol, strategy: &str) -> Option<Value> {
+    let kind_name = format!("{:?}", sym.kind);
+    let matches = match strategy {
+        "Function" => sym.kind == rhizome_core::SymbolKind::Function,
+        "Class" => {
+            sym.kind == rhizome_core::SymbolKind::Class || sym.kind == rhizome_core::SymbolKind::Struct
+        }
+        "TopLevel" | "Semantic" => {
+            // All non-variable, non-import top-level symbols
+            !matches!(
+                sym.kind,
+                rhizome_core::SymbolKind::Variable | rhizome_core::SymbolKind::Import
+            )
+        }
+        _ => false,
+    };
+
+    if !matches {
+        return None;
+    }
+
+    Some(json!({
+        "start_line": sym.location.line_start,
+        "end_line": sym.location.line_end,
+        "kind": kind_name,
+        "name": sym.name,
+    }))
+}

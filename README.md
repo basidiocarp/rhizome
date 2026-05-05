@@ -52,6 +52,14 @@ use in real sessions.
 ## Quick Start
 
 ```bash
+# Install via ecosystem installer
+curl -fsSL https://raw.githubusercontent.com/basidiocarp/stipe/main/install.sh | sh
+stipe setup
+```
+
+Or build from source:
+
+```bash
 # Build
 cargo build --release
 
@@ -102,7 +110,7 @@ edit or export   ─►    tool handler          ─►    project-aware result
 | Optional grammar pack | 3 niche languages | `lang-all` enables C#, Swift, and Haskell tree-sitter support |
 | LSP only | 14 or more languages | Language server required |
 
-All 32 supported languages have LSP server configs, and 20 or more have
+All 31 supported languages have LSP server configs, and 20 or more have
 auto-install recipes. The default binary keeps the heaviest niche grammars out
 of the shipped tree-sitter set; `C#`, `Swift`, and `Haskell` stay available
 through LSP unless you opt into `rhizome-treesitter/lang-all`.
@@ -154,6 +162,8 @@ rhizome status                    show backend status
 rhizome lsp install <language>    install an LSP server
 rhizome export                    export code graph to Hyphae
 rhizome export-understanding      export bounded repo understanding
+rhizome summarize                 summarize project structure and entry points
+rhizome doctor                    diagnose common installation issues
 ```
 
 ---
