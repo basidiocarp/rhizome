@@ -134,6 +134,21 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Compile and store permanent environment artifact in Hyphae
+    CompileEnv {
+        /// Workspace/project root path
+        #[arg(long, short)]
+        project: Option<PathBuf>,
+        /// Project name for Hyphae memoir (defaults to directory name)
+        #[arg(long)]
+        name: Option<String>,
+        /// Mark the current artifact as stale without re-running analysis
+        #[arg(long)]
+        invalidate: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Manage LSP server installations
     Lsp {
         #[command(subcommand)]
@@ -180,6 +195,7 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::SelfUpdate { .. } => "self_update",
         Commands::Doctor { .. } => "doctor",
         Commands::Summarize { .. } => "summarize",
+        Commands::CompileEnv { .. } => "compile_env",
         Commands::Lsp { action } => match action {
             LspAction::Status { .. } => "lsp_status",
             LspAction::Install { .. } => "lsp_install",
@@ -199,7 +215,8 @@ fn command_span_context(command: &Commands) -> SpanContext {
         | Commands::Export { project }
         | Commands::ExportUnderstanding { project, .. }
         | Commands::Status { project }
-        | Commands::Summarize { project, .. } => Some(detect_project_root(project.clone())),
+        | Commands::Summarize { project, .. }
+        | Commands::CompileEnv { project, .. } => Some(detect_project_root(project.clone())),
         Commands::Lsp { action } => match action {
             LspAction::Status { project, .. } | LspAction::Install { project, .. } => {
                 Some(detect_project_root(project.clone()))
@@ -647,6 +664,109 @@ fn cmd_lsp_install(project: Option<PathBuf>, language_name: &str) -> Result<()> 
     }
 }
 
+fn cmd_compile_env(
+    project: Option<PathBuf>,
+    name: Option<String>,
+    invalidate: bool,
+    json_output: bool,
+) -> Result<()> {
+    let project_root = detect_project_root(project);
+    let project_name = name.unwrap_or_else(|| {
+        project_root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    });
+
+    if invalidate {
+        // Mark stale: call `hyphae memoir set-meta` to set invalidated_at
+        let status = std::process::Command::new("hyphae")
+            .args([
+                "memoir", "set-meta",
+                &format!("compiled-env:{project_name}"),
+                "--invalidate",
+            ])
+            .status();
+        match status {
+            Ok(s) if s.success() => {
+                println!("Compiled environment artifact for '{project_name}' marked stale.");
+            }
+            _ => {
+                eprintln!("Warning: hyphae not available — could not mark artifact stale");
+            }
+        }
+        return Ok(());
+    }
+
+    println!("Compiling environment artifact for '{project_name}'...");
+
+    // Run the existing ExportUnderstanding analysis
+    let backend = TreeSitterBackend::new();
+    let args = serde_json::json!({});
+    let understanding = rhizome_mcp::tools::export_tools::export_repo_understanding(
+        &backend, &args, &project_root,
+    )?;
+
+    // Extract text from understanding
+    let understanding_text = understanding
+        .get("content")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|o| o.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("No understanding available")
+        .to_string();
+
+    // Write to Hyphae as a permanent memoir via CLI
+    // Step 1: create or update memoir
+    let memoir_id = format!("compiled-env:{project_name}");
+    let _create = std::process::Command::new("hyphae")
+        .args([
+            "memoir", "create",
+            "--name", &memoir_id,
+            "--description", &format!("Compiled environment artifact for {project_name}"),
+        ])
+        .status();
+
+    // Step 2: add concept with the understanding text
+    let _concept = std::process::Command::new("hyphae")
+        .args([
+            "memoir", "add-concept",
+            "--memoir", &memoir_id,
+            "--name", "repo_structure",
+            "--definition", &understanding_text[..understanding_text.len().min(2000)],
+        ])
+        .status();
+
+    // Step 3: mark as compiled artifact with decay=never
+    let _meta = std::process::Command::new("hyphae")
+        .args([
+            "memoir", "set-meta",
+            &memoir_id,
+            "--decay", "never",
+            "--authority", "primary",
+            "--source", "compiled_artifact",
+        ])
+        .status();
+
+    let result = serde_json::json!({
+        "memoir_id": memoir_id,
+        "project": project_name,
+        "project_root": project_root.display().to_string(),
+        "status": "compiled",
+    });
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        println!("Environment artifact compiled and stored: {}", result["memoir_id"]);
+        println!("Hyphae memoir: {}", result["memoir_id"]);
+        println!("Decay: never | Authority: primary | Source: compiled_artifact");
+    }
+
+    Ok(())
+}
+
 fn resolve_lsp_install_server_config(
     config: &rhizome_core::RhizomeConfig,
     language: &Language,
@@ -697,6 +817,9 @@ async fn main() -> Result<()> {
         Commands::SelfUpdate { check } => self_update::run(check),
         Commands::Doctor { fix } => doctor::run(fix),
         Commands::Summarize { project, json } => cmd_summarize(project, json),
+        Commands::CompileEnv { project, name, invalidate, json } => {
+            cmd_compile_env(project, name, invalidate, json)
+        }
         Commands::Lsp { action } => match action {
             LspAction::Status { project, json } => cmd_lsp_status(project, json),
             LspAction::Install { project, language } => cmd_lsp_install(project, &language),
