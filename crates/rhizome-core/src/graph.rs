@@ -246,6 +246,22 @@ pub fn merge_graphs(graphs: Vec<CodeGraph>) -> CodeGraph {
     }
 }
 
+/// Strip node descriptions to their first non-empty line.
+///
+/// Used for skeleton export to reduce embedding noise from long docstrings.
+/// Descriptions that consist entirely of whitespace or blank lines are cleared to `""`.
+pub fn skeletonize(mut graph: CodeGraph) -> CodeGraph {
+    for node in &mut graph.nodes {
+        node.description = node
+            .description
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("")
+            .to_string();
+    }
+    graph
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -661,5 +677,73 @@ mod tests {
             pub_crate_fn_node.labels.contains(&"public".to_string()),
             "pub(crate) fn should be labeled public"
         );
+    }
+
+    #[test]
+    fn test_skeletonize_multiline_description_to_first_line() {
+        let graph = CodeGraph {
+            project: "proj".into(),
+            nodes: vec![ConceptNode {
+                name: "test_node".into(),
+                labels: vec!["function".into()],
+                description: "fn demo()\n\nLong docstring\nwith multiple lines".into(),
+                metadata: HashMap::new(),
+            }],
+            edges: vec![],
+        };
+
+        let skeleton = skeletonize(graph);
+        assert_eq!(skeleton.nodes[0].description, "fn demo()");
+    }
+
+    #[test]
+    fn test_skeletonize_empty_description_remains_empty() {
+        let graph = CodeGraph {
+            project: "proj".into(),
+            nodes: vec![ConceptNode {
+                name: "test_node".into(),
+                labels: vec!["function".into()],
+                description: String::new(),
+                metadata: HashMap::new(),
+            }],
+            edges: vec![],
+        };
+
+        let skeleton = skeletonize(graph);
+        assert_eq!(skeleton.nodes[0].description, "");
+    }
+
+    #[test]
+    fn test_skeletonize_single_line_description_unchanged() {
+        let graph = CodeGraph {
+            project: "proj".into(),
+            nodes: vec![ConceptNode {
+                name: "test_node".into(),
+                labels: vec!["function".into()],
+                description: "fn demo()".into(),
+                metadata: HashMap::new(),
+            }],
+            edges: vec![],
+        };
+
+        let skeleton = skeletonize(graph);
+        assert_eq!(skeleton.nodes[0].description, "fn demo()");
+    }
+
+    #[test]
+    fn test_skeletonize_skips_leading_empty_lines() {
+        let graph = CodeGraph {
+            project: "proj".into(),
+            nodes: vec![ConceptNode {
+                name: "test_node".into(),
+                labels: vec!["function".into()],
+                description: "\n\nfn demo()\n\nDocumentation".into(),
+                metadata: HashMap::new(),
+            }],
+            edges: vec![],
+        };
+
+        let skeleton = skeletonize(graph);
+        assert_eq!(skeleton.nodes[0].description, "fn demo()");
     }
 }

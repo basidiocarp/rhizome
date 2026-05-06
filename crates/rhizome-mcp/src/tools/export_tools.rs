@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 use ignore::WalkBuilder;
 use rhizome_core::export_cache::ExportCache;
-use rhizome_core::graph::{CodeGraph, build_graph, merge_graphs};
+use rhizome_core::graph::{CodeGraph, build_graph, merge_graphs, skeletonize};
 use rhizome_core::hyphae;
 use rhizome_core::{
     CodeIntelligence, Language, RepoUnderstandingArtifact, RepoUnderstandingExportOutcome,
@@ -315,6 +315,10 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                     "path": {
                         "type": "string",
                         "description": "Optional path to export. Defaults to the project root."
+                    },
+                    "skeleton": {
+                        "type": "boolean",
+                        "description": "When true, truncate node descriptions to the first non-empty line before export. Reduces embedding noise from long docstrings. Default: false."
                     }
                 },
                 "required": []
@@ -384,7 +388,16 @@ pub fn export_to_hyphae(
         return Ok(export_response(&text, &prepared.summary));
     }
 
-    let merged = merge_graphs(prepared.graphs);
+    let mut merged = merge_graphs(prepared.graphs);
+
+    let skeleton = args
+        .get("skeleton")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if skeleton {
+        merged = skeletonize(merged);
+    }
+
     let graph_json = serde_json::to_value(&merged)?;
 
     // Only prune when this is a full export (no cached files skipped).
