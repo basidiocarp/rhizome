@@ -318,23 +318,68 @@ impl ToolDispatcher {
         let lang = self
             .detect_language(args)
             .unwrap_or(Language::Other("unknown".into()));
+        let file_ext = args
+            .get("file")
+            .and_then(|v| v.as_str())
+            .and_then(|f| std::path::Path::new(f).extension())
+            .and_then(|e| e.to_str());
 
         match self.resolve_backend(tool_name, args) {
-            ActiveBackend::Heuristic => heuristic_fn(args),
+            ActiveBackend::Heuristic => {
+                // Check for a registered plugin before falling to heuristic structural analysis.
+                let plugin_id = file_ext.and_then(|ext| {
+                    self.selector
+                        .borrow()
+                        .plugin_registry()
+                        .find_for_extension(ext)
+                        .map(|p| p.id().to_string())
+                });
+                if let Some(id) = plugin_id {
+                    return self
+                        .invoke_plugin_outline(&id, args)
+                        .or_else(|_| heuristic_fn(args));
+                }
+                heuristic_fn(args)
+            }
             ActiveBackend::Parserless => parserless_fn(args),
             ActiveBackend::Lsp => self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn),
             ActiveBackend::TreeSitter => match ts_fn(args) {
                 Ok(value) => Ok(value),
-                Err(_) => match self.selector.borrow_mut().outline_fallback(&lang) {
+                Err(_) => match self.selector.borrow_mut().outline_fallback(&lang, file_ext) {
                     ResolvedBackend::Lsp => self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn),
                     ResolvedBackend::Heuristic => heuristic_fn(args),
                     ResolvedBackend::Parserless => parserless_fn(args),
-                    // New variants default to heuristic until an explicit arm is added.
+                    ResolvedBackend::Plugin { plugin_id } => self
+                        .invoke_plugin_outline(&plugin_id, args)
+                        .or_else(|_| heuristic_fn(args)),
                     _ => heuristic_fn(args),
                 },
             },
             ActiveBackend::Error(_) => heuristic_fn(args),
         }
+    }
+
+    /// Invoke a registered analyzer plugin for outline-style tool calls.
+    fn invoke_plugin_outline(&self, plugin_id: &str, args: &Value) -> Result<Value> {
+        let file = args
+            .get("file")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("missing file argument"))?;
+        let root = args
+            .get("root")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.project_root.clone());
+        let path = symbol_tools::resolve_project_path(file, &root)?;
+
+        let selector = self.selector.borrow();
+        let plugin = selector
+            .plugin_registry()
+            .find_for_id(plugin_id)
+            .ok_or_else(|| anyhow!("plugin not found: {plugin_id}"))?;
+        let symbols = plugin.get_symbols(&path)?;
+        let text = serde_json::to_string_pretty(&symbols)?;
+        Ok(tool_response(&text))
     }
 
     /// Dispatch for semantic region lookups: tree-sitter first, then LSP, never parserless.
@@ -355,6 +400,11 @@ impl ToolDispatcher {
         let lang = self
             .detect_language(args)
             .unwrap_or(Language::Other("unknown".into()));
+        let file_ext = args
+            .get("file")
+            .and_then(|v| v.as_str())
+            .and_then(|f| std::path::Path::new(f).extension())
+            .and_then(|e| e.to_str());
         let region_id = args
             .get("region_id")
             .and_then(|value| value.as_str())
@@ -368,7 +418,7 @@ impl ToolDispatcher {
 
         match ts_fn(args) {
             Ok(value) => Ok(value),
-            Err(error) => match self.selector.borrow_mut().outline_fallback(&lang) {
+            Err(error) => match self.selector.borrow_mut().outline_fallback(&lang, file_ext) {
                 ResolvedBackend::Lsp => self.try_lsp_or_error(args, lsp_fn, error),
                 _ => Err(error),
             },

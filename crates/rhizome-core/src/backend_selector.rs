@@ -27,6 +27,10 @@ pub enum BackendRequirement {
 pub enum ResolvedBackend {
     TreeSitter,
     Lsp,
+    /// A registered analyzer plugin.
+    Plugin {
+        plugin_id: String,
+    },
     /// Legacy -- only used for `region-*` ID lookup in `get_region`, never selected for new requests.
     Parserless,
     /// Heuristic structural fallback using indentation and bracket counting.
@@ -66,6 +70,7 @@ pub struct BackendSelector {
     bin_dir: PathBuf,
     lsp_disabled: bool,
     cache: HashMap<Language, ServerProbe>,
+    plugin_registry: crate::plugin::PluginRegistry,
 }
 
 impl BackendSelector {
@@ -79,11 +84,23 @@ impl BackendSelector {
             .bin_dir
             .clone()
             .unwrap_or_else(crate::paths::managed_bin_dir);
+
+        if let Ok(plugin_path) = std::env::var("RHIZOME_PLUGIN_PATH") {
+            tracing::info!(
+                "RHIZOME_PLUGIN_PATH set to {} — external plugin loading not yet implemented",
+                plugin_path
+            );
+        }
+
+        let mut plugin_registry = crate::plugin::PluginRegistry::new();
+        crate::plugins::register_builtins(&mut plugin_registry);
+
         Self {
             config,
             bin_dir,
             lsp_disabled,
             cache: HashMap::new(),
+            plugin_registry,
         }
     }
 
@@ -104,7 +121,7 @@ impl BackendSelector {
         match requirement {
             BackendRequirement::TreeSitter => {
                 if parserless_supported(tool_name) && !language.tree_sitter_supported() {
-                    self.outline_fallback(language)
+                    self.outline_fallback(language, None)
                 } else {
                     ResolvedBackend::TreeSitter
                 }
@@ -126,7 +143,7 @@ impl BackendSelector {
                 if probe.available {
                     ResolvedBackend::Lsp
                 } else if parserless_supported(tool_name) && !language.tree_sitter_supported() {
-                    ResolvedBackend::Heuristic
+                    self.outline_fallback(language, None)
                 } else {
                     ResolvedBackend::TreeSitter
                 }
@@ -167,14 +184,23 @@ impl BackendSelector {
 
     /// Pick the best outline fallback once tree-sitter cannot serve the request.
     ///
-    /// Preference order: LSP > Heuristic.
-    pub fn outline_fallback(&mut self, language: &Language) -> ResolvedBackend {
+    /// Preference order: LSP > Plugin > Heuristic.
+    pub fn outline_fallback(&mut self, language: &Language, ext: Option<&str>) -> ResolvedBackend {
         let probe = self.probe_language(language);
         if probe.available {
-            ResolvedBackend::Lsp
-        } else {
-            ResolvedBackend::Heuristic
+            return ResolvedBackend::Lsp;
         }
+        if let Some(plugin) = ext.and_then(|e| self.plugin_registry.find_for_extension(e)) {
+            return ResolvedBackend::Plugin {
+                plugin_id: plugin.id().to_string(),
+            };
+        }
+        ResolvedBackend::Heuristic
+    }
+
+    /// Get a reference to the plugin registry.
+    pub fn plugin_registry(&self) -> &crate::plugin::PluginRegistry {
+        &self.plugin_registry
     }
 }
 
@@ -393,6 +419,9 @@ mod tests {
             ResolvedBackend::TreeSitter => {
                 panic!("rename_symbol should not resolve to tree-sitter");
             }
+            ResolvedBackend::Plugin { .. } => {
+                panic!("rename_symbol should not resolve to plugin");
+            }
         }
     }
 
@@ -413,8 +442,42 @@ mod tests {
     fn outline_fallback_prefers_lsp_then_heuristic() {
         let config = RhizomeConfig::default();
         let mut selector = BackendSelector::new(config);
-        let result = selector.outline_fallback(&Language::Other("text".into()));
+        let result = selector.outline_fallback(&Language::Other("text".into()), None);
         assert_eq!(result, ResolvedBackend::Heuristic);
+    }
+
+    #[test]
+    fn outline_fallback_returns_plugin_for_registered_extension() {
+        use crate::plugin::{AnalyzerPlugin, FileRegion};
+        use crate::symbol::Symbol;
+
+        struct FakePlugin;
+        impl AnalyzerPlugin for FakePlugin {
+            fn id(&self) -> &str {
+                "fake-analyzer"
+            }
+            fn supported_extensions(&self) -> &[&str] {
+                &["xyz"]
+            }
+            fn get_structure(&self, _path: &std::path::Path) -> crate::error::Result<Vec<Symbol>> {
+                Ok(vec![])
+            }
+            fn get_region(
+                &self,
+                _path: &std::path::Path,
+                _region_id: &str,
+            ) -> crate::error::Result<Option<FileRegion>> {
+                Ok(None)
+            }
+        }
+
+        let config = RhizomeConfig::default();
+        let mut selector = BackendSelector::new(config);
+        selector.plugin_registry.register(Box::new(FakePlugin));
+        let result = selector.outline_fallback(&Language::Other("xyz".into()), Some("xyz"));
+        assert!(
+            matches!(result, ResolvedBackend::Plugin { plugin_id } if plugin_id == "fake-analyzer")
+        );
     }
 
     #[test]

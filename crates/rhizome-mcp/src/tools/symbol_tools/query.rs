@@ -439,7 +439,8 @@ fn filter_symbol_for_chunking(sym: &Symbol, strategy: &str) -> Option<Value> {
     let matches = match strategy {
         "Function" => sym.kind == rhizome_core::SymbolKind::Function,
         "Class" => {
-            sym.kind == rhizome_core::SymbolKind::Class || sym.kind == rhizome_core::SymbolKind::Struct
+            sym.kind == rhizome_core::SymbolKind::Class
+                || sym.kind == rhizome_core::SymbolKind::Struct
         }
         "TopLevel" | "Semantic" => {
             // All non-variable, non-import top-level symbols

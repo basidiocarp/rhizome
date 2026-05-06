@@ -13,6 +13,8 @@ pub mod installer;
 pub mod language;
 pub mod parserless;
 pub mod paths;
+pub mod plugin;
+pub mod plugins;
 pub mod project_summary;
 pub mod repo_understanding;
 pub mod root_detector;
@@ -37,6 +39,8 @@ pub use parserless::{ParserlessBackend, ParserlessRegion};
 pub use paths::{
     augmented_path, global_config_path, managed_bin_dir, project_config_path, project_state_dir,
 };
+pub use plugin::{AnalyzerPlugin, FileRegion, PLUGIN_API_VERSION, PluginRegistry};
+pub use plugins::register_builtins;
 pub use project_summary::{EntryPoint, ModuleSummary, ProjectSummary, summarize_project};
 pub use repo_understanding::{
     RepoSurfaceKind, RepoSurfaceNode, RepoSurfaceSummary, RepoUnderstandingArtifact,

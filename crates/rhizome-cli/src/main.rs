@@ -154,6 +154,11 @@ enum Commands {
         #[command(subcommand)]
         action: LspAction,
     },
+    /// Manage analyzer plugins
+    Plugin {
+        #[command(subcommand)]
+        action: PluginAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -174,6 +179,12 @@ enum LspAction {
         /// Language name (e.g. rust, python, typescript)
         language: String,
     },
+}
+
+#[derive(Subcommand)]
+enum PluginAction {
+    /// List all registered analyzer plugins
+    List,
 }
 
 fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
@@ -199,6 +210,9 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Lsp { action } => match action {
             LspAction::Status { .. } => "lsp_status",
             LspAction::Install { .. } => "lsp_install",
+        },
+        Commands::Plugin { action } => match action {
+            PluginAction::List => "plugin_list",
         },
     }
 }
@@ -226,7 +240,10 @@ fn command_span_context(command: &Commands) -> SpanContext {
             .parent()
             .map(|path| path.to_path_buf())
             .or_else(|| std::env::current_dir().ok()),
-        Commands::Init { .. } | Commands::SelfUpdate { .. } | Commands::Doctor { .. } => None,
+        Commands::Init { .. }
+        | Commands::SelfUpdate { .. }
+        | Commands::Doctor { .. }
+        | Commands::Plugin { .. } => None,
     };
 
     let context = SpanContext::for_app("rhizome");
@@ -664,6 +681,30 @@ fn cmd_lsp_install(project: Option<PathBuf>, language_name: &str) -> Result<()> 
     }
 }
 
+fn cmd_plugin_list() -> Result<()> {
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Load plugin registry and display list
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    let config = rhizome_core::RhizomeConfig::default();
+    let selector = rhizome_core::BackendSelector::new(config);
+    let registry = selector.plugin_registry();
+
+    if registry.list().is_empty() {
+        println!("No plugins registered.");
+        return Ok(());
+    }
+
+    println!("Registered analyzer plugins:\n");
+    for plugin in registry.list() {
+        let exts = plugin.supported_extensions();
+        let exts_str = exts.join(", ");
+        println!("built-in: {}  [{}]", plugin.id(), exts_str);
+    }
+
+    Ok(())
+}
+
 fn cmd_compile_env(
     project: Option<PathBuf>,
     name: Option<String>,
@@ -682,7 +723,8 @@ fn cmd_compile_env(
         // Mark stale: call `hyphae memoir set-meta` to set invalidated_at
         let status = std::process::Command::new("hyphae")
             .args([
-                "memoir", "set-meta",
+                "memoir",
+                "set-meta",
                 &format!("compiled-env:{project_name}"),
                 "--invalidate",
             ])
@@ -704,7 +746,9 @@ fn cmd_compile_env(
     let backend = TreeSitterBackend::new();
     let args = serde_json::json!({});
     let understanding = rhizome_mcp::tools::export_tools::export_repo_understanding(
-        &backend, &args, &project_root,
+        &backend,
+        &args,
+        &project_root,
     )?;
 
     // Extract text from understanding
@@ -722,30 +766,41 @@ fn cmd_compile_env(
     let memoir_id = format!("compiled-env:{project_name}");
     let _create = std::process::Command::new("hyphae")
         .args([
-            "memoir", "create",
-            "--name", &memoir_id,
-            "--description", &format!("Compiled environment artifact for {project_name}"),
+            "memoir",
+            "create",
+            "--name",
+            &memoir_id,
+            "--description",
+            &format!("Compiled environment artifact for {project_name}"),
         ])
         .status();
 
     // Step 2: add concept with the understanding text
     let _concept = std::process::Command::new("hyphae")
         .args([
-            "memoir", "add-concept",
-            "--memoir", &memoir_id,
-            "--name", "repo_structure",
-            "--definition", &understanding_text[..understanding_text.len().min(2000)],
+            "memoir",
+            "add-concept",
+            "--memoir",
+            &memoir_id,
+            "--name",
+            "repo_structure",
+            "--definition",
+            &understanding_text[..understanding_text.len().min(2000)],
         ])
         .status();
 
     // Step 3: mark as compiled artifact with decay=never
     let _meta = std::process::Command::new("hyphae")
         .args([
-            "memoir", "set-meta",
+            "memoir",
+            "set-meta",
             &memoir_id,
-            "--decay", "never",
-            "--authority", "primary",
-            "--source", "compiled_artifact",
+            "--decay",
+            "never",
+            "--authority",
+            "primary",
+            "--source",
+            "compiled_artifact",
         ])
         .status();
 
@@ -759,7 +814,10 @@ fn cmd_compile_env(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        println!("Environment artifact compiled and stored: {}", result["memoir_id"]);
+        println!(
+            "Environment artifact compiled and stored: {}",
+            result["memoir_id"]
+        );
         println!("Hyphae memoir: {}", result["memoir_id"]);
         println!("Decay: never | Authority: primary | Source: compiled_artifact");
     }
@@ -817,12 +875,18 @@ async fn main() -> Result<()> {
         Commands::SelfUpdate { check } => self_update::run(check),
         Commands::Doctor { fix } => doctor::run(fix),
         Commands::Summarize { project, json } => cmd_summarize(project, json),
-        Commands::CompileEnv { project, name, invalidate, json } => {
-            cmd_compile_env(project, name, invalidate, json)
-        }
+        Commands::CompileEnv {
+            project,
+            name,
+            invalidate,
+            json,
+        } => cmd_compile_env(project, name, invalidate, json),
         Commands::Lsp { action } => match action {
             LspAction::Status { project, json } => cmd_lsp_status(project, json),
             LspAction::Install { project, language } => cmd_lsp_install(project, &language),
+        },
+        Commands::Plugin { action } => match action {
+            PluginAction::List => cmd_plugin_list(),
         },
     }
 }
