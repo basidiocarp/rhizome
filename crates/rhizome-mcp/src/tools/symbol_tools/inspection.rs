@@ -77,34 +77,44 @@ fn extract_calls_from_line(
                 name_end -= 1;
             }
 
-            if name_end > 0 && is_ident_char(bytes[name_end - 1]) {
-                let mut name_start = name_end - 1;
-                while name_start > 0 && is_ident_char(bytes[name_start - 1]) {
-                    name_start -= 1;
-                }
+            if name_end > 0 {
+                let ch = line[..name_end].chars().last().unwrap_or(' ');
+                if is_ident_char(ch) {
+                    let mut name_start = name_end - 1;
+                    loop {
+                        if name_start == 0 {
+                            break;
+                        }
+                        let prev_ch = line[..name_start].chars().last().unwrap_or(' ');
+                        if !is_ident_char(prev_ch) {
+                            break;
+                        }
+                        name_start -= 1;
+                    }
 
-                let name = &line[name_start..name_end];
+                    let name = &line[name_start..name_end];
 
-                // Skip language keywords
-                if !is_keyword(name) {
-                    if let Some(filter) = function_filter {
-                        if name == filter {
+                    // Skip language keywords
+                    if !is_keyword(name) {
+                        if let Some(filter) = function_filter {
+                            if name == filter {
+                                results.push(json!({
+                                    "function": name,
+                                    "file": file,
+                                    "line": line_num,
+                                    "column": name_start as u32,
+                                    "context": line.trim(),
+                                }));
+                            }
+                        } else {
                             results.push(json!({
                                 "function": name,
                                 "file": file,
                                 "line": line_num,
-                                "column": name_start as u32,
+                                "column": paren_pos as u32,
                                 "context": line.trim(),
                             }));
                         }
-                    } else {
-                        results.push(json!({
-                            "function": name,
-                            "file": file,
-                            "line": line_num,
-                            "column": paren_pos as u32,
-                            "context": line.trim(),
-                        }));
                     }
                 }
             }

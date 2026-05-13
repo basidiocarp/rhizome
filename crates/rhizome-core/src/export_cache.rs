@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{UNIX_EPOCH, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -45,14 +45,24 @@ pub fn scoped_cache_path(project_root: &Path, prefix: &str) -> PathBuf {
     dir.join(format!("{prefix}-{scope}.json"))
 }
 
+/// File change fingerprint for incremental exports.
+///
+/// Tracks the nanosecond-precision mtime and size for each file,
+/// allowing callers to detect same-second edits that would be missed by second-only mtime.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CacheEntry {
+    pub mtime_nanos: u128,
+    pub size_bytes: u64,
+}
+
 /// Mtime-based file change cache for incremental exports.
 ///
-/// Tracks the last-exported modification time (Unix epoch seconds) for each file,
+/// Tracks the last-exported modification time (nanosecond precision) and size for each file,
 /// allowing callers to skip re-exporting files that haven't changed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportCache {
-    /// Maps file paths to their last-exported mtime (Unix epoch seconds)
-    pub files: HashMap<String, u64>,
+    /// Maps file paths to their last-exported mtime and size
+    pub files: HashMap<String, CacheEntry>,
 }
 
 impl ExportCache {
@@ -97,39 +107,48 @@ impl ExportCache {
 
     /// Returns true if the file should be re-exported.
     ///
-    /// A file is stale if it's not in the cache, its current mtime is newer
-    /// than the cached mtime, or its metadata can't be read.
+    /// A file is stale if it's not in the cache, its current mtime/size differs from
+    /// the cached values, or its metadata can't be read.
     pub fn is_stale(&self, file_path: &Path) -> bool {
-        let current_mtime = match Self::get_mtime(file_path) {
-            Some(mtime) => mtime,
+        let current = match Self::get_fingerprint(file_path) {
+            Some(fp) => fp,
             None => return true,
         };
 
         let path_str = file_path.to_string_lossy();
         match self.files.get(path_str.as_ref()) {
-            Some(&cached_mtime) => current_mtime > cached_mtime,
+            Some(cached) => current.mtime_nanos != cached.mtime_nanos || current.size_bytes != cached.size_bytes,
             None => true,
         }
     }
 
-    /// Returns a new `ExportCache` with the file's current mtime recorded.
-    /// If getting the mtime fails, returns a clone of self unchanged.
+    /// Returns a new `ExportCache` with the file's current mtime and size recorded.
+    /// If getting the fingerprint fails, returns a clone of self unchanged.
     pub fn update(&self, file_path: &Path) -> Self {
         let mut new_cache = self.clone();
-        if let Some(mtime) = Self::get_mtime(file_path) {
+        if let Some(fp) = Self::get_fingerprint(file_path) {
             let path_str = file_path.to_string_lossy().into_owned();
-            new_cache.files.insert(path_str, mtime);
+            new_cache.files.insert(path_str, fp);
         }
         new_cache
     }
 
-    /// Gets a file's mtime as Unix epoch seconds, or None on failure.
-    fn get_mtime(file_path: &Path) -> Option<u64> {
+    /// Gets a file's mtime (nanosecond precision) and size, or None on failure.
+    fn get_fingerprint(file_path: &Path) -> Option<CacheEntry> {
         let metadata = std::fs::metadata(file_path).ok()?;
         let modified = metadata.modified().ok()?;
-        let duration = modified.duration_since(UNIX_EPOCH).ok()?;
-        Some(duration.as_secs())
+        let mtime_nanos = system_time_to_nanos(modified)?;
+        Some(CacheEntry {
+            mtime_nanos,
+            size_bytes: metadata.len(),
+        })
     }
+}
+
+/// Convert SystemTime to nanoseconds since Unix epoch, or None on failure.
+fn system_time_to_nanos(time: SystemTime) -> Option<u128> {
+    let duration = time.duration_since(UNIX_EPOCH).ok()?;
+    Some(duration.as_secs() as u128 * 1_000_000_000 + duration.subsec_nanos() as u128)
 }
 
 impl Default for ExportCache {
@@ -243,14 +262,14 @@ mod tests {
     }
 
     #[test]
-    fn matching_mtime_reports_not_stale() {
+    fn matching_fingerprint_reports_not_stale() {
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("test.rs");
         fs::write(&file_path, "fn main() {}").unwrap();
 
-        let mtime = ExportCache::get_mtime(&file_path).unwrap();
+        let fp = ExportCache::get_fingerprint(&file_path).unwrap();
         let cache = ExportCache {
-            files: HashMap::from([(file_path.to_string_lossy().into_owned(), mtime)]),
+            files: HashMap::from([(file_path.to_string_lossy().into_owned(), fp)]),
         };
 
         assert!(!cache.is_stale(&file_path));
@@ -261,8 +280,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = ExportCache {
             files: HashMap::from([
-                ("src/main.rs".to_string(), 1_710_000_000),
-                ("src/lib.rs".to_string(), 1_710_000_100),
+                ("src/main.rs".to_string(), CacheEntry { mtime_nanos: 1_710_000_000_000_000_000, size_bytes: 100 }),
+                ("src/lib.rs".to_string(), CacheEntry { mtime_nanos: 1_710_000_100_000_000_000, size_bytes: 200 }),
             ]),
         };
 
@@ -270,8 +289,8 @@ mod tests {
         let loaded = ExportCache::load(dir.path()).unwrap();
 
         assert_eq!(loaded.files.len(), 2);
-        assert_eq!(loaded.files["src/main.rs"], 1_710_000_000);
-        assert_eq!(loaded.files["src/lib.rs"], 1_710_000_100);
+        assert_eq!(loaded.files["src/main.rs"].mtime_nanos, 1_710_000_000_000_000_000);
+        assert_eq!(loaded.files["src/lib.rs"].mtime_nanos, 1_710_000_100_000_000_000);
         assert!(ExportCache::cache_path(dir.path()).exists());
     }
 
@@ -317,18 +336,18 @@ mod tests {
     #[test]
     fn update_with_nonexistent_file_returns_unchanged() {
         let cache = ExportCache {
-            files: HashMap::from([("existing.rs".to_string(), 1_710_000_000)]),
+            files: HashMap::from([("existing.rs".to_string(), CacheEntry { mtime_nanos: 1_710_000_000_000_000_000, size_bytes: 100 })]),
         };
         let updated = cache.update(Path::new("/nonexistent/file.rs"));
         assert_eq!(updated.files.len(), 1);
-        assert_eq!(updated.files["existing.rs"], 1_710_000_000);
+        assert_eq!(updated.files["existing.rs"].mtime_nanos, 1_710_000_000_000_000_000);
     }
 
     #[test]
     fn load_ignores_legacy_cache_path() {
         let dir = tempfile::tempdir().unwrap();
         let cache = ExportCache {
-            files: HashMap::from([("src/main.rs".to_string(), 42)]),
+            files: HashMap::from([("src/main.rs".to_string(), CacheEntry { mtime_nanos: 42_000_000_000, size_bytes: 100 })]),
         };
 
         let legacy = dir.path().join(".rhizome/cache.json");

@@ -67,33 +67,55 @@ pub fn go_to_definition(
 }
 
 pub(crate) fn extract_identifier_at(line: &str, col: usize) -> String {
-    let bytes = line.as_bytes();
-    if col >= bytes.len() {
+    // col is a byte offset (from extract_identifier_at being called with col from line_text)
+    // We need to find the character at this byte position, then extract the identifier around it
+
+    let mut byte_offset = 0;
+    for (char_idx, ch) in line.chars().enumerate() {
+        if byte_offset == col {
+            // Found the character at this position
+            return extract_identifier_around_char(line, char_idx);
+        }
+        byte_offset += ch.len_utf8();
+    }
+
+    // If we're at the very end of the line (which can be valid for the last char)
+    if byte_offset == col {
         return String::new();
     }
 
+    String::new()
+}
+
+fn extract_identifier_around_char(line: &str, char_idx: usize) -> String {
     // Check if we're on an identifier character
-    if !is_ident_char(bytes[col]) {
+    let chars: Vec<char> = line.chars().collect();
+    if char_idx >= chars.len() {
+        return String::new();
+    }
+
+    if !is_ident_char(chars[char_idx]) {
         return String::new();
     }
 
     // Walk backward to find start
-    let mut start = col;
-    while start > 0 && is_ident_char(bytes[start - 1]) {
+    let mut start = char_idx;
+    while start > 0 && is_ident_char(chars[start - 1]) {
         start -= 1;
     }
 
     // Walk forward to find end
-    let mut end = col;
-    while end < bytes.len() && is_ident_char(bytes[end]) {
+    let mut end = char_idx;
+    while end < chars.len() && is_ident_char(chars[end]) {
         end += 1;
     }
 
-    line[start..end].to_string()
+    // Collect the identifier characters
+    chars[start..end].iter().collect()
 }
 
-pub(crate) fn is_ident_char(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
+pub(crate) fn is_ident_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
 }
 
 /// Get only the signature of a symbol.

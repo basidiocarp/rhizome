@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -25,11 +25,17 @@ pub struct PreviewResult {
 }
 
 pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
-    let mut result = ApplyResult::default();
+    // Phase 1: snapshot all target file contents before writing
+    let mut backups: HashMap<PathBuf, String> = HashMap::new();
 
     if let Some(changes) = &edit.changes {
-        for (uri, edits) in changes {
-            apply_text_edits_to_uri(uri, edits, &mut result)?;
+        for uri in changes.keys() {
+            let path = PathBuf::from(uri_to_file_path(uri));
+            if path.exists() {
+                let content = fs::read_to_string(&path)
+                    .with_context(|| format!("failed to snapshot {}", path.display()))?;
+                backups.insert(path, content);
+            }
         }
     }
 
@@ -37,18 +43,91 @@ pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
         match document_changes {
             DocumentChanges::Edits(edits) => {
                 for edit in edits {
-                    apply_text_document_edit(edit, &mut result)?;
+                    let uri = &edit.text_document.uri;
+                    let path = PathBuf::from(uri_to_file_path(uri));
+                    if path.exists() {
+                        let content = fs::read_to_string(&path)
+                            .with_context(|| format!("failed to snapshot {}", path.display()))?;
+                        backups.insert(path, content);
+                    }
                 }
             }
             DocumentChanges::Operations(ops) => {
                 for op in ops {
                     match op {
                         DocumentChangeOperation::Edit(edit) => {
-                            apply_text_document_edit(edit, &mut result)?;
+                            let uri = &edit.text_document.uri;
+                            let path = PathBuf::from(uri_to_file_path(uri));
+                            if path.exists() {
+                                let content = fs::read_to_string(&path)
+                                    .with_context(|| format!("failed to snapshot {}", path.display()))?;
+                                backups.insert(path, content);
+                            }
+                        }
+                        DocumentChangeOperation::Op(ResourceOp::Rename(rename)) => {
+                            let old_path = PathBuf::from(uri_to_file_path(&rename.old_uri));
+                            if old_path.exists() {
+                                let content = fs::read_to_string(&old_path)
+                                    .with_context(|| format!("failed to snapshot {}", old_path.display()))?;
+                                backups.insert(old_path, content);
+                            }
+                        }
+                        DocumentChangeOperation::Op(_) => {}
+                    }
+                }
+            }
+        }
+    }
+
+    // Phase 2: apply all changes
+    let mut result = ApplyResult::default();
+
+    if let Some(changes) = &edit.changes {
+        for (uri, edits) in changes {
+            if let Err(e) = apply_text_edits_to_uri(uri, edits, &mut result) {
+                // Phase 3: rollback all changes on failure
+                for (path, original) in &backups {
+                    let _ = fs::write(path, original);
+                }
+                return Err(e).with_context(|| {
+                    format!("apply failed for {:?}; all files restored", uri)
+                });
+            }
+        }
+    }
+
+    if let Some(document_changes) = &edit.document_changes {
+        match document_changes {
+            DocumentChanges::Edits(edits) => {
+                for edit in edits {
+                    if let Err(e) = apply_text_document_edit(edit, &mut result) {
+                        // Phase 3: rollback all changes on failure
+                        for (path, original) in &backups {
+                            let _ = fs::write(path, original);
+                        }
+                        return Err(e).with_context(|| {
+                            format!("apply failed for {:?}; all files restored", edit.text_document.uri)
+                        });
+                    }
+                }
+            }
+            DocumentChanges::Operations(ops) => {
+                for op in ops {
+                    let apply_err = match op {
+                        DocumentChangeOperation::Edit(edit) => {
+                            apply_text_document_edit(edit, &mut result).err()
                         }
                         DocumentChangeOperation::Op(resource_op) => {
-                            apply_resource_op(resource_op, &mut result)?;
+                            apply_resource_op(resource_op, &mut result).err()
                         }
+                    };
+
+                    if let Some(e) = apply_err {
+                        // Phase 3: rollback all changes on failure
+                        for (path, original) in &backups {
+                            let _ = fs::write(path, original);
+                        }
+                        return Err(e).context("apply failed; all files restored");
                     }
                 }
             }
@@ -371,7 +450,7 @@ fn position_to_offset(text: &str, position: Position) -> Result<usize> {
     ))
 }
 
-fn utf16_column_to_offset(line: &str, column: u32) -> Result<usize> {
+pub fn utf16_column_to_offset(line: &str, column: u32) -> Result<usize> {
     let target = column as usize;
     let mut utf16_units = 0usize;
 

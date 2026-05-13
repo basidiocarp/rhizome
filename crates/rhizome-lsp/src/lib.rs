@@ -32,11 +32,15 @@ use crate::manager::LanguageServerManager;
 /// async serve path because the implementation uses `block_in_place` when a
 /// Tokio runtime is already active. Use the async `LspClient` methods directly
 /// only when you need finer-grained control.
+type OpenedUrisMap = std::collections::HashMap<(String, PathBuf), std::collections::HashSet<String>>;
+
 pub struct LspBackend {
     manager: Arc<tokio::sync::Mutex<LanguageServerManager>>,
     handle: tokio::runtime::Handle,
     /// Default workspace root, used when no per-call root is specified.
     default_root: PathBuf,
+    /// Track which URIs have been opened for each workspace.
+    opened_uris: Arc<std::sync::Mutex<OpenedUrisMap>>,
 }
 
 impl LspBackend {
@@ -45,6 +49,7 @@ impl LspBackend {
             manager: Arc::new(tokio::sync::Mutex::new(LanguageServerManager::new())),
             handle,
             default_root: workspace_root,
+            opened_uris: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -57,6 +62,67 @@ impl LspBackend {
         } else {
             self.handle.block_on(future)
         }
+    }
+
+    /// Ensure a file has been opened with the language server by sending didOpen notification.
+    /// Returns the URI as a string for tracking purposes.
+    async fn ensure_did_open(
+        &self,
+        file: &Path,
+        lang: &Language,
+        workspace_root: &Path,
+    ) -> Result<String> {
+        let uri = crate::convert::path_to_lsp_uri(file)
+            .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+        let uri_str = uri.to_string();
+        let key = (lang.to_string(), workspace_root.to_path_buf());
+
+        {
+            let tracker = self.opened_uris.lock().map_err(|_|
+                RhizomeError::LspError("opened_uris lock poisoned".to_string())
+            )?;
+            if let Some(opened) = tracker.get(&key)
+                && opened.contains(&uri_str)
+            {
+                return Ok(uri_str);
+            }
+        }
+
+        // File not opened yet; acquire the manager lock and re-check before sending didOpen.
+        // A concurrent caller may have won the race between the first check and here.
+        let content = std::fs::read_to_string(file)
+            .map_err(|e| RhizomeError::LspError(format!("Failed to read file: {}", e)))?;
+        let language_id = lang.lsp_language_id();
+
+        let mut mgr = self.manager.lock().await;
+
+        // Re-check under manager lock to close the TOCTOU window.
+        {
+            let tracker = self.opened_uris.lock().map_err(|_|
+                RhizomeError::LspError("opened_uris lock poisoned".to_string())
+            )?;
+            if let Some(opened) = tracker.get(&key)
+                && opened.contains(&uri_str)
+            {
+                return Ok(uri_str);
+            }
+        }
+
+        let client = mgr
+            .get_client(lang, workspace_root)
+            .await
+            .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+
+        client.did_open(&uri, &language_id, &content).await
+            .map_err(|e| RhizomeError::LspError(format!("didOpen failed: {}", e)))?;
+
+        // Track that this URI is now open
+        let mut tracker = self.opened_uris.lock().map_err(|_|
+            RhizomeError::LspError("opened_uris lock poisoned".to_string())
+        )?;
+        tracker.entry(key).or_insert_with(std::collections::HashSet::new).insert(uri_str.clone());
+
+        Ok(uri_str)
     }
 
     /// Shut down all managed language servers.
@@ -79,6 +145,7 @@ impl LspBackend {
         let root = workspace_root.to_path_buf();
         self.run_blocking(async {
             let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
                 .get_client(&lang, &root)
@@ -118,6 +185,7 @@ impl LspBackend {
         };
         self.run_blocking(async {
             let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
                 .get_client(&lang, &root)
@@ -141,6 +209,7 @@ impl LspBackend {
         let root = workspace_root.to_path_buf();
         self.run_blocking(async {
             let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
                 .get_client(&lang, &root)
@@ -189,6 +258,7 @@ impl LspBackend {
 
         self.run_blocking(async {
             let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
             let mut mgr = self.manager.lock().await;
             let client = mgr
                 .get_client(&lang, &root)

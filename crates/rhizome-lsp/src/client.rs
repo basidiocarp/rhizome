@@ -1,13 +1,13 @@
 #![allow(clippy::collapsible_if)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
@@ -29,6 +29,8 @@ pub struct LspClient {
     stderr_handle: tokio::task::JoinHandle<()>,
     process: Child,
     binary: String,
+    #[allow(dead_code)]
+    opened_uris: Arc<Mutex<HashSet<lsp_types::Uri>>>,
 }
 
 impl LspClient {
@@ -70,6 +72,7 @@ impl LspClient {
         let diagnostics_cache: Arc<Mutex<HashMap<String, Vec<lsp_types::Diagnostic>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let reader_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let stdin_for_reader = Arc::new(tokio::sync::Mutex::new(BufWriter::new(stdin)));
         let binary = config.binary.clone();
         let reader_binary = binary.clone();
         let stderr_binary = binary.clone();
@@ -77,6 +80,7 @@ impl LspClient {
         let reader_pending = Arc::clone(&pending_requests);
         let reader_diags = Arc::clone(&diagnostics_cache);
         let reader_error_for_stdout = Arc::clone(&reader_error);
+        let reader_stdin = Arc::clone(&stdin_for_reader);
         let reader_span = workflow_span("lsp_reader", &span_context);
         let reader_handle = tokio::spawn(
             async move {
@@ -86,6 +90,7 @@ impl LspClient {
                     reader_diags,
                     reader_error_for_stdout,
                     reader_binary,
+                    reader_stdin,
                 )
                 .await;
             }
@@ -100,7 +105,7 @@ impl LspClient {
         );
 
         Ok(Self {
-            stdin: Arc::new(tokio::sync::Mutex::new(BufWriter::new(stdin))),
+            stdin: stdin_for_reader,
             pending_requests,
             diagnostics_cache,
             reader_error,
@@ -110,6 +115,7 @@ impl LspClient {
             stderr_handle,
             process: child,
             binary,
+            opened_uris: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -219,6 +225,23 @@ impl LspClient {
             "params": serde_json::to_value(params)?,
         });
         self.send_message(&notification).await
+    }
+
+    /// Send textDocument/didOpen notification to notify the server that a file is open.
+    pub async fn did_open(&self, uri: &lsp_types::Uri, language_id: &str, content: &str) -> Result<()> {
+        let params = json!({
+            "textDocument": {
+                "uri": uri,
+                "languageId": language_id,
+                "version": 1,
+                "text": content
+            }
+        });
+        self.send_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": params
+        })).await
     }
 
     /// Write a JSON-RPC message with Content-Length header.
@@ -382,6 +405,7 @@ impl LspClient {
         diagnostics_cache: Arc<Mutex<HashMap<String, Vec<lsp_types::Diagnostic>>>>,
         reader_error: Arc<Mutex<Option<String>>>,
         binary: String,
+        stdin: Arc<tokio::sync::Mutex<BufWriter<ChildStdin>>>,
     ) {
         loop {
             // Read headers until blank line
@@ -436,8 +460,33 @@ impl LspClient {
                 }
             };
 
-            // Dispatch: response (has "id") vs notification (has "method", no "id")
-            if let Some(id) = msg.get("id").and_then(|v| v.as_i64()) {
+            // Dispatch: distinguish between response, notification, and server-to-client request
+            let has_id = msg.get("id").is_some();
+            let has_method = msg.get("method").is_some();
+
+            if has_id && has_method {
+                // Server-to-client request: reply with empty success to avoid server hanging
+                let id = msg.get("id").cloned().unwrap_or(Value::Null);
+                let method_name = msg.get("method").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let reply = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": null
+                });
+                let body = serde_json::to_string(&reply).unwrap_or_default();
+                let header = format!("Content-Length: {}\r\n\r\n", body.len());
+                let mut writer = stdin.lock().await;
+                if let Err(e) = writer.write_all(header.as_bytes()).await {
+                    tracing::warn!("Failed to send server-to-client response header: {}", e);
+                } else if let Err(e) = writer.write_all(body.as_bytes()).await {
+                    tracing::warn!("Failed to send server-to-client response body: {}", e);
+                } else if let Err(e) = writer.flush().await {
+                    tracing::warn!("Failed to flush server-to-client response: {}", e);
+                } else {
+                    tracing::trace!("Handled LSP server-to-client request: {}", method_name);
+                }
+            } else if let Some(id) = msg.get("id").and_then(|v| v.as_i64()) {
+                // Response to our request
                 let sender = pending
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
@@ -446,6 +495,7 @@ impl LspClient {
                     let _ = tx.send(msg);
                 }
             } else if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
+                // Notification from server
                 if method == "textDocument/publishDiagnostics" {
                     if let Some(params) = msg.get("params") {
                         if let Ok(diag_params) = serde_json::from_value::<

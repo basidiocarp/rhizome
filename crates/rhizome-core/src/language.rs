@@ -134,6 +134,44 @@ impl Language {
         }
     }
 
+    pub fn lsp_language_id(&self) -> String {
+        match self {
+            Language::Rust => "rust".to_string(),
+            Language::Python => "python".to_string(),
+            Language::JavaScript => "javascript".to_string(),
+            Language::TypeScript => "typescript".to_string(),
+            Language::Go => "go".to_string(),
+            Language::Java => "java".to_string(),
+            Language::C => "c".to_string(),
+            Language::Cpp => "cpp".to_string(),
+            Language::Ruby => "ruby".to_string(),
+            Language::Elixir => "elixir".to_string(),
+            Language::Zig => "zig".to_string(),
+            Language::CSharp => "csharp".to_string(),
+            Language::FSharp => "fsharp".to_string(),
+            Language::Swift => "swift".to_string(),
+            Language::Php => "php".to_string(),
+            Language::Haskell => "haskell".to_string(),
+            Language::Bash => "bash".to_string(),
+            Language::Terraform => "terraform".to_string(),
+            Language::Kotlin => "kotlin".to_string(),
+            Language::Dart => "dart".to_string(),
+            Language::Lua => "lua".to_string(),
+            Language::Clojure => "clojure".to_string(),
+            Language::OCaml => "ocaml".to_string(),
+            Language::Julia => "julia".to_string(),
+            Language::Nix => "nix".to_string(),
+            Language::Gleam => "gleam".to_string(),
+            Language::Vue => "vue".to_string(),
+            Language::Svelte => "svelte".to_string(),
+            Language::Astro => "astro".to_string(),
+            Language::Prisma => "prisma".to_string(),
+            Language::Typst => "typst".to_string(),
+            Language::Yaml => "yaml".to_string(),
+            Language::Other(s) => s.clone(),
+        }
+    }
+
     pub fn default_server_config(&self) -> Option<LanguageServerConfig> {
         let (binary, args) = match self {
             Language::Rust => ("rust-analyzer", vec![]),
@@ -188,6 +226,7 @@ impl Language {
         })
     }
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LanguageServerConfig {

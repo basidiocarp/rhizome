@@ -317,10 +317,14 @@ fn build_dependency_map(
                     let after = pos + target.len();
                     let rest = line[after..].trim_start();
                     if rest.starts_with('(') {
-                        let before_ok = pos == 0 || !is_ident_char(line.as_bytes()[pos - 1]);
-                        let after_ok = after >= line.len()
-                            || !line.as_bytes()[after].is_ascii_alphanumeric()
-                                && line.as_bytes()[after] != b'_';
+                        let before_ok = pos == 0 || {
+                            let ch = line[..pos].chars().last().unwrap_or(' ');
+                            !is_ident_char(ch)
+                        };
+                        let after_ok = after >= line.len() || {
+                            let ch = line[after..].chars().next().unwrap_or(' ');
+                            !ch.is_alphanumeric() && ch != '_'
+                        };
                         if before_ok && after_ok && !calls.iter().any(|call| call == target) {
                             calls.push(target.to_string());
                         }
