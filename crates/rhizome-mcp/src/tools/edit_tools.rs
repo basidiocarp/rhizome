@@ -820,6 +820,12 @@ pub fn move_symbol(
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
 
+    // Back up the target file before any write so we can roll back on partial failure.
+    let target_backup = match std::fs::read_to_string(&target_path) {
+        Ok(content) => content,
+        Err(e) => return Ok(tool_error(&format!("Failed to read target for backup: {e}"))),
+    };
+
     let (inserted_at_line, lines_inserted) = match insert_lines_relative_to_symbol(
         backend,
         &target_path,
@@ -834,7 +840,13 @@ pub fn move_symbol(
     let (lines_before, lines_after) = match delete_symbol_lines(&source_path, line_start, line_end)
     {
         Ok(result) => result,
-        Err(e) => return Ok(tool_error(&e.to_string())),
+        Err(e) => {
+            // Restore target to prevent symbol duplication from the partial write.
+            let _ = std::fs::write(&target_path, &target_backup);
+            return Ok(tool_error(&format!(
+                "Failed to delete symbol from source after target write; target restored. Error: {e}"
+            )));
+        }
     };
 
     let text = serde_json::to_string_pretty(&json!({

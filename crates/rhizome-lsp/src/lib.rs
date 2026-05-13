@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rhizome_core::{
-    BackendCapabilities, CodeIntelligence, Diagnostic, Language, Location, Position, Result,
-    Symbol, SymbolKind, find_symbol_by_name,
+    BackendCapabilities, CodeIntelligence, Diagnostic, DiagnosticSeverity, Language, Location,
+    Position, Result, Symbol, SymbolKind, find_symbol_by_name,
 };
 
 use rhizome_core::RhizomeError;
@@ -148,6 +148,22 @@ impl LspBackend {
                 .map_err(|e| RhizomeError::LspError(e.to_string()))?;
             let file_str = file.to_string_lossy().to_string();
             let diags = client.cached_diagnostics(&file);
+
+            // If cache is empty, return an informative hint rather than silently empty
+            if diags.is_empty() {
+                return Ok(vec![Diagnostic {
+                    message: "No cached diagnostics. The LSP server publishes diagnostics in response to document open/change notifications. Diagnostics will populate after the language server indexes the file.".to_string(),
+                    severity: DiagnosticSeverity::Hint,
+                    location: Location {
+                        file_path: file_str,
+                        line_start: 0,
+                        line_end: 0,
+                        column_start: 0,
+                        column_end: 0,
+                    },
+                }]);
+            }
+
             Ok(diags
                 .iter()
                 .map(|d| lsp_diagnostic_to_diagnostic(d, &file_str))
@@ -285,7 +301,7 @@ impl CodeIntelligence for LspBackend {
     fn search_symbols(&self, pattern: &str, _project_root: &Path) -> Result<Vec<Symbol>> {
         let pattern = pattern.to_string();
         let root = self.default_root.clone();
-        self.handle.block_on(async {
+        self.run_blocking(async {
             let mut mgr = self.manager.lock().await;
             let languages: Vec<Language> = [
                 Language::Rust,
