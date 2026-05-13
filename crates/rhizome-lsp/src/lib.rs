@@ -32,7 +32,8 @@ use crate::manager::LanguageServerManager;
 /// async serve path because the implementation uses `block_in_place` when a
 /// Tokio runtime is already active. Use the async `LspClient` methods directly
 /// only when you need finer-grained control.
-type OpenedUrisMap = std::collections::HashMap<(String, PathBuf), std::collections::HashSet<String>>;
+type OpenedUrisMap =
+    std::collections::HashMap<(String, PathBuf), std::collections::HashSet<String>>;
 
 pub struct LspBackend {
     manager: Arc<tokio::sync::Mutex<LanguageServerManager>>,
@@ -78,9 +79,10 @@ impl LspBackend {
         let key = (lang.to_string(), workspace_root.to_path_buf());
 
         {
-            let tracker = self.opened_uris.lock().map_err(|_|
-                RhizomeError::LspError("opened_uris lock poisoned".to_string())
-            )?;
+            let tracker = self
+                .opened_uris
+                .lock()
+                .map_err(|_| RhizomeError::LspError("opened_uris lock poisoned".to_string()))?;
             if let Some(opened) = tracker.get(&key)
                 && opened.contains(&uri_str)
             {
@@ -98,9 +100,10 @@ impl LspBackend {
 
         // Re-check under manager lock to close the TOCTOU window.
         {
-            let tracker = self.opened_uris.lock().map_err(|_|
-                RhizomeError::LspError("opened_uris lock poisoned".to_string())
-            )?;
+            let tracker = self
+                .opened_uris
+                .lock()
+                .map_err(|_| RhizomeError::LspError("opened_uris lock poisoned".to_string()))?;
             if let Some(opened) = tracker.get(&key)
                 && opened.contains(&uri_str)
             {
@@ -113,14 +116,20 @@ impl LspBackend {
             .await
             .map_err(|e| RhizomeError::LspError(e.to_string()))?;
 
-        client.did_open(&uri, &language_id, &content).await
+        client
+            .did_open(&uri, &language_id, &content)
+            .await
             .map_err(|e| RhizomeError::LspError(format!("didOpen failed: {}", e)))?;
 
         // Track that this URI is now open
-        let mut tracker = self.opened_uris.lock().map_err(|_|
-            RhizomeError::LspError("opened_uris lock poisoned".to_string())
-        )?;
-        tracker.entry(key).or_insert_with(std::collections::HashSet::new).insert(uri_str.clone());
+        let mut tracker = self
+            .opened_uris
+            .lock()
+            .map_err(|_| RhizomeError::LspError("opened_uris lock poisoned".to_string()))?;
+        tracker
+            .entry(key)
+            .or_insert_with(std::collections::HashSet::new)
+            .insert(uri_str.clone());
 
         Ok(uri_str)
     }

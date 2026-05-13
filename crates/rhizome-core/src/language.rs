@@ -227,7 +227,6 @@ impl Language {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LanguageServerConfig {
     pub binary: String,

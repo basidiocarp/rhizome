@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
@@ -240,7 +241,17 @@ fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
         out.push('\n');
         out
     };
-    fs::write(path, content).map_err(|e| anyhow!("Failed to write {}: {e}", path.display()))
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| anyhow!("Failed to create temp file: {e}"))?;
+    tmp.write_all(content.as_bytes())
+        .map_err(|e| anyhow!("Failed to write temp file: {e}"))?;
+    tmp.flush()
+        .map_err(|e| anyhow!("Failed to flush temp file: {e}"))?;
+    tmp.persist(path)
+        .map_err(|e| anyhow!("Failed to persist {}: {}", path.display(), e.error))?;
+    Ok(())
 }
 
 /// Resolve a file path, validating it stays within project_root to prevent path traversal.
@@ -820,10 +831,22 @@ pub fn move_symbol(
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
 
-    // Back up the target file before any write so we can roll back on partial failure.
+    // Back up both files before any writes so we can roll back on partial failure.
+    let source_backup = match std::fs::read_to_string(&source_path) {
+        Ok(content) => content,
+        Err(e) => {
+            return Ok(tool_error(&format!(
+                "Failed to read source for backup: {e}"
+            )));
+        }
+    };
     let target_backup = match std::fs::read_to_string(&target_path) {
         Ok(content) => content,
-        Err(e) => return Ok(tool_error(&format!("Failed to read target for backup: {e}"))),
+        Err(e) => {
+            return Ok(tool_error(&format!(
+                "Failed to read target for backup: {e}"
+            )));
+        }
     };
 
     let (inserted_at_line, lines_inserted) = match insert_lines_relative_to_symbol(
@@ -834,17 +857,25 @@ pub fn move_symbol(
         &content_lines,
     ) {
         Ok(result) => result,
-        Err(e) => return Ok(tool_error(&e.to_string())),
+        Err(e) => {
+            // Restore both files on insert failure to prevent symbol duplication or partial state.
+            let _ = std::fs::write(&source_path, &source_backup);
+            let _ = std::fs::write(&target_path, &target_backup);
+            return Ok(tool_error(&format!(
+                "Failed to insert symbol into target; both files restored. Error: {e}"
+            )));
+        }
     };
 
     let (lines_before, lines_after) = match delete_symbol_lines(&source_path, line_start, line_end)
     {
         Ok(result) => result,
         Err(e) => {
-            // Restore target to prevent symbol duplication from the partial write.
+            // Restore both files to prevent symbol duplication or partial state.
+            let _ = std::fs::write(&source_path, &source_backup);
             let _ = std::fs::write(&target_path, &target_backup);
             return Ok(tool_error(&format!(
-                "Failed to delete symbol from source after target write; target restored. Error: {e}"
+                "Failed to delete symbol from source after target write; both files restored. Error: {e}"
             )));
         }
     };

@@ -1,11 +1,12 @@
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
 use serde_json::{Value, json};
 use spore::logging::{SpanContext, request_span, tool_span, workflow_span};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::Instrument;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::tools::ToolDispatcher;
 
@@ -28,24 +29,24 @@ impl McpServer {
     pub async fn run(&mut self) -> Result<()> {
         self.spawn_auto_export();
 
-        let stdin = io::stdin();
-        let stdout = io::stdout();
+        let stdin = tokio::io::stdin();
+        let stdout = std::io::stdout();
+        let mut reader = BufReader::new(stdin);
+        let mut line = String::new();
 
-        for line in stdin.lock().lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(e) => {
-                    error!("Failed to read stdin: {e}");
-                    break;
-                }
-            };
+        loop {
+            line.clear();
+            let n = reader.read_line(&mut line).await?;
+            if n == 0 {
+                break;
+            }
 
-            let line = line.trim().to_string();
-            if line.is_empty() {
+            let line_trimmed = line.trim().to_string();
+            if line_trimmed.is_empty() {
                 continue;
             }
 
-            let request: Value = match serde_json::from_str(&line) {
+            let request: Value = match serde_json::from_str(&line_trimmed) {
                 Ok(v) => v,
                 Err(e) => {
                     let err_response = json!({
@@ -69,7 +70,8 @@ impl McpServer {
             debug!("Received method: {method}");
 
             // Notifications have no id and need no response
-            if method == "notifications/initialized" {
+            if id.is_none() {
+                tracing::debug!(method = %method, "received notification");
                 continue;
             }
 
@@ -104,9 +106,10 @@ impl McpServer {
                 info!("rhizome: starting auto-export to hyphae");
                 let backend = rhizome_treesitter::TreeSitterBackend::new();
                 let args = serde_json::json!({});
-                let backoff_seconds = [1_u64, 4, 16];
+                let delays = [1_u64, 4, 16];
+                let max_idx = delays.len() - 1;
 
-                for (attempt_idx, delay_seconds) in backoff_seconds.iter().copied().enumerate() {
+                for (attempt, &delay) in delays.iter().enumerate() {
                     match crate::tools::export_tools::export_to_hyphae(
                         &backend,
                         &args,
@@ -127,14 +130,16 @@ impl McpServer {
                         Err(error) => {
                             debug!(
                                 "rhizome: hyphae auto-export attempt {} failed: {error}",
-                                attempt_idx + 1
+                                attempt + 1
                             );
-                            tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds))
-                                .await;
+                            if attempt < max_idx {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+                            }
                         }
                     }
                 }
 
+                // Final attempt after exhausting all retries
                 match crate::tools::export_tools::export_to_hyphae(&backend, &args, &project_root) {
                     Ok(result) => {
                         if let Some(text) = result

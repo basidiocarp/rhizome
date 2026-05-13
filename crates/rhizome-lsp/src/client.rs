@@ -194,7 +194,13 @@ impl LspClient {
             "params": serde_json::to_value(params)?,
         });
 
-        self.send_message(&request).await?;
+        if let Err(e) = self.send_message(&request).await {
+            self.pending_requests
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&id);
+            return Err(e);
+        }
 
         let response = tokio::time::timeout(Duration::from_secs(10), rx)
             .await
@@ -228,7 +234,12 @@ impl LspClient {
     }
 
     /// Send textDocument/didOpen notification to notify the server that a file is open.
-    pub async fn did_open(&self, uri: &lsp_types::Uri, language_id: &str, content: &str) -> Result<()> {
+    pub async fn did_open(
+        &self,
+        uri: &lsp_types::Uri,
+        language_id: &str,
+        content: &str,
+    ) -> Result<()> {
         let params = json!({
             "textDocument": {
                 "uri": uri,
@@ -241,7 +252,8 @@ impl LspClient {
             "jsonrpc": "2.0",
             "method": "textDocument/didOpen",
             "params": params
-        })).await
+        }))
+        .await
     }
 
     /// Write a JSON-RPC message with Content-Length header.
@@ -467,7 +479,10 @@ impl LspClient {
             if has_id && has_method {
                 // Server-to-client request: reply with empty success to avoid server hanging
                 let id = msg.get("id").cloned().unwrap_or(Value::Null);
-                let method_name = msg.get("method").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let method_name = msg
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
                 let reply = serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,

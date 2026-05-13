@@ -1,6 +1,8 @@
 #![allow(clippy::collapsible_if, clippy::empty_line_after_doc_comments)]
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -10,7 +12,8 @@ use serde_json::{Value, json};
 
 use super::{ToolSchema, tool_response};
 
-static PROJECT_SUMMARY_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+static PROJECT_SUMMARY_CACHE: LazyLock<Mutex<HashMap<String, (Instant, String)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 const CACHE_TTL_SECS: u64 = 300;
 
 pub fn summarize_project_tool(
@@ -18,9 +21,14 @@ pub fn summarize_project_tool(
     _args: &Value,
     project_root: &Path,
 ) -> Result<Value> {
+    let cache_key = std::fs::canonicalize(project_root)
+        .unwrap_or_else(|_| project_root.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+
     // Check cache
     if let Ok(guard) = PROJECT_SUMMARY_CACHE.lock() {
-        if let Some((cached_at, ref text)) = *guard {
+        if let Some((cached_at, text)) = guard.get(&cache_key) {
             if cached_at.elapsed().as_secs() < CACHE_TTL_SECS {
                 return Ok(tool_response(text));
             }
@@ -32,7 +40,7 @@ pub fn summarize_project_tool(
 
     // Update cache
     if let Ok(mut guard) = PROJECT_SUMMARY_CACHE.lock() {
-        *guard = Some((Instant::now(), text.clone()));
+        guard.insert(cache_key, (Instant::now(), text.clone()));
     }
 
     Ok(tool_response(text.trim_end()))

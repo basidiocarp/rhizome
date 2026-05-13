@@ -59,16 +59,18 @@ pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
                             let uri = &edit.text_document.uri;
                             let path = PathBuf::from(uri_to_file_path(uri));
                             if path.exists() {
-                                let content = fs::read_to_string(&path)
-                                    .with_context(|| format!("failed to snapshot {}", path.display()))?;
+                                let content = fs::read_to_string(&path).with_context(|| {
+                                    format!("failed to snapshot {}", path.display())
+                                })?;
                                 backups.insert(path, content);
                             }
                         }
                         DocumentChangeOperation::Op(ResourceOp::Rename(rename)) => {
                             let old_path = PathBuf::from(uri_to_file_path(&rename.old_uri));
                             if old_path.exists() {
-                                let content = fs::read_to_string(&old_path)
-                                    .with_context(|| format!("failed to snapshot {}", old_path.display()))?;
+                                let content = fs::read_to_string(&old_path).with_context(|| {
+                                    format!("failed to snapshot {}", old_path.display())
+                                })?;
                                 backups.insert(old_path, content);
                             }
                         }
@@ -89,9 +91,8 @@ pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
                 for (path, original) in &backups {
                     let _ = fs::write(path, original);
                 }
-                return Err(e).with_context(|| {
-                    format!("apply failed for {:?}; all files restored", uri)
-                });
+                return Err(e)
+                    .with_context(|| format!("apply failed for {:?}; all files restored", uri));
             }
         }
     }
@@ -106,7 +107,10 @@ pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
                             let _ = fs::write(path, original);
                         }
                         return Err(e).with_context(|| {
-                            format!("apply failed for {:?}; all files restored", edit.text_document.uri)
+                            format!(
+                                "apply failed for {:?}; all files restored",
+                                edit.text_document.uri
+                            )
                         });
                     }
                 }

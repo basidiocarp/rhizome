@@ -36,14 +36,14 @@ pub fn lsp_symbol_kind_to_symbol_kind(kind: lsp_types::SymbolKind) -> SymbolKind
 }
 
 /// Convert an LSP range + file path to a rhizome Location.
-/// LSP uses 0-based lines/columns; rhizome uses 1-based.
+/// Both LSP and rhizome use 0-based lines/columns.
 pub fn lsp_range_to_location(range: &lsp_types::Range, file_path: &str) -> Location {
     Location {
         file_path: file_path.to_string(),
-        line_start: range.start.line + 1,
-        line_end: range.end.line + 1,
-        column_start: range.start.character + 1,
-        column_end: range.end.character + 1,
+        line_start: range.start.line,
+        line_end: range.end.line,
+        column_start: range.start.character,
+        column_end: range.end.character,
     }
 }
 
@@ -233,10 +233,10 @@ mod tests {
         };
         let loc = lsp_range_to_location(&range, "src/main.rs");
         assert_eq!(loc.file_path, "src/main.rs");
-        assert_eq!(loc.line_start, 1);
-        assert_eq!(loc.line_end, 6);
-        assert_eq!(loc.column_start, 1);
-        assert_eq!(loc.column_end, 11);
+        assert_eq!(loc.line_start, 0);
+        assert_eq!(loc.line_end, 5);
+        assert_eq!(loc.column_start, 0);
+        assert_eq!(loc.column_end, 10);
     }
 
     #[test]
@@ -263,10 +263,10 @@ mod tests {
         assert_eq!(result.file_path, r"C:\Users\test\project\src\main.rs");
         #[cfg(not(windows))]
         assert_eq!(result.file_path, "/home/user/project/src/main.rs");
-        assert_eq!(result.line_start, 11);
-        assert_eq!(result.line_end, 11);
-        assert_eq!(result.column_start, 5);
-        assert_eq!(result.column_end, 21);
+        assert_eq!(result.line_start, 10);
+        assert_eq!(result.line_end, 10);
+        assert_eq!(result.column_start, 4);
+        assert_eq!(result.column_end, 20);
     }
 
     #[allow(
@@ -337,8 +337,8 @@ mod tests {
         assert_eq!(symbol.name, "MyStruct");
         assert_eq!(symbol.qualified_name(), "MyStruct");
         assert_eq!(symbol.kind, SymbolKind::Struct);
-        assert_eq!(symbol.location.line_start, 1);
-        assert_eq!(symbol.location.line_end, 6);
+        assert_eq!(symbol.location.line_start, 0);
+        assert_eq!(symbol.location.line_end, 5);
         assert!(symbol.signature.is_none());
         assert_eq!(symbol.children.len(), 1);
 
@@ -372,7 +372,7 @@ mod tests {
         let result = lsp_diagnostic_to_diagnostic(&diag, "src/main.rs");
         assert_eq!(result.message, "unused variable");
         assert_eq!(result.severity, DiagnosticSeverity::Error);
-        assert_eq!(result.location.line_start, 4);
+        assert_eq!(result.location.line_start, 3);
         assert_eq!(result.location.file_path, "src/main.rs");
     }
 

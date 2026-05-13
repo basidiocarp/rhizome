@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{UNIX_EPOCH, SystemTime};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -101,7 +102,12 @@ impl ExportCache {
         std::fs::create_dir_all(&dir)?;
         let path = Self::cache_path(project_root);
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, json)?;
+
+        let mut tmp = tempfile::NamedTempFile::new_in(&dir)?;
+        tmp.write_all(json.as_bytes())?;
+        tmp.flush()?;
+        tmp.persist(&path)
+            .map_err(|e| crate::error::RhizomeError::Io(e.error))?;
         Ok(())
     }
 
@@ -117,7 +123,9 @@ impl ExportCache {
 
         let path_str = file_path.to_string_lossy();
         match self.files.get(path_str.as_ref()) {
-            Some(cached) => current.mtime_nanos != cached.mtime_nanos || current.size_bytes != cached.size_bytes,
+            Some(cached) => {
+                current.mtime_nanos != cached.mtime_nanos || current.size_bytes != cached.size_bytes
+            }
             None => true,
         }
     }
@@ -280,8 +288,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = ExportCache {
             files: HashMap::from([
-                ("src/main.rs".to_string(), CacheEntry { mtime_nanos: 1_710_000_000_000_000_000, size_bytes: 100 }),
-                ("src/lib.rs".to_string(), CacheEntry { mtime_nanos: 1_710_000_100_000_000_000, size_bytes: 200 }),
+                (
+                    "src/main.rs".to_string(),
+                    CacheEntry {
+                        mtime_nanos: 1_710_000_000_000_000_000,
+                        size_bytes: 100,
+                    },
+                ),
+                (
+                    "src/lib.rs".to_string(),
+                    CacheEntry {
+                        mtime_nanos: 1_710_000_100_000_000_000,
+                        size_bytes: 200,
+                    },
+                ),
             ]),
         };
 
@@ -289,8 +309,14 @@ mod tests {
         let loaded = ExportCache::load(dir.path()).unwrap();
 
         assert_eq!(loaded.files.len(), 2);
-        assert_eq!(loaded.files["src/main.rs"].mtime_nanos, 1_710_000_000_000_000_000);
-        assert_eq!(loaded.files["src/lib.rs"].mtime_nanos, 1_710_000_100_000_000_000);
+        assert_eq!(
+            loaded.files["src/main.rs"].mtime_nanos,
+            1_710_000_000_000_000_000
+        );
+        assert_eq!(
+            loaded.files["src/lib.rs"].mtime_nanos,
+            1_710_000_100_000_000_000
+        );
         assert!(ExportCache::cache_path(dir.path()).exists());
     }
 
@@ -336,18 +362,33 @@ mod tests {
     #[test]
     fn update_with_nonexistent_file_returns_unchanged() {
         let cache = ExportCache {
-            files: HashMap::from([("existing.rs".to_string(), CacheEntry { mtime_nanos: 1_710_000_000_000_000_000, size_bytes: 100 })]),
+            files: HashMap::from([(
+                "existing.rs".to_string(),
+                CacheEntry {
+                    mtime_nanos: 1_710_000_000_000_000_000,
+                    size_bytes: 100,
+                },
+            )]),
         };
         let updated = cache.update(Path::new("/nonexistent/file.rs"));
         assert_eq!(updated.files.len(), 1);
-        assert_eq!(updated.files["existing.rs"].mtime_nanos, 1_710_000_000_000_000_000);
+        assert_eq!(
+            updated.files["existing.rs"].mtime_nanos,
+            1_710_000_000_000_000_000
+        );
     }
 
     #[test]
     fn load_ignores_legacy_cache_path() {
         let dir = tempfile::tempdir().unwrap();
         let cache = ExportCache {
-            files: HashMap::from([("src/main.rs".to_string(), CacheEntry { mtime_nanos: 42_000_000_000, size_bytes: 100 })]),
+            files: HashMap::from([(
+                "src/main.rs".to_string(),
+                CacheEntry {
+                    mtime_nanos: 42_000_000_000,
+                    size_bytes: 100,
+                },
+            )]),
         };
 
         let legacy = dir.path().join(".rhizome/cache.json");
