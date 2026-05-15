@@ -262,15 +262,23 @@ impl TreeSitterBackend {
 
         let pattern_lower = pattern.to_lowercase();
         let mut all_symbols = Vec::new();
+        let mut remaining = MAX_WORKSPACE_SYMBOLS;
+
         for indexed in index.files.values() {
+            if remaining == 0 {
+                tracing::debug!(
+                    "rhizome: workspace symbol search truncated at {MAX_WORKSPACE_SYMBOLS}"
+                );
+                break;
+            }
             for sym in &indexed.symbols {
-                if all_symbols.len() >= MAX_WORKSPACE_SYMBOLS {
-                    tracing::debug!(
-                        "rhizome: workspace symbol search truncated at {MAX_WORKSPACE_SYMBOLS}"
-                    );
-                    return Ok(all_symbols);
+                if remaining == 0 {
+                    break;
                 }
+                let symbols_before = all_symbols.len();
                 collect_matching_symbols(sym, &pattern_lower, &mut all_symbols);
+                let symbols_added = all_symbols.len() - symbols_before;
+                remaining = remaining.saturating_sub(symbols_added);
             }
         }
 

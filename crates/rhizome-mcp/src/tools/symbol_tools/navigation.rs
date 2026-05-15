@@ -26,8 +26,9 @@ pub fn go_to_definition(
         return Ok(tool_response("No symbol found at the given position"));
     }
 
-    // Read the source to get the symbol name at the position
-    let source = std::fs::read_to_string(&path)?;
+    let source = tokio::task::block_in_place(|| std::fs::read_to_string(&path))
+        .map_err(|e| anyhow!(e))?;
+
     let lines: Vec<&str> = source.lines().collect();
     let line_idx = line as usize;
 
@@ -302,7 +303,7 @@ pub fn get_symbol_body(
             .ok_or_else(|| anyhow!("disambiguation: match set unexpectedly empty"))?
     };
 
-    let body = read_location_body(&path, &sym.location)?;
+    let body = tokio::task::block_in_place(|| read_location_body(&path, &sym.location))?;
 
     let result = json!({
         "name": sym.name,
@@ -367,7 +368,8 @@ pub fn get_region(
         )));
     };
 
-    let body = read_location_body(&path, &sym.location)?;
+    let body = tokio::task::block_in_place(|| read_location_body(&path, &sym.location))?;
+
     let result = json!({
         "name": sym.name,
         "qualified_name": sym.qualified_name(),

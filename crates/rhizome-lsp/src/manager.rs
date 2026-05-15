@@ -1,11 +1,18 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
+use dashmap::DashMap;
 use rhizome_core::Language;
 use spore::logging::{SpanContext, workflow_span};
 
 use crate::client::LspClient;
+
+/// Per-project LSP initialization warning gate. Ensures the warning is logged
+/// at most once per project per process lifetime.
+static LSP_INIT_WARNED: std::sync::OnceLock<DashMap<String, AtomicBool>> =
+    std::sync::OnceLock::new();
 
 /// Key for multi-client management: (language, workspace_root).
 type ClientKey = (Language, PathBuf);
@@ -54,7 +61,7 @@ impl LanguageServerManager {
         // ─────────────────────────────────────────────────────────────────
         // Use Entry API to safely get or insert client
         // ─────────────────────────────────────────────────────────────────
-        let client = match self.clients.entry(key) {
+        let client = match self.clients.entry(key.clone()) {
             Entry::Occupied(e) => e.into_mut(),
             Entry::Vacant(e) => {
                 let config = language.default_server_config().ok_or_else(|| {
@@ -72,8 +79,25 @@ impl LanguageServerManager {
                     .with_workspace_root(workspace_root.display().to_string());
                 let _workflow_span = workflow_span("lsp_startup", &span_context).entered();
                 let mut client = LspClient::spawn(&config, Some(workspace_root)).await?;
-                client.initialize(workspace_root).await?;
-                e.insert(client)
+                match client.initialize(workspace_root).await {
+                    Ok(()) => e.insert(client),
+                    Err(init_error) => {
+                        // Emit warning once per project
+                        let project_id = workspace_root.display().to_string();
+                        let warned_map = LSP_INIT_WARNED.get_or_init(DashMap::new);
+                        let warned = warned_map
+                            .entry(project_id.clone())
+                            .or_insert_with(|| AtomicBool::new(false));
+                        if !warned.swap(true, Ordering::Relaxed) {
+                            tracing::warn!(
+                                project = %project_id,
+                                "LSP init failed; degraded mode for this project: {}",
+                                init_error
+                            );
+                        }
+                        return Err(init_error);
+                    }
+                }
             }
         };
 

@@ -255,10 +255,12 @@ impl LspClient {
         });
 
         match tokio::time::timeout(Duration::from_secs(5), self.send_message(&notification)).await {
-            Ok(result) => result,
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(e),
             Err(_) => {
-                tracing::warn!("LSP did_open notification timed out; server may be hung");
-                Ok(())
+                let uri_str = uri.to_string();
+                tracing::warn!(uri = %uri_str, "did_open timed out; file not registered with LSP server");
+                anyhow::bail!("did_open timeout for {}", uri_str)
             }
         }
     }

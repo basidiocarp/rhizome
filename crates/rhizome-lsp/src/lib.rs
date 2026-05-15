@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use rhizome_core::{
     BackendCapabilities, CodeIntelligence, Diagnostic, DiagnosticSeverity, Language, Location,
-    Position, Result, Symbol, SymbolKind, find_symbol_by_name,
+    Position, Result, Symbol, SymbolKind,
 };
 
 use rhizome_core::RhizomeError;
@@ -119,22 +119,24 @@ impl LspBackend {
             .await
             .map_err(|e| RhizomeError::LspError(e.to_string()))?;
 
-        client
-            .did_open(&uri, &language_id, &content)
-            .await
-            .map_err(|e| RhizomeError::LspError(format!("didOpen failed: {}", e)))?;
-
-        // Track that this URI is now open
-        let mut tracker = self
-            .opened_uris
-            .lock()
-            .map_err(|_| RhizomeError::LspError("opened_uris lock poisoned".to_string()))?;
-        tracker
-            .entry(key)
-            .or_insert_with(std::collections::HashSet::new)
-            .insert(uri_str.clone());
-
-        Ok(uri_str)
+        match client.did_open(&uri, &language_id, &content).await {
+            Ok(()) => {
+                // Track that this URI is now open only on confirmed success
+                let mut tracker = self
+                    .opened_uris
+                    .lock()
+                    .map_err(|_| RhizomeError::LspError("opened_uris lock poisoned".to_string()))?;
+                tracker
+                    .entry(key)
+                    .or_insert_with(std::collections::HashSet::new)
+                    .insert(uri_str.clone());
+                Ok(uri_str)
+            }
+            Err(e) => {
+                // did_open failed or timed out; do not insert URI
+                Err(RhizomeError::LspError(format!("didOpen failed: {}", e)))
+            }
+        }
     }
 
     /// Shut down all managed language servers.
@@ -372,7 +374,35 @@ impl CodeIntelligence for LspBackend {
                 None => vec![],
             };
 
-            Ok(find_symbol_by_name(&symbols, &name))
+            // Find all matching symbols to detect disambiguation cases
+            let mut candidates = Vec::new();
+            fn collect_by_name(symbols: &[Symbol], target_name: &str, results: &mut Vec<Symbol>) {
+                for sym in symbols {
+                    if sym.name == target_name {
+                        results.push(sym.clone());
+                    }
+                    collect_by_name(&sym.children, target_name, results);
+                }
+            }
+            collect_by_name(&symbols, &name, &mut candidates);
+
+            match candidates.len() {
+                0 => Ok(None),
+                1 => Ok(candidates.into_iter().next()),
+                _ => {
+                    let uris = candidates
+                        .iter()
+                        .map(|c| format!("{}:{}", c.location.file_path, c.location.line_start))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    Err(RhizomeError::LspError(format!(
+                        "ambiguous symbol '{}': {} definitions found at {}",
+                        name,
+                        candidates.len(),
+                        uris
+                    )))
+                }
+            }
         })
     }
 

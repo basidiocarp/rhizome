@@ -78,6 +78,8 @@ fn git_output_bounded(mut cmd: Command) -> Result<std::process::Output> {
                     .args(&["/PID", &pid.to_string(), "/F"])
                     .status();
             }
+            // Reap the zombie process to avoid accumulation
+            let _ = child.wait();
             anyhow::bail!(
                 "git subprocess timed out after {}s",
                 GIT_SUBPROCESS_TIMEOUT.as_secs()
