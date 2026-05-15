@@ -1088,6 +1088,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "which",
 ]
 
 [[package]]
@@ -1104,6 +1105,7 @@ dependencies = [
  "streaming-iterator",
  "tempfile",
  "thiserror",
+ "tracing",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",

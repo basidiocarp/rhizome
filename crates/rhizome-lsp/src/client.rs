@@ -248,12 +248,19 @@ impl LspClient {
                 "text": content
             }
         });
-        self.send_message(&json!({
+        let notification = json!({
             "jsonrpc": "2.0",
             "method": "textDocument/didOpen",
             "params": params
-        }))
-        .await
+        });
+
+        match tokio::time::timeout(Duration::from_secs(5), self.send_message(&notification)).await {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!("LSP did_open notification timed out; server may be hung");
+                Ok(())
+            }
+        }
     }
 
     /// Write a JSON-RPC message with Content-Length header.
@@ -455,6 +462,17 @@ impl LspClient {
             }
 
             // Read body
+            const MAX_LSP_MESSAGE_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+            if content_length > MAX_LSP_MESSAGE_BYTES {
+                let message = format!(
+                    "LSP message too large for '{binary}': {} bytes (max {})",
+                    content_length, MAX_LSP_MESSAGE_BYTES
+                );
+                tracing::warn!("{message}");
+                Self::mark_reader_failure(&pending, &reader_error, message);
+                return;
+            }
+
             let mut body = vec![0u8; content_length];
             if let Err(e) = reader.read_exact(&mut body).await {
                 let message = format!("LSP stdout body read failed for '{binary}': {e}");

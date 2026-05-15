@@ -1,18 +1,90 @@
-#![allow(
-    clippy::collapsible_if,
-    clippy::empty_line_after_doc_comments,
-    unused_imports
-)]
+#![allow(clippy::collapsible_if, clippy::empty_line_after_doc_comments)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
+use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use rhizome_core::{CodeIntelligence, Symbol};
 use serde_json::{Value, json};
 
 use super::navigation::find_innermost_scope;
-use super::{ToolSchema, tool_response};
+use super::tool_response;
+
+const GIT_SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Resolve git binary via which::which.
+fn git_binary() -> Result<PathBuf> {
+    which::which("git")
+        .map_err(|_| anyhow!("git not found in PATH; install git or ensure it is on PATH"))
+}
+
+/// Run a git command with subprocess timeout.
+fn git_output_bounded(mut cmd: Command) -> Result<std::process::Output> {
+    use std::io::Read;
+
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn()?;
+    let pid = child.id();
+
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("failed to capture stdout"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow!("failed to capture stderr"))?;
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let _ = stdout.read_to_end(&mut out);
+        let _ = stderr.read_to_end(&mut err);
+        let _ = tx.send((out, err));
+    });
+
+    match rx.recv_timeout(GIT_SUBPROCESS_TIMEOUT) {
+        Ok((stdout, stderr)) => {
+            let status = child.wait()?;
+            Ok(std::process::Output {
+                status,
+                stdout,
+                stderr,
+            })
+        }
+        Err(_) => {
+            // Kill the child process on timeout
+            #[cfg(unix)]
+            {
+                let _ = std::process::Command::new("kill")
+                    .arg("-TERM")
+                    .arg(pid.to_string())
+                    .status();
+                // Give it a moment to terminate gracefully, then force kill if needed
+                std::thread::sleep(Duration::from_millis(100));
+                let _ = std::process::Command::new("kill")
+                    .arg("-KILL")
+                    .arg(pid.to_string())
+                    .status();
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .args(&["/PID", &pid.to_string(), "/F"])
+                    .status();
+            }
+            anyhow::bail!(
+                "git subprocess timed out after {}s",
+                GIT_SUBPROCESS_TIMEOUT.as_secs()
+            )
+        }
+    }
+}
 
 /// Validates that a git ref argument contains only safe characters.
 ///
@@ -21,7 +93,7 @@ use super::{ToolSchema, tool_response};
 /// flag-like values (e.g. `--exec=cmd`).
 fn validate_git_ref(r: &str) -> Result<()> {
     if r.is_empty() {
-        return Err(anyhow::anyhow!("git ref must not be empty"));
+        return Err(anyhow!("git ref must not be empty"));
     }
     if r.bytes().all(|b| {
         b.is_ascii_alphanumeric()
@@ -32,7 +104,7 @@ fn validate_git_ref(r: &str) -> Result<()> {
     }) {
         Ok(())
     } else {
-        Err(anyhow::anyhow!(
+        Err(anyhow!(
             "invalid git ref {:?}: contains characters not allowed in a ref",
             r
         ))
@@ -55,7 +127,8 @@ pub fn get_diff_symbols(
         validate_git_ref(r)?;
     }
 
-    let mut cmd = Command::new("git");
+    let git_path = git_binary()?;
+    let mut cmd = Command::new(git_path);
     cmd.current_dir(project_root);
 
     match (ref1, ref2) {
@@ -74,7 +147,7 @@ pub fn get_diff_symbols(
         cmd.arg("--").arg(f);
     }
 
-    let output = cmd.output()?;
+    let output = git_output_bounded(cmd)?;
     if !output.status.success() && output.stdout.is_empty() {
         // git diff returns 0 even with no changes; non-zero may mean bad ref
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -168,7 +241,8 @@ fn parse_diff_hunks(diff: &str) -> Vec<(String, Vec<u32>)> {
                             lines
                         } else {
                             result.push((file.clone(), Vec::new()));
-                            &mut result.last_mut().unwrap().1
+                            let entry = result.last_mut().expect("just pushed; cannot be empty");
+                            &mut entry.1
                         };
                         for i in 0..count {
                             lines.push(start_0 + i);
@@ -204,7 +278,8 @@ pub fn get_changed_files(
     }
 
     // Get list of changed files
-    let mut name_cmd = Command::new("git");
+    let git_path = git_binary()?;
+    let mut name_cmd = Command::new(git_path.clone());
     name_cmd.current_dir(project_root);
     match (ref1, ref2) {
         (Some(r1), Some(r2)) => {
@@ -218,11 +293,11 @@ pub fn get_changed_files(
         }
     }
 
-    let name_output = name_cmd.output()?;
+    let name_output = git_output_bounded(name_cmd)?;
     let names_text = String::from_utf8_lossy(&name_output.stdout);
 
     // Get stat info
-    let mut stat_cmd = Command::new("git");
+    let mut stat_cmd = Command::new(git_path);
     stat_cmd.current_dir(project_root);
     match (ref1, ref2) {
         (Some(r1), Some(r2)) => {
@@ -235,7 +310,7 @@ pub fn get_changed_files(
             stat_cmd.args(["diff", "--stat", "HEAD"]);
         }
     }
-    let stat_output = stat_cmd.output()?;
+    let stat_output = git_output_bounded(stat_cmd)?;
     let stat_text = String::from_utf8_lossy(&stat_output.stdout);
 
     // Parse stat lines into a map of file -> lines_changed

@@ -92,7 +92,10 @@ impl LspBackend {
 
         // File not opened yet; acquire the manager lock and re-check before sending didOpen.
         // A concurrent caller may have won the race between the first check and here.
-        let content = std::fs::read_to_string(file)
+        let file_path = file.to_path_buf();
+        let content = tokio::task::spawn_blocking(move || std::fs::read_to_string(&file_path))
+            .await
+            .map_err(|e| RhizomeError::LspError(format!("Failed to spawn read task: {}", e)))?
             .map_err(|e| RhizomeError::LspError(format!("Failed to read file: {}", e)))?;
         let language_id = lang.lsp_language_id();
 
@@ -391,48 +394,54 @@ impl CodeIntelligence for LspBackend {
             .into();
 
             for lang in &languages {
-                if let Ok(client) = mgr.get_client(lang, &root).await
-                    && let Ok(Some(response)) = client.workspace_symbols(&pattern).await
-                {
-                    let symbols: Vec<Symbol> = match response {
-                        lsp_types::WorkspaceSymbolResponse::Flat(infos) => {
-                            infos.iter().map(lsp_symbol_info_to_symbol).collect()
-                        }
-                        lsp_types::WorkspaceSymbolResponse::Nested(ws_syms) => ws_syms
-                            .iter()
-                            .map(|ws| {
-                                let location = match &ws.location {
-                                    lsp_types::OneOf::Left(loc) => lsp_location_to_location(loc),
-                                    lsp_types::OneOf::Right(ws_loc) => {
-                                        let file_path =
-                                            crate::convert::uri_to_file_path(&ws_loc.uri);
-                                        Location {
-                                            file_path,
-                                            line_start: 0,
-                                            line_end: 0,
-                                            column_start: 0,
-                                            column_end: 0,
-                                        }
-                                    }
-                                };
-                                Symbol {
-                                    name: ws.name.clone(),
-                                    kind: crate::convert::lsp_symbol_kind_to_symbol_kind(ws.kind),
-                                    location,
-                                    scope_path: ws
-                                        .container_name
-                                        .clone()
-                                        .map(|container| vec![container])
-                                        .unwrap_or_default(),
-                                    signature: ws.container_name.clone(),
-                                    doc_comment: None,
-                                    children: vec![],
+                match mgr.get_client(lang, &root).await {
+                    Ok(client) => {
+                        if let Ok(Some(response)) = client.workspace_symbols(&pattern).await {
+                            let symbols: Vec<Symbol> = match response {
+                                lsp_types::WorkspaceSymbolResponse::Flat(infos) => {
+                                    infos.iter().map(lsp_symbol_info_to_symbol).collect()
                                 }
-                            })
-                            .collect(),
-                    };
-                    if !symbols.is_empty() {
-                        return Ok(symbols);
+                                lsp_types::WorkspaceSymbolResponse::Nested(ws_syms) => ws_syms
+                                    .iter()
+                                    .map(|ws| {
+                                        let location = match &ws.location {
+                                            lsp_types::OneOf::Left(loc) => lsp_location_to_location(loc),
+                                            lsp_types::OneOf::Right(ws_loc) => {
+                                                let file_path =
+                                                    crate::convert::uri_to_file_path(&ws_loc.uri);
+                                                Location {
+                                                    file_path,
+                                                    line_start: 0,
+                                                    line_end: 0,
+                                                    column_start: 0,
+                                                    column_end: 0,
+                                                }
+                                            }
+                                        };
+                                        Symbol {
+                                            name: ws.name.clone(),
+                                            kind: crate::convert::lsp_symbol_kind_to_symbol_kind(ws.kind),
+                                            location,
+                                            scope_path: ws
+                                                .container_name
+                                                .clone()
+                                                .map(|container| vec![container])
+                                                .unwrap_or_default(),
+                                            signature: ws.container_name.clone(),
+                                            doc_comment: None,
+                                            children: vec![],
+                                        }
+                                    })
+                                    .collect(),
+                            };
+                            if !symbols.is_empty() {
+                                return Ok(symbols);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(lang = %lang, error = %e, "search_symbols: LSP client unavailable, skipping");
+                        continue;
                     }
                 }
             }

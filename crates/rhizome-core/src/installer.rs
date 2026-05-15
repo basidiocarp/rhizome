@@ -396,21 +396,29 @@ impl LspInstaller {
         };
 
         // Check if the package manager is available
-        if which::which(recipe.manager).is_err() {
-            if recipe.strategy == InstallStrategy::PipxOrPip {
-                return self.install_python_fallback(binary_name, &recipe);
+        let manager_path = match which::which(recipe.manager) {
+            Ok(path) => path,
+            Err(_) => {
+                if recipe.strategy == InstallStrategy::PipxOrPip {
+                    return self.install_python_fallback(binary_name, &recipe);
+                }
+                warn!(
+                    "Cannot auto-install {binary_name}: {} not found in PATH",
+                    recipe.manager
+                );
+                return Ok(None);
             }
-            warn!(
-                "Cannot auto-install {binary_name}: {} not found in PATH",
-                recipe.manager
-            );
-            return Ok(None);
-        }
+        };
 
-        self.run_install(&recipe, binary_name)
+        self.run_install(&recipe, binary_name, &manager_path)
     }
 
-    fn run_install(&self, recipe: &InstallRecipe, binary_name: &str) -> Result<Option<PathBuf>> {
+    fn run_install(
+        &self,
+        recipe: &InstallRecipe,
+        binary_name: &str,
+        manager_path: &Path,
+    ) -> Result<Option<PathBuf>> {
         std::fs::create_dir_all(&self.bin_dir).map_err(|e| {
             RhizomeError::Other(format!("Failed to create rhizome bin directory: {}", e))
         })?;
@@ -427,7 +435,7 @@ impl LspInstaller {
             recipe.manager
         );
 
-        let mut command = Command::new(recipe.manager);
+        let mut command = Command::new(manager_path);
 
         match recipe.strategy {
             InstallStrategy::NpmPrefix => {
@@ -594,6 +602,8 @@ fn run_pip_install(
 
 /// Spawn a command and wait for it to finish, killing and reaping it if the
 /// timeout elapses.  Returns an `io::Error` with kind `TimedOut` on timeout.
+/// This is async-safe because it uses a spawn+wait pattern with a timeout,
+/// avoiding blocking std::thread::sleep that would hang a tokio executor.
 fn run_with_timeout(mut cmd: Command, timeout: Duration) -> std::io::Result<std::process::Output> {
     let mut child = cmd
         .stdout(std::process::Stdio::piped())

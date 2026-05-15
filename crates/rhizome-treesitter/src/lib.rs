@@ -1,5 +1,3 @@
-#![allow(clippy::collapsible_if)]
-
 pub mod parser;
 pub mod queries;
 pub mod symbols;
@@ -30,6 +28,7 @@ use crate::symbols::extract_symbols;
 type ParseCache = Mutex<LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>>;
 type WorkspaceCache = Mutex<LruCache<PathBuf, WorkspaceSymbolIndex>>;
 const WORKSPACE_INDEX_SCHEMA_VERSION: u32 = 2;
+const MAX_WORKSPACE_SYMBOLS: usize = 5000;
 
 fn shared_cache() -> &'static ParseCache {
     // Lazy-initialized static cache - created once per process lifetime
@@ -228,7 +227,11 @@ impl TreeSitterBackend {
                         .files
                         .get(&canonical_path_str)
                         .and_then(|e| e.sig_fingerprint.as_ref());
-                    let _change_class = classify_change(prior_sig_fp, &new_sig_fp);
+                    let change_class = classify_change(prior_sig_fp, &new_sig_fp);
+                    tracing::debug!(
+                        "rhizome: file change class: file={}, class={change_class:?}",
+                        canonical_path_str
+                    );
 
                     index.files.insert(
                         canonical_path_str,
@@ -250,14 +253,23 @@ impl TreeSitterBackend {
             let mut cache = workspace_cache().lock().unwrap_or_else(|p| p.into_inner());
             cache.put(canonical_root, index.clone());
         }
-        if index_changed {
-            let _ = Self::save_workspace_index(project_root, &index);
+        if index_changed && let Err(e) = Self::save_workspace_index(project_root, &index) {
+            tracing::warn!(
+                "rhizome: workspace index persist failed: project_root={}, error={e}",
+                project_root.display()
+            );
         }
 
         let pattern_lower = pattern.to_lowercase();
         let mut all_symbols = Vec::new();
         for indexed in index.files.values() {
             for sym in &indexed.symbols {
+                if all_symbols.len() >= MAX_WORKSPACE_SYMBOLS {
+                    tracing::debug!(
+                        "rhizome: workspace symbol search truncated at {MAX_WORKSPACE_SYMBOLS}"
+                    );
+                    return Ok(all_symbols);
+                }
                 collect_matching_symbols(sym, &pattern_lower, &mut all_symbols);
             }
         }
@@ -472,18 +484,17 @@ fn collect_references(
     file_path: &str,
     locations: &mut Vec<Location>,
 ) {
-    if node.kind() == "identifier" || node.kind() == "type_identifier" {
-        if let Ok(text) = node.utf8_text(source) {
-            if text == target_name {
-                locations.push(Location {
-                    file_path: file_path.to_string(),
-                    line_start: node.start_position().row as u32,
-                    line_end: node.end_position().row as u32,
-                    column_start: node.start_position().column as u32,
-                    column_end: node.end_position().column as u32,
-                });
-            }
-        }
+    if (node.kind() == "identifier" || node.kind() == "type_identifier")
+        && let Ok(text) = node.utf8_text(source)
+        && text == target_name
+    {
+        locations.push(Location {
+            file_path: file_path.to_string(),
+            line_start: node.start_position().row as u32,
+            line_end: node.end_position().row as u32,
+            column_start: node.start_position().column as u32,
+            column_end: node.end_position().column as u32,
+        });
     }
 
     let mut cursor = node.walk();

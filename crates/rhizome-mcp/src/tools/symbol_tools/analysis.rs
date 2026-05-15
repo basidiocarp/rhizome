@@ -1,11 +1,6 @@
-#![allow(
-    clippy::collapsible_if,
-    clippy::empty_line_after_doc_comments,
-    unused_imports
-)]
+#![allow(clippy::collapsible_if, clippy::empty_line_after_doc_comments)]
 
 use std::collections::BTreeMap;
-use std::fmt::Write;
 use std::path::Path;
 
 use anyhow::Result;
@@ -13,7 +8,7 @@ use rhizome_core::{CodeIntelligence, Position, Symbol, SymbolKind};
 use serde_json::{Value, json};
 
 use super::navigation::{extract_identifier_at, is_ident_char};
-use super::{ToolSchema, required_str, required_u32, resolve_project_path, tool_response};
+use super::{required_str, required_u32, resolve_project_path, tool_response};
 
 pub fn find_references(
     backend: &dyn CodeIntelligence,

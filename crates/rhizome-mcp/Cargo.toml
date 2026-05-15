@@ -15,6 +15,7 @@ tokio = { version = "1", default-features = false, features = ["io-std", "macros
 tracing = "0.1"
 ignore = "0.4"
 tempfile = "3"
+which = "7"
 
 [dev-dependencies]
 tempfile = "3"

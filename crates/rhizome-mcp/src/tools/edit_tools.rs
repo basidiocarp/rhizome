@@ -859,10 +859,28 @@ pub fn move_symbol(
         Ok(result) => result,
         Err(e) => {
             // Restore both files on insert failure to prevent symbol duplication or partial state.
-            let _ = std::fs::write(&source_path, &source_backup);
-            let _ = std::fs::write(&target_path, &target_backup);
+            let source_restore = std::fs::write(&source_path, &source_backup);
+            let target_restore = std::fs::write(&target_path, &target_backup);
+            let restore_status = match (&source_restore, &target_restore) {
+                (Ok(_), Ok(_)) => "both files restored",
+                (Err(se), Ok(_)) => {
+                    return Ok(tool_error(&format!(
+                        "CRITICAL: source rollback failed: {se}; target restored. Original error: {e}"
+                    )));
+                }
+                (Ok(_), Err(te)) => {
+                    return Ok(tool_error(&format!(
+                        "CRITICAL: target rollback failed: {te}; source restored. Original error: {e}"
+                    )));
+                }
+                (Err(se), Err(te)) => {
+                    return Ok(tool_error(&format!(
+                        "CRITICAL: both rollbacks failed; manual recovery required. source: {se}, target: {te}. Original error: {e}"
+                    )));
+                }
+            };
             return Ok(tool_error(&format!(
-                "Failed to insert symbol into target; both files restored. Error: {e}"
+                "Failed to insert symbol into target; {restore_status}. Error: {e}"
             )));
         }
     };
@@ -872,10 +890,28 @@ pub fn move_symbol(
         Ok(result) => result,
         Err(e) => {
             // Restore both files to prevent symbol duplication or partial state.
-            let _ = std::fs::write(&source_path, &source_backup);
-            let _ = std::fs::write(&target_path, &target_backup);
+            let source_restore = std::fs::write(&source_path, &source_backup);
+            let target_restore = std::fs::write(&target_path, &target_backup);
+            let restore_status = match (&source_restore, &target_restore) {
+                (Ok(_), Ok(_)) => "both files restored",
+                (Err(se), Ok(_)) => {
+                    return Ok(tool_error(&format!(
+                        "CRITICAL: source rollback failed: {se}; target restored. Original error: {e}"
+                    )));
+                }
+                (Ok(_), Err(te)) => {
+                    return Ok(tool_error(&format!(
+                        "CRITICAL: target rollback failed: {te}; source restored. Original error: {e}"
+                    )));
+                }
+                (Err(se), Err(te)) => {
+                    return Ok(tool_error(&format!(
+                        "CRITICAL: both rollbacks failed; manual recovery required. source: {se}, target: {te}. Original error: {e}"
+                    )));
+                }
+            };
             return Ok(tool_error(&format!(
-                "Failed to delete symbol from source after target write; both files restored. Error: {e}"
+                "Failed to delete symbol from source after target write; {restore_status}. Error: {e}"
             )));
         }
     };

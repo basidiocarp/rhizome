@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use rhizome_core::{CodeIntelligence, HeuristicBackend, ParserlessBackend, Position, Symbol};
 use serde_json::{Value, json};
 
@@ -281,7 +281,10 @@ pub fn get_symbol_body(
             }
         }
     } else if matches.len() == 1 {
-        matches.into_iter().next().unwrap()
+        matches
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("disambiguation: match set unexpectedly empty"))?
     } else if let Some(hint) = line_hint {
         // Disambiguate: find the closest match to the hint line
         matches
@@ -290,10 +293,13 @@ pub fn get_symbol_body(
                 let start = s.location.line_start;
                 hint.abs_diff(start)
             })
-            .unwrap()
+            .ok_or_else(|| anyhow!("disambiguation: match set unexpectedly empty"))?
     } else {
         // Return the first match
-        matches.into_iter().next().unwrap()
+        matches
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("disambiguation: match set unexpectedly empty"))?
     };
 
     let body = read_location_body(&path, &sym.location)?;

@@ -345,15 +345,23 @@ impl ToolDispatcher {
             ActiveBackend::Lsp => self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn),
             ActiveBackend::TreeSitter => match ts_fn(args) {
                 Ok(value) => Ok(value),
-                Err(_) => match self.selector.borrow_mut().outline_fallback(&lang, file_ext) {
-                    ResolvedBackend::Lsp => self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn),
-                    ResolvedBackend::Heuristic => heuristic_fn(args),
-                    ResolvedBackend::Parserless => parserless_fn(args),
-                    ResolvedBackend::Plugin { plugin_id } => self
-                        .invoke_plugin_outline(&plugin_id, args)
-                        .or_else(|_| heuristic_fn(args)),
-                    _ => heuristic_fn(args),
-                },
+                Err(error) => {
+                    let fallback = self.selector.borrow_mut().outline_fallback(&lang, file_ext);
+                    tracing::debug!(
+                        "rhizome: tree-sitter failed, falling back to {fallback:?}: {error}"
+                    );
+                    match fallback {
+                        ResolvedBackend::Lsp => {
+                            self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn)
+                        }
+                        ResolvedBackend::Heuristic => heuristic_fn(args),
+                        ResolvedBackend::Parserless => parserless_fn(args),
+                        ResolvedBackend::Plugin { plugin_id } => self
+                            .invoke_plugin_outline(&plugin_id, args)
+                            .or_else(|_| heuristic_fn(args)),
+                        _ => heuristic_fn(args),
+                    }
+                }
             },
             ActiveBackend::Error(_) => heuristic_fn(args),
         }
@@ -487,7 +495,13 @@ impl ToolDispatcher {
                 *self.lsp.borrow_mut() = Some(backend);
             }
             Err(_) => {
-                tracing::debug!("No tokio runtime available for LSP backend initialization");
+                static LSP_INIT_WARNED: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !LSP_INIT_WARNED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    tracing::warn!("No tokio runtime available for LSP backend initialization");
+                } else {
+                    tracing::debug!("No tokio runtime available for LSP backend initialization");
+                }
             }
         }
     }
