@@ -26,7 +26,7 @@ pub fn go_to_definition(
         return Ok(tool_response("No symbol found at the given position"));
     }
 
-    let source = tokio::task::block_in_place(|| std::fs::read_to_string(&path))
+    let source = std::fs::read_to_string(&path)
         .map_err(|e| anyhow!(e))?;
 
     let lines: Vec<&str> = source.lines().collect();
@@ -303,7 +303,7 @@ pub fn get_symbol_body(
             .ok_or_else(|| anyhow!("disambiguation: match set unexpectedly empty"))?
     };
 
-    let body = tokio::task::block_in_place(|| read_location_body(&path, &sym.location))?;
+    let body = read_location_body(&path, &sym.location)?;
 
     let result = json!({
         "name": sym.name,
@@ -368,7 +368,7 @@ pub fn get_region(
         )));
     };
 
-    let body = tokio::task::block_in_place(|| read_location_body(&path, &sym.location))?;
+    let body = read_location_body(&path, &sym.location)?;
 
     let result = json!({
         "name": sym.name,
@@ -401,8 +401,24 @@ fn find_symbol_by_stable_id(symbols: &[Symbol], stable_id: &str) -> Option<Symbo
     None
 }
 
+/// Maximum file size we will read into memory for symbol body extraction.
+const MAX_SOURCE_FILE_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+
+fn read_source_file(path: &Path) -> anyhow::Result<String> {
+    let meta = std::fs::metadata(path)?;
+    if meta.len() > MAX_SOURCE_FILE_BYTES {
+        anyhow::bail!(
+            "file too large to analyze ({} bytes > {} byte limit): {}",
+            meta.len(),
+            MAX_SOURCE_FILE_BYTES,
+            path.display()
+        );
+    }
+    Ok(std::fs::read_to_string(path)?)
+}
+
 fn read_location_body(path: &Path, location: &rhizome_core::Location) -> Result<String> {
-    let source = std::fs::read_to_string(path)?;
+    let source = read_source_file(path)?;
     let lines: Vec<&str> = source.lines().collect();
     let start = location.line_start as usize;
     let end = (location.line_end as usize).min(lines.len().saturating_sub(1));

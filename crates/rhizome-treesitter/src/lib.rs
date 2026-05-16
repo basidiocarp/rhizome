@@ -309,7 +309,14 @@ impl TreeSitterBackend {
         let json = serde_json::to_string_pretty(index).map_err(|error| {
             RhizomeError::Other(format!("Failed to serialize workspace index: {error}"))
         })?;
-        std::fs::write(path, json)?;
+        // Write atomically: write to a sibling temp file, then rename into place.
+        // A direct write truncates the file before the new content is flushed;
+        // a kill between truncation and completion leaves a corrupt index.
+        let tmp_path = path.with_extension("tmp");
+        std::fs::write(&tmp_path, &json)
+            .map_err(|e| RhizomeError::Other(format!("Failed to write temp index file: {e}")))?;
+        std::fs::rename(&tmp_path, &path)
+            .map_err(|e| RhizomeError::Other(format!("Failed to rename index file into place: {e}")))?;
         Ok(())
     }
 }

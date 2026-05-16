@@ -89,7 +89,9 @@ pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
             if let Err(e) = apply_text_edits_to_uri(uri, edits, &mut result) {
                 // Phase 3: rollback all changes on failure
                 for (path, original) in &backups {
-                    let _ = fs::write(path, original);
+                    if let Err(e) = atomic_write(path, original) {
+                        tracing::warn!("rollback write failed for {}: {e}", path.display());
+                    }
                 }
                 return Err(e)
                     .with_context(|| format!("apply failed for {:?}; all files restored", uri));
@@ -104,7 +106,9 @@ pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
                     if let Err(e) = apply_text_document_edit(edit, &mut result) {
                         // Phase 3: rollback all changes on failure
                         for (path, original) in &backups {
-                            let _ = fs::write(path, original);
+                            if let Err(e) = atomic_write(path, original) {
+                                tracing::warn!("rollback write failed for {}: {e}", path.display());
+                            }
                         }
                         return Err(e).with_context(|| {
                             format!(
@@ -129,7 +133,9 @@ pub fn apply_workspace_edit(edit: &WorkspaceEdit) -> Result<ApplyResult> {
                     if let Some(e) = apply_err {
                         // Phase 3: rollback all changes on failure
                         for (path, original) in &backups {
-                            let _ = fs::write(path, original);
+                            if let Err(e) = atomic_write(path, original) {
+                                tracing::warn!("rollback write failed for {}: {e}", path.display());
+                            }
                         }
                         return Err(e).context("apply failed; all files restored");
                     }

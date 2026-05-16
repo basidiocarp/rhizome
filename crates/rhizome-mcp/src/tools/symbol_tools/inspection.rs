@@ -69,7 +69,7 @@ fn extract_calls_from_line(
         // Look for '(' preceded by an identifier
         if bytes[i] == b'(' && i > 0 {
             // Walk backward to find the function name
-            let paren_pos = i;
+            let _paren_pos = i;
             let mut name_end = i;
 
             // Skip any whitespace between name and paren
@@ -80,22 +80,43 @@ fn extract_calls_from_line(
             if name_end > 0 {
                 let ch = line[..name_end].chars().last().unwrap_or(' ');
                 if is_ident_char(ch) {
-                    let mut name_start = name_end - 1;
-                    loop {
-                        if name_start == 0 {
-                            break;
-                        }
-                        let prev_ch = line[..name_start].chars().last().unwrap_or(' ');
+                    // Collect (byte_offset, char) pairs so we can walk backward
+                    // without ever landing mid-codepoint.
+                    let char_positions: Vec<(usize, char)> = line.char_indices().collect();
+
+                    // Find the index in char_positions of the last char whose byte
+                    // offset is strictly less than name_end (i.e., the char just
+                    // before the opening paren or any whitespace we skipped).
+                    let name_end_char_idx = char_positions
+                        .iter()
+                        .rposition(|(b, _)| *b < name_end)
+                        .map(|i| i + 1)
+                        .unwrap_or(0);
+
+                    // Walk backward over chars to find the start of the identifier.
+                    let mut name_start_char_idx = name_end_char_idx;
+                    while name_start_char_idx > 0 {
+                        let (_, prev_ch) = char_positions[name_start_char_idx - 1];
                         if !is_ident_char(prev_ch) {
                             break;
                         }
-                        name_start -= 1;
+                        name_start_char_idx -= 1;
                     }
+
+                    let name_start = char_positions
+                        .get(name_start_char_idx)
+                        .map(|(b, _)| *b)
+                        .unwrap_or(0);
 
                     let name = &line[name_start..name_end];
 
                     // Skip language keywords
                     if !is_keyword(name) {
+                        // Always return the byte offset of the first character of
+                        // the function name (name_start), regardless of whether a
+                        // filter is active.  Using paren_pos in the filtered branch
+                        // was inconsistent and displaced editor cursors by the length
+                        // of the function name.
                         if let Some(filter) = function_filter {
                             if name == filter {
                                 results.push(json!({
@@ -111,7 +132,7 @@ fn extract_calls_from_line(
                                 "function": name,
                                 "file": file,
                                 "line": line_num,
-                                "column": paren_pos as u32,
+                                "column": name_start as u32,
                                 "context": line.trim(),
                             }));
                         }
@@ -176,6 +197,28 @@ fn is_keyword(name: &str) -> bool {
 // Tool 1: get_scope
 // ---------------------------------------------------------------------------
 
+/// Case-insensitive substring search that returns a byte offset into `line`
+/// that is always a valid char boundary.
+///
+/// Unlike searching in `line.to_uppercase()`, this function never creates a
+/// string whose byte length differs from `line` due to Unicode case-folding
+/// (e.g., ß→SS, ı→I).  It slides a char-at-a-time window over the original
+/// string and compares uppercased prefixes.
+fn find_tag_in_line_ci(line: &str, tag: &str) -> Option<usize> {
+    let tag_char_count = tag.chars().count();
+    let tag_upper = tag.to_uppercase();
+    let mut char_indices = line.char_indices().peekable();
+    while let Some((byte_pos, _)) = char_indices.peek().copied() {
+        let remaining = &line[byte_pos..];
+        let prefix: String = remaining.chars().take(tag_char_count).collect();
+        if prefix.to_uppercase() == tag_upper {
+            return Some(byte_pos);
+        }
+        char_indices.next();
+    }
+    None
+}
+
 /// Get the enclosing scope at a given line.
 
 pub fn get_annotations(
@@ -203,21 +246,15 @@ pub fn get_annotations(
     let mut annotations = Vec::new();
 
     for (line_idx, line) in source.lines().enumerate() {
-        let upper = line.to_uppercase();
         for tag in &tags {
-            let tag_upper = tag.to_uppercase();
-            if let Some(pos) = upper.find(&tag_upper) {
-                // Translate the byte offset found in the uppercased string back
-                // to a char count, then find the corresponding byte offset in the
-                // original line. This avoids slicing mid-char when the uppercase
-                // form of a character differs in byte length from the original.
-                let char_offset = upper[..pos].chars().count();
-                let byte_offset_in_line = line
-                    .char_indices()
-                    .nth(char_offset + tag_upper.chars().count())
-                    .map(|(b, _)| b)
-                    .unwrap_or(line.len());
-                let after_tag = &line[byte_offset_in_line..];
+            // Case-insensitive search that stays within the original string's
+            // byte coordinates, avoiding the uppercase copy entirely.
+            // `to_uppercase` is not length-preserving for all Unicode characters
+            // (e.g., ß→SS, ı→I), so using find() on an uppercased copy produces
+            // byte offsets that are not valid boundaries in the original string.
+            if let Some(tag_byte_pos) = find_tag_in_line_ci(line, tag) {
+                let after_tag_pos = tag_byte_pos + tag.len();
+                let after_tag = &line[after_tag_pos..];
                 let message = after_tag
                     .trim_start_matches([':', ' ', ']'])
                     .trim_end_matches(['*', '/'])

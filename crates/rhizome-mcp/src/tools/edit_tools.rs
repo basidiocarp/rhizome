@@ -227,18 +227,31 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
 // File reading/writing helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn read_lines(path: &Path) -> Result<Vec<String>> {
+fn read_lines_and_eol(path: &Path) -> Result<(Vec<String>, &'static str)> {
     let content =
         fs::read_to_string(path).map_err(|e| anyhow!("Failed to read {}: {e}", path.display()))?;
-    Ok(content.lines().map(String::from).collect())
+    // Detect the dominant line ending from the raw file content so we can
+    // preserve it when writing back.  Any CRLF in the file is sufficient to
+    // treat the whole file as CRLF-terminated.
+    let eol: &'static str = if content.contains("\r\n") { "\r\n" } else { "\n" };
+    let lines = content.lines().map(String::from).collect();
+    Ok((lines, eol))
 }
 
-fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
+fn read_lines(path: &Path) -> Result<Vec<String>> {
+    let (lines, _eol) = read_lines_and_eol(path)?;
+    Ok(lines)
+}
+
+fn write_lines_with_eol(path: &Path, lines: &[String], eol: &str) -> Result<()> {
     let content = if lines.is_empty() {
         String::new()
     } else {
-        let mut out = lines.join("\n");
-        out.push('\n');
+        let mut out = String::with_capacity(lines.iter().map(|l| l.len() + eol.len()).sum());
+        for line in lines {
+            out.push_str(line);
+            out.push_str(eol);
+        }
         out
     };
 
@@ -251,6 +264,24 @@ fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
         .map_err(|e| anyhow!("Failed to flush temp file: {e}"))?;
     tmp.persist(path)
         .map_err(|e| anyhow!("Failed to persist {}: {}", path.display(), e.error))?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
+    write_lines_with_eol(path, lines, "\n")
+}
+
+/// Atomically write raw bytes to a file using a temp file + rename.
+/// Creating the temp file in the same directory ensures a same-filesystem
+/// rename, which is guaranteed atomic on POSIX systems.
+fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent")
+    })?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    std::io::Write::write_all(&mut tmp, content)?;
+    tmp.persist(path).map_err(|e| e.error)?;
     Ok(())
 }
 
@@ -355,7 +386,7 @@ fn insert_lines_relative_to_symbol(
     content_lines: &[String],
 ) -> Result<(usize, usize)> {
     let (target_start, target_end) = find_symbol_location(backend, target_path, target_symbol)?;
-    let lines = read_lines(target_path)?;
+    let (lines, eol) = read_lines_and_eol(target_path)?;
 
     let insert_idx = match position {
         RelativePosition::Before => target_start as usize,
@@ -380,12 +411,12 @@ fn insert_lines_relative_to_symbol(
         result_lines.extend_from_slice(&lines[insert_idx..]);
     }
 
-    write_lines(target_path, &result_lines)?;
+    write_lines_with_eol(target_path, &result_lines, eol)?;
     Ok((insert_idx + 1, lines_inserted))
 }
 
 fn delete_symbol_lines(path: &Path, line_start: u32, line_end: u32) -> Result<(usize, usize)> {
-    let lines = read_lines(path)?;
+    let (lines, eol) = read_lines_and_eol(path)?;
     let lines_before = lines.len();
     let start = line_start as usize;
     let end = (line_end as usize + 1).min(lines.len());
@@ -397,7 +428,7 @@ fn delete_symbol_lines(path: &Path, line_start: u32, line_end: u32) -> Result<(u
     }
 
     let lines_after = result_lines.len();
-    write_lines(path, &result_lines)?;
+    write_lines_with_eol(path, &result_lines, eol)?;
     Ok((lines_before, lines_after))
 }
 
@@ -422,7 +453,7 @@ pub fn replace_symbol_body(
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
 
-    let lines = match read_lines(&path) {
+    let (lines, eol) = match read_lines_and_eol(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
@@ -444,7 +475,7 @@ pub fn replace_symbol_body(
 
     let lines_after = result_lines.len();
 
-    if let Err(e) = write_lines(&path, &result_lines) {
+    if let Err(e) = write_lines_with_eol(&path, &result_lines, eol) {
         return Ok(tool_error(&e.to_string()));
     }
 
@@ -474,7 +505,7 @@ pub fn insert_after_symbol(
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
 
-    let lines = match read_lines(&path) {
+    let (lines, eol) = match read_lines_and_eol(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
@@ -493,7 +524,7 @@ pub fn insert_after_symbol(
         result_lines.extend_from_slice(&lines[insert_idx..]);
     }
 
-    if let Err(e) = write_lines(&path, &result_lines) {
+    if let Err(e) = write_lines_with_eol(&path, &result_lines, eol) {
         return Ok(tool_error(&e.to_string()));
     }
 
@@ -523,7 +554,7 @@ pub fn insert_before_symbol(
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
 
-    let lines = match read_lines(&path) {
+    let (lines, eol) = match read_lines_and_eol(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
@@ -539,7 +570,7 @@ pub fn insert_before_symbol(
     result_lines.push(String::new()); // blank line separator
     result_lines.extend_from_slice(&lines[insert_idx..]);
 
-    if let Err(e) = write_lines(&path, &result_lines) {
+    if let Err(e) = write_lines_with_eol(&path, &result_lines, eol) {
         return Ok(tool_error(&e.to_string()));
     }
 
@@ -569,7 +600,7 @@ pub fn replace_lines(args: &Value, project_root: &Path) -> Result<Value> {
     }
 
     let path = resolve_path(file, project_root)?;
-    let lines = match read_lines(&path) {
+    let (lines, eol) = match read_lines_and_eol(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
@@ -597,7 +628,7 @@ pub fn replace_lines(args: &Value, project_root: &Path) -> Result<Value> {
 
     let lines_after = result_lines.len();
 
-    if let Err(e) = write_lines(&path, &result_lines) {
+    if let Err(e) = write_lines_with_eol(&path, &result_lines, eol) {
         return Ok(tool_error(&e.to_string()));
     }
 
@@ -620,7 +651,7 @@ pub fn insert_at_line(args: &Value, project_root: &Path) -> Result<Value> {
     }
 
     let path = resolve_path(file, project_root)?;
-    let lines = match read_lines(&path) {
+    let (lines, eol) = match read_lines_and_eol(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
@@ -648,7 +679,7 @@ pub fn insert_at_line(args: &Value, project_root: &Path) -> Result<Value> {
 
     let lines_after = result_lines.len();
 
-    if let Err(e) = write_lines(&path, &result_lines) {
+    if let Err(e) = write_lines_with_eol(&path, &result_lines, eol) {
         return Ok(tool_error(&e.to_string()));
     }
 
@@ -676,7 +707,7 @@ pub fn delete_lines(args: &Value, project_root: &Path) -> Result<Value> {
     }
 
     let path = resolve_path(file, project_root)?;
-    let lines = match read_lines(&path) {
+    let (lines, eol) = match read_lines_and_eol(&path) {
         Ok(l) => l,
         Err(e) => return Ok(tool_error(&e.to_string())),
     };
@@ -701,7 +732,7 @@ pub fn delete_lines(args: &Value, project_root: &Path) -> Result<Value> {
 
     let lines_after = result_lines.len();
 
-    if let Err(e) = write_lines(&path, &result_lines) {
+    if let Err(e) = write_lines_with_eol(&path, &result_lines, eol) {
         return Ok(tool_error(&e.to_string()));
     }
 
@@ -737,7 +768,13 @@ pub fn create_file(args: &Value, project_root: &Path) -> Result<Value> {
         fs::create_dir_all(parent).map_err(|e| anyhow!("Failed to create directories: {e}"))?;
     }
 
-    fs::write(&path, content).map_err(|e| anyhow!("Failed to write {}: {e}", path.display()))?;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| anyhow!("Failed to create temp file in {}: {e}", parent.display()))?;
+    tmp.write_all(content.as_bytes())
+        .map_err(|e| anyhow!("Failed to write temp file: {e}"))?;
+    tmp.persist(&path)
+        .map_err(|e| anyhow!("Failed to persist {}: {e}", path.display()))?;
 
     let lines = content.lines().count();
     let bytes = content.len();
@@ -859,8 +896,8 @@ pub fn move_symbol(
         Ok(result) => result,
         Err(e) => {
             // Restore both files on insert failure to prevent symbol duplication or partial state.
-            let source_restore = std::fs::write(&source_path, &source_backup);
-            let target_restore = std::fs::write(&target_path, &target_backup);
+            let source_restore = atomic_write(&source_path, source_backup.as_bytes());
+            let target_restore = atomic_write(&target_path, target_backup.as_bytes());
             let restore_status = match (&source_restore, &target_restore) {
                 (Ok(_), Ok(_)) => "both files restored",
                 (Err(se), Ok(_)) => {
@@ -890,8 +927,8 @@ pub fn move_symbol(
         Ok(result) => result,
         Err(e) => {
             // Restore both files to prevent symbol duplication or partial state.
-            let source_restore = std::fs::write(&source_path, &source_backup);
-            let target_restore = std::fs::write(&target_path, &target_backup);
+            let source_restore = atomic_write(&source_path, source_backup.as_bytes());
+            let target_restore = atomic_write(&target_path, target_backup.as_bytes());
             let restore_status = match (&source_restore, &target_restore) {
                 (Ok(_), Ok(_)) => "both files restored",
                 (Err(se), Ok(_)) => {

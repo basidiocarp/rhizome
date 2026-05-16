@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 use rhizome_core::export_cache::ExportCache;
 use rhizome_core::graph::{CodeGraph, build_graph, merge_graphs, skeletonize};
@@ -105,6 +105,23 @@ fn resolve_export_root(args: &Value, project_root: &Path) -> Result<std::path::P
 
     if !resolved.exists() {
         anyhow::bail!("Export path does not exist: {}", resolved.display());
+    }
+
+    // Containment check: the resolved export path must remain within project_root.
+    // Without this, a caller can pass an absolute path like "/etc" and cause
+    // rhizome to walk and export the contents of arbitrary filesystem locations.
+    let canonical_resolved = resolved
+        .canonicalize()
+        .with_context(|| format!("cannot canonicalize export path: {}", resolved.display()))?;
+    let canonical_root = project_root
+        .canonicalize()
+        .with_context(|| format!("cannot canonicalize project root: {}", project_root.display()))?;
+    if !canonical_resolved.starts_with(&canonical_root) {
+        anyhow::bail!(
+            "Export path {} is outside the project root {}",
+            resolved.display(),
+            project_root.display()
+        );
     }
 
     Ok(resolved)

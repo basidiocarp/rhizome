@@ -3,8 +3,8 @@ pub mod export_tools;
 pub mod file_tools;
 pub mod symbol_tools;
 
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use anyhow::{Result, anyhow};
 use rhizome_core::{
@@ -51,15 +51,16 @@ enum ActiveBackend {
 
 /// Routes MCP tool calls to the appropriate backend handler.
 ///
-/// Uses `RefCell` for the LSP backend and selector to allow lazy initialization
-/// and caching while keeping `call_tool(&self, ...)` unchanged. This is safe
-/// because the MCP server loop is single-threaded.
+/// Uses `Mutex` for the LSP backend and selector to allow lazy initialization
+/// and caching while keeping `call_tool(&self, ...)` unchanged.  `Mutex` is
+/// `Sync`, so `ToolDispatcher` can be shared across threads in async MCP
+/// runtimes without risking concurrent borrow panics.
 pub struct ToolDispatcher {
     treesitter: TreeSitterBackend,
     parserless: ParserlessBackend,
     heuristic: HeuristicBackend,
-    lsp: RefCell<Option<rhizome_lsp::LspBackend>>,
-    selector: RefCell<BackendSelector>,
+    lsp: Mutex<Option<rhizome_lsp::LspBackend>>,
+    selector: Mutex<BackendSelector>,
     project_root: PathBuf,
 }
 
@@ -76,8 +77,8 @@ impl ToolDispatcher {
             treesitter: TreeSitterBackend::new(),
             parserless: ParserlessBackend::new(),
             heuristic: HeuristicBackend::new(),
-            lsp: RefCell::new(None),
-            selector: RefCell::new(BackendSelector::new(config)),
+            lsp: Mutex::new(None),
+            selector: Mutex::new(BackendSelector::new(config)),
             project_root,
         }
     }
@@ -257,7 +258,7 @@ impl ToolDispatcher {
         &self.project_root
     }
 
-    pub fn selector(&self) -> &RefCell<BackendSelector> {
+    pub fn selector(&self) -> &Mutex<BackendSelector> {
         &self.selector
     }
 
@@ -289,7 +290,7 @@ impl ToolDispatcher {
         match self.resolve_backend(tool_name, args) {
             ActiveBackend::Lsp => {
                 self.ensure_lsp();
-                let lsp = self.lsp.borrow();
+                let lsp = self.lsp.lock().unwrap();
                 match lsp.as_ref() {
                     Some(backend) => lsp_fn(backend, args),
                     None => ts_fn(args),
@@ -329,7 +330,7 @@ impl ToolDispatcher {
                 // Check for a registered plugin before falling to heuristic structural analysis.
                 let plugin_id = file_ext.and_then(|ext| {
                     self.selector
-                        .borrow()
+                        .lock().unwrap()
                         .plugin_registry()
                         .find_for_extension(ext)
                         .map(|p| p.id().to_string())
@@ -346,7 +347,7 @@ impl ToolDispatcher {
             ActiveBackend::TreeSitter => match ts_fn(args) {
                 Ok(value) => Ok(value),
                 Err(error) => {
-                    let fallback = self.selector.borrow_mut().outline_fallback(&lang, file_ext);
+                    let fallback = self.selector.lock().unwrap().outline_fallback(&lang, file_ext);
                     tracing::debug!(
                         "rhizome: tree-sitter failed, falling back to {fallback:?}: {error}"
                     );
@@ -380,7 +381,7 @@ impl ToolDispatcher {
             .unwrap_or_else(|| self.project_root.clone());
         let path = symbol_tools::resolve_project_path(file, &root)?;
 
-        let selector = self.selector.borrow();
+        let selector = self.selector.lock().unwrap();
         let plugin = selector
             .plugin_registry()
             .find_for_id(plugin_id)
@@ -426,7 +427,7 @@ impl ToolDispatcher {
 
         match ts_fn(args) {
             Ok(value) => Ok(value),
-            Err(error) => match self.selector.borrow_mut().outline_fallback(&lang, file_ext) {
+            Err(error) => match self.selector.lock().unwrap().outline_fallback(&lang, file_ext) {
                 ResolvedBackend::Lsp => self.try_lsp_or_error(args, lsp_fn, error),
                 _ => Err(error),
             },
@@ -441,7 +442,7 @@ impl ToolDispatcher {
         match self.resolve_backend(tool_name, args) {
             ActiveBackend::Lsp => {
                 self.ensure_lsp();
-                let lsp = self.lsp.borrow();
+                let lsp = self.lsp.lock().unwrap();
                 match lsp.as_ref() {
                     Some(backend) => lsp_fn(backend, args),
                     None => Ok(tool_error(&format!(
@@ -466,7 +467,7 @@ impl ToolDispatcher {
             .detect_language(args)
             .unwrap_or(Language::Other("unknown".into()));
 
-        let resolved = self.selector.borrow_mut().select(tool_name, &lang);
+        let resolved = self.selector.lock().unwrap().select(tool_name, &lang);
 
         match resolved {
             ResolvedBackend::TreeSitter => ActiveBackend::TreeSitter,
@@ -486,13 +487,13 @@ impl ToolDispatcher {
     }
 
     fn ensure_lsp(&self) {
-        if self.lsp.borrow().is_some() {
+        if self.lsp.lock().unwrap().is_some() {
             return;
         }
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
                 let backend = rhizome_lsp::LspBackend::new(self.project_root.clone(), handle);
-                *self.lsp.borrow_mut() = Some(backend);
+                *self.lsp.lock().unwrap() = Some(backend);
             }
             Err(_) => {
                 static LSP_INIT_WARNED: std::sync::atomic::AtomicBool =
@@ -512,7 +513,7 @@ impl ToolDispatcher {
         I: FnOnce(&Value) -> Result<Value>,
     {
         self.ensure_lsp();
-        let lsp = self.lsp.borrow();
+        let lsp = self.lsp.lock().unwrap();
         match lsp.as_ref() {
             Some(backend) => match lsp_fn(backend, args) {
                 Ok(value) => Ok(value),
@@ -532,7 +533,7 @@ impl ToolDispatcher {
         G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
     {
         self.ensure_lsp();
-        let lsp = self.lsp.borrow();
+        let lsp = self.lsp.lock().unwrap();
         match lsp.as_ref() {
             Some(backend) => lsp_fn(backend, args).or(Err(original_error)),
             None => Err(original_error),

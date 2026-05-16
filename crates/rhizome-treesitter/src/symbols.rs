@@ -119,12 +119,13 @@ fn extract_signature(
     language: &Language,
 ) -> Option<String> {
     let text = node.utf8_text(source).ok()?;
-    let delimiter = match language {
-        Language::Python => ':',
-        _ => '{',
-    };
 
-    let sig = if let Some(pos) = text.find(delimiter) {
+    let sig = if language == &Language::Python {
+        // Tree-sitter function_definition nodes include the body, so rfind(':')
+        // can land on a colon inside the body (e.g. in a dict literal). Taking
+        // only the first line gives the header without scanning into the body.
+        text.lines().next().unwrap_or(text).trim()
+    } else if let Some(pos) = text.find('{') {
         text[..pos].trim()
     } else {
         // Take the first line

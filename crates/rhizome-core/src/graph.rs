@@ -119,65 +119,68 @@ fn process_symbols(
     parent_id: Option<&str>,
     current_scope: &[String],
 ) {
-    for symbol in symbols {
-        let mut labels = labels_for_kind(&symbol.kind);
+    // Use an explicit work queue instead of recursion to avoid stack overflow
+    // on deeply nested ASTs (e.g., deeply nested closures, generated code, or
+    // pathological inputs).  Each entry is (symbols_batch, parent_id, scope).
+    let mut work: Vec<(Vec<Symbol>, Option<String>, Vec<String>)> = vec![(
+        symbols.to_vec(),
+        parent_id.map(String::from),
+        current_scope.to_vec(),
+    )];
 
-        if let Some(sig) = &symbol.signature {
-            if sig.starts_with("pub ") || sig.starts_with("pub(") {
-                labels.push("public".into());
+    while let Some((batch, parent, scope)) = work.pop() {
+        for symbol in &batch {
+            let mut labels = labels_for_kind(&symbol.kind);
+
+            if let Some(sig) = &symbol.signature {
+                if sig.starts_with("pub ") || sig.starts_with("pub(") {
+                    labels.push("public".into());
+                }
+                if sig.contains("async") {
+                    labels.push("async".into());
+                }
             }
-            if sig.contains("async") {
-                labels.push("async".into());
+
+            let description = build_description(&symbol.signature, &symbol.doc_comment);
+
+            let mut metadata = HashMap::new();
+            metadata.insert("file_path".into(), json!(file_path_str.to_string()));
+            metadata.insert("line_start".into(), json!(symbol.location.line_start));
+            metadata.insert("line_end".into(), json!(symbol.location.line_end));
+            metadata.insert("language".into(), json!(language.to_string()));
+
+            let node_id = node_id_for_symbol(symbol, file_path_str, &scope);
+
+            nodes.push(ConceptNode {
+                name: node_id.clone(),
+                labels,
+                description,
+                metadata,
+            });
+
+            if let Some(ref p) = parent {
+                edges.push(ConceptEdge {
+                    source: p.clone(),
+                    target: node_id.clone(),
+                    relation: "contains".into(),
+                    weight: WEIGHT_CONTAINS,
+                });
             }
-        }
 
-        let description = build_description(&symbol.signature, &symbol.doc_comment);
+            if symbol.kind == SymbolKind::Import {
+                edges.push(ConceptEdge {
+                    source: file_path_str.to_string(),
+                    target: node_id.clone(),
+                    relation: "imports".into(),
+                    weight: WEIGHT_IMPORTS,
+                });
+            }
 
-        let mut metadata = HashMap::new();
-        metadata.insert("file_path".into(), json!(file_path_str.to_string()));
-        metadata.insert("line_start".into(), json!(symbol.location.line_start));
-        metadata.insert("line_end".into(), json!(symbol.location.line_end));
-        metadata.insert("language".into(), json!(language.to_string()));
-
-        let node_id = node_id_for_symbol(symbol, file_path_str, current_scope);
-
-        nodes.push(ConceptNode {
-            name: node_id.clone(),
-            labels,
-            description,
-            metadata,
-        });
-
-        if let Some(parent) = parent_id {
-            edges.push(ConceptEdge {
-                source: parent.to_string(),
-                target: node_id.clone(),
-                relation: "contains".into(),
-                weight: WEIGHT_CONTAINS,
-            });
-        }
-
-        if symbol.kind == SymbolKind::Import {
-            edges.push(ConceptEdge {
-                source: file_path_str.to_string(),
-                target: node_id.clone(),
-                relation: "imports".into(),
-                weight: WEIGHT_IMPORTS,
-            });
-        }
-
-        if !symbol.children.is_empty() {
-            let mut child_scope = current_scope.to_vec();
-            child_scope.push(symbol.name.clone());
-            process_symbols(
-                &symbol.children,
-                file_path_str,
-                language,
-                nodes,
-                edges,
-                Some(&node_id),
-                &child_scope,
-            );
+            if !symbol.children.is_empty() {
+                let mut child_scope = scope.clone();
+                child_scope.push(symbol.name.clone());
+                work.push((symbol.children.clone(), Some(node_id), child_scope));
+            }
         }
     }
 }

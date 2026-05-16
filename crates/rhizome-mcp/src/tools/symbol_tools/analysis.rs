@@ -10,6 +10,25 @@ use serde_json::{Value, json};
 use super::navigation::{extract_identifier_at, is_ident_char};
 use super::{required_str, required_u32, resolve_project_path, tool_response};
 
+/// Maximum file size we will read into memory for analysis.  Files larger than
+/// this are rejected with a clear error rather than silently OOM-ing the
+/// long-lived MCP server process.
+const MAX_SOURCE_FILE_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+
+/// Read a source file into a String, enforcing the size limit above.
+fn read_source_file(path: &Path) -> anyhow::Result<String> {
+    let meta = std::fs::metadata(path)?;
+    if meta.len() > MAX_SOURCE_FILE_BYTES {
+        anyhow::bail!(
+            "file too large to analyze ({} bytes > {} byte limit): {}",
+            meta.len(),
+            MAX_SOURCE_FILE_BYTES,
+            path.display()
+        );
+    }
+    Ok(std::fs::read_to_string(path)?)
+}
+
 pub fn find_references(
     backend: &dyn CodeIntelligence,
     args: &Value,
@@ -53,7 +72,7 @@ pub fn analyze_impact(
 
     let path = resolve_project_path(file, project_root)?;
     let pos = Position { line, column };
-    let source = std::fs::read_to_string(&path)?;
+    let source = read_source_file(&path)?;
     let lines: Vec<&str> = source.lines().collect();
     let line_idx = line as usize;
 
@@ -287,6 +306,31 @@ fn is_definition_location(
     }
 }
 
+/// Find the next occurrence of `target` in `line` starting from `search_start`,
+/// returning `(pos, after)` byte offsets only when both are valid char boundaries.
+/// This prevents panics when `target` is a Unicode identifier or when the source
+/// line contains non-ASCII characters before the match.
+fn find_call_in_line(line: &str, target: &str, search_start: usize) -> Option<(usize, usize)> {
+    let mut start = search_start;
+    while start < line.len() {
+        if let Some(rel_pos) = line[start..].find(target) {
+            let pos = start + rel_pos;
+            let after = pos + target.len();
+            // Only return positions that are valid char boundaries in the original
+            // string to avoid panics on the subsequent byte-offset slices.
+            if line.is_char_boundary(pos) && line.is_char_boundary(after) {
+                return Some((pos, after));
+            }
+            // Landing mid-codepoint means the match is inside a multi-byte character;
+            // advance by one byte and keep searching.
+            start = pos + 1;
+        } else {
+            break;
+        }
+    }
+    None
+}
+
 fn build_dependency_map(
     symbols: &[Symbol],
     source_lines: &[&str],
@@ -308,8 +352,8 @@ fn build_dependency_map(
                 if target == name {
                     continue;
                 }
-                if let Some(pos) = line.find(target) {
-                    let after = pos + target.len();
+                let mut search_start = 0;
+                while let Some((pos, after)) = find_call_in_line(line, target, search_start) {
                     let rest = line[after..].trim_start();
                     if rest.starts_with('(') {
                         let before_ok = pos == 0 || {
@@ -324,6 +368,7 @@ fn build_dependency_map(
                             calls.push(target.to_string());
                         }
                     }
+                    search_start = after.max(pos + 1);
                 }
             }
         }
@@ -346,7 +391,7 @@ pub fn get_complexity(
 
     let path = resolve_project_path(file, project_root)?;
     let symbols = backend.get_symbols(&path)?;
-    let source = std::fs::read_to_string(&path)?;
+    let source = read_source_file(&path)?;
     let source_lines: Vec<&str> = source.lines().collect();
 
     let mut results = Vec::new();
@@ -433,7 +478,7 @@ pub fn get_dependencies(
     let file = required_str(args, "file")?;
     let path = resolve_project_path(file, project_root)?;
     let symbols = backend.get_symbols(&path)?;
-    let source = std::fs::read_to_string(&path)?;
+    let source = read_source_file(&path)?;
     let source_lines: Vec<&str> = source.lines().collect();
     let deps = build_dependency_map(&symbols, &source_lines)
         .into_iter()
