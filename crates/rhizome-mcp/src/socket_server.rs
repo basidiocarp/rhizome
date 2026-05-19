@@ -63,7 +63,13 @@ pub async fn run_socket_server(project_root: PathBuf, unified: bool) -> Result<(
     let dispatcher = Arc::new(ToolDispatcher::new(project_root));
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, _) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                tracing::warn!("accept error (continuing): {e}");
+                continue;
+            }
+        };
         let (reader, writer) = tokio::io::split(stream);
         let reader = tokio::io::BufReader::new(reader);
         let dispatcher_clone = Arc::clone(&dispatcher);
