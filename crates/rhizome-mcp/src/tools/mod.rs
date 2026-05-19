@@ -31,6 +31,8 @@ pub struct ToolAnnotations {
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolSchema {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub description: String,
     pub input_schema: Value,
     pub annotations: ToolAnnotations,

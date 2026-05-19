@@ -151,6 +151,7 @@ pub fn rhizome_onboard(project_root: &Path) -> Result<Value> {
 pub fn onboard_schema() -> ToolSchema {
     ToolSchema {
         name: "rhizome_onboard".into(),
+        title: Some("Onboard Rhizome".to_string()),
         description: "Get a quick overview of the Rhizome code intelligence system for \
             onboarding. Returns supported languages, available tools, active backend, \
             project root, and a quick-start guide. No parameters required."

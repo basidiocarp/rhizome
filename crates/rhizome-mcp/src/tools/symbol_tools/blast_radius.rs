@@ -95,6 +95,7 @@ fn check_children(children: &[rhizome_core::Symbol], name: &str) -> bool {
 pub fn simulate_change_schema() -> ToolSchema {
     ToolSchema {
         name: "rhizome_simulate_change".into(),
+        title: Some("Simulate Change".to_string()),
         description: "Simulate the blast radius of changing a symbol: find direct dependents, \
             affected test files, and compute a risk score (0.0–1.0). \
             Transitive dependents require an LSP server; direct dependents are workspace-wide."

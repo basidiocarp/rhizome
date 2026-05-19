@@ -37,6 +37,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
     vec![
         ToolSchema {
             name: "replace_symbol_body".into(),
+            title: Some("Replace Symbol Body".to_string()),
             description: "Replace the entire body of a symbol (function, struct, class, etc.) \
                 with new content. Uses tree-sitter to locate the symbol precisely."
                 .into(),
@@ -57,6 +58,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "insert_after_symbol".into(),
+            title: Some("Insert After Symbol".to_string()),
             description: "Insert content after a symbol (function, struct, class, etc.). \
                 A blank line is added for separation."
                 .into(),
@@ -77,6 +79,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "insert_before_symbol".into(),
+            title: Some("Insert Before Symbol".to_string()),
             description: "Insert content before a symbol (function, struct, class, etc.). \
                 A blank line is added for separation."
                 .into(),
@@ -97,6 +100,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "replace_lines".into(),
+            title: Some("Replace Lines".to_string()),
             description: "Replace a range of lines in a file with new content. \
                 Line numbers are 1-based and inclusive."
                 .into(),
@@ -118,6 +122,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "insert_at_line".into(),
+            title: Some("Insert at Line".to_string()),
             description: "Insert content at a specific line number. \
                 Existing content at that line is pushed down. Line number is 1-based."
                 .into(),
@@ -138,6 +143,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "delete_lines".into(),
+            title: Some("Delete Lines".to_string()),
             description: "Delete a range of lines from a file. \
                 Line numbers are 1-based and inclusive."
                 .into(),
@@ -158,6 +164,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "create_file".into(),
+            title: Some("Create File".to_string()),
             description: "Create a new file with content. Creates parent directories \
                 automatically. Refuses to overwrite unless overwrite=true."
                 .into(),
@@ -178,6 +185,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "copy_symbol".into(),
+            title: Some("Copy Symbol".to_string()),
             description: "Copy a symbol's full source block to a position before or after \
                 another symbol. Safe MVP: text-preserving, tree-sitter-located symbol movement."
                 .into(),
@@ -200,6 +208,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "move_symbol".into(),
+            title: Some("Move Symbol".to_string()),
             description: "Move a symbol's full source block to a position before or after \
                 another symbol in a different file. Same-file moves are rejected in this MVP."
                 .into(),

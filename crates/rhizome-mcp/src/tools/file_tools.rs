@@ -14,6 +14,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
     vec![
         ToolSchema {
             name: "rename_symbol".into(),
+            title: Some("Rename Symbol".to_string()),
             description: "Rename a symbol across the project (requires LSP)".into(),
             input_schema: json!({
                 "type": "object",
@@ -37,6 +38,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "get_diagnostics".into(),
+            title: Some("Get Diagnostics".to_string()),
             description: "Get compiler diagnostics (errors, warnings) for a file".into(),
             input_schema: json!({
                 "type": "object",

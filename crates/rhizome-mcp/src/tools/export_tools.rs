@@ -325,6 +325,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
     vec![
         ToolSchema {
             name: "export_to_hyphae".into(),
+            title: Some("Export to Hyphae".to_string()),
             description: "Export code graph to Hyphae for semantic knowledge storage. \
                 Walks the project (respecting .gitignore), extracts symbols, builds a concept graph, \
                 and sends it to Hyphae. Uses incremental caching to skip unchanged files."
@@ -351,6 +352,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "export_repo_understanding".into(),
+            title: Some("Export Repo Understanding".to_string()),
             description: "Export a typed repo-understanding artifact with summary, repo-surface \
                 classification, and a machine-facing export status contract. \
                 `update_class` remains a display label; `export_status` is the \
