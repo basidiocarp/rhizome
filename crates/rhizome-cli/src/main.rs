@@ -73,6 +73,19 @@ enum Commands {
         #[arg(long)]
         expanded: bool,
     },
+    /// Start MCP server on unix socket (singleton, shared across Claude Code windows)
+    #[cfg(unix)]
+    ServeSocket {
+        /// Workspace/project root path
+        #[arg(long, short)]
+        project: Option<PathBuf>,
+        /// Expose tools as separate MCP tools instead of unified rhizome command
+        #[arg(long)]
+        expanded: bool,
+    },
+    /// Connect to socket server (stdio to unix socket bridge)
+    #[cfg(unix)]
+    Proxy,
     /// List symbols in a file
     Symbols {
         /// Path to the source file
@@ -197,6 +210,10 @@ fn detect_project_root(hint: Option<PathBuf>) -> PathBuf {
 fn command_name(command: &Commands) -> &'static str {
     match command {
         Commands::Serve { .. } => "serve",
+        #[cfg(unix)]
+        Commands::ServeSocket { .. } => "serve_socket",
+        #[cfg(unix)]
+        Commands::Proxy => "proxy",
         Commands::Symbols { .. } => "symbols",
         Commands::Structure { .. } => "structure",
         Commands::Init { .. } => "init",
@@ -225,12 +242,16 @@ fn current_workspace_root() -> Option<String> {
 
 fn command_span_context(command: &Commands) -> SpanContext {
     let workspace_root = match command {
-        Commands::Serve { project, .. }
-        | Commands::Export { project }
-        | Commands::ExportUnderstanding { project, .. }
-        | Commands::Status { project }
-        | Commands::Summarize { project, .. }
-        | Commands::CompileEnv { project, .. } => Some(detect_project_root(project.clone())),
+        Commands::Serve { project, .. } => Some(detect_project_root(project.clone())),
+        #[cfg(unix)]
+        Commands::ServeSocket { project, .. } => Some(detect_project_root(project.clone())),
+        Commands::Export { project } => Some(detect_project_root(project.clone())),
+        Commands::ExportUnderstanding { project, .. } => Some(detect_project_root(project.clone())),
+        Commands::Status { project } => Some(detect_project_root(project.clone())),
+        Commands::Summarize { project, .. } => Some(detect_project_root(project.clone())),
+        Commands::CompileEnv { project, .. } => Some(detect_project_root(project.clone())),
+        #[cfg(unix)]
+        Commands::Proxy => None,
         Commands::Lsp { action } => match action {
             LspAction::Status { project, .. } | LspAction::Install { project, .. } => {
                 Some(detect_project_root(project.clone()))
@@ -834,6 +855,31 @@ fn resolve_lsp_install_server_config(
         .or_else(|| language.default_server_config())
 }
 
+#[cfg(unix)]
+async fn cmd_serve_socket(project: Option<PathBuf>, expanded: bool) -> Result<()> {
+    let project_root = detect_project_root(project);
+    info!(
+        "Starting MCP socket server with project root: {}",
+        project_root.display()
+    );
+
+    tokio::select! {
+        result = rhizome_mcp::run_socket_server(project_root, !expanded) => {
+            result.context("MCP socket server error")?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Received shutdown signal");
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn cmd_proxy() -> Result<()> {
+    rhizome_mcp::run_proxy().await.context("MCP proxy error")
+}
+
 async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
     let project_root = detect_project_root(project);
     info!(
@@ -866,6 +912,10 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Serve { project, expanded } => cmd_serve(project, expanded).await,
+        #[cfg(unix)]
+        Commands::ServeSocket { project, expanded } => cmd_serve_socket(project, expanded).await,
+        #[cfg(unix)]
+        Commands::Proxy => cmd_proxy().await,
         Commands::Symbols { file } => cmd_symbols(&file),
         Commands::Structure { file } => cmd_structure(&file),
         Commands::Init { config, editor } => cmd_init(config, editor),

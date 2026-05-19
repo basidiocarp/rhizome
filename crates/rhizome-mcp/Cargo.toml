@@ -11,11 +11,14 @@ spore = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
-tokio = { version = "1", default-features = false, features = ["io-std", "macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", default-features = false, features = ["io-std", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
 ignore = "0.4"
 tempfile = "3"
 which = "7"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
