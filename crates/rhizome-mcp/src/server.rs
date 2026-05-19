@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -34,9 +35,27 @@ impl McpServer {
         let mut reader = BufReader::new(stdin);
         let mut line = String::new();
 
+        // Configure idle timeout from environment or use default (10 minutes).
+        // Reject 0 to avoid immediate timeout; any env value <= 0 falls back to default.
+        let idle_timeout = Duration::from_secs(
+            std::env::var("RHIZOME_IDLE_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|&v| v > 0)
+                .unwrap_or(600),
+        );
+
         loop {
             line.clear();
-            let n = reader.read_line(&mut line).await?;
+            let n = match tokio::time::timeout(idle_timeout, reader.read_line(&mut line)).await {
+                Ok(Ok(n)) => n,
+                Ok(Err(e)) => return Err(e.into()),
+                Err(_) => {
+                    info!("rhizome: idle timeout ({} secs) — exiting", idle_timeout.as_secs());
+                    break;
+                }
+            };
+
             if n == 0 {
                 break;
             }
@@ -85,6 +104,12 @@ impl McpServer {
     }
 
     fn spawn_auto_export(&self) {
+        // Gate auto-export with environment variable
+        if std::env::var("RHIZOME_AUTO_EXPORT").as_deref() != Ok("1") {
+            debug!("Auto-export disabled (set RHIZOME_AUTO_EXPORT=1 to enable)");
+            return;
+        }
+
         let project_root = self.dispatcher.project_root().to_path_buf();
         let span_context =
             SpanContext::for_app("rhizome").with_workspace_root(project_root.display().to_string());

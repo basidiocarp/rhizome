@@ -3,6 +3,7 @@ pub mod queries;
 pub mod symbols;
 
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -24,16 +25,18 @@ use crate::symbols::extract_symbols;
 /// SharedParseCache
 /// ─────────────────────────────────────────────────────────────────────────
 /// Thread-safe LRU cache for parsed trees, shared across backend instances.
-/// Key: (canonicalized path, file mtime). Capacity: 100 entries.
+/// Key: (canonicalized path, file mtime). Capacity: 20 entries (reduced from 100).
 type ParseCache = Mutex<LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>>;
 type WorkspaceCache = Mutex<LruCache<PathBuf, WorkspaceSymbolIndex>>;
 const WORKSPACE_INDEX_SCHEMA_VERSION: u32 = 2;
 const MAX_WORKSPACE_SYMBOLS: usize = 5000;
+const MAX_WORKSPACE_INDEX_FILES: usize = 2000;
+const MAX_PARSE_CACHE_ENTRIES: usize = 20;
 
 fn shared_cache() -> &'static ParseCache {
     // Lazy-initialized static cache - created once per process lifetime
     static CACHE: std::sync::OnceLock<ParseCache> = std::sync::OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(LruCache::new(std::num::NonZeroUsize::new(100).unwrap())))
+    CACHE.get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(MAX_PARSE_CACHE_ENTRIES).unwrap())))
 }
 
 fn workspace_cache() -> &'static WorkspaceCache {
@@ -45,7 +48,11 @@ fn workspace_cache() -> &'static WorkspaceCache {
 struct WorkspaceSymbolIndex {
     #[serde(default = "workspace_index_schema_version")]
     schema_version: u32,
-    files: HashMap<String, IndexedFileSymbols>,
+    #[serde(
+        serialize_with = "serialize_lru_cache",
+        deserialize_with = "deserialize_lru_cache"
+    )]
+    files: LruCache<String, IndexedFileSymbols>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -66,9 +73,39 @@ impl Default for WorkspaceSymbolIndex {
     fn default() -> Self {
         Self {
             schema_version: WORKSPACE_INDEX_SCHEMA_VERSION,
-            files: HashMap::new(),
+            files: LruCache::new(NonZeroUsize::new(MAX_WORKSPACE_INDEX_FILES).unwrap()),
         }
     }
+}
+
+/// Serialize LruCache to a HashMap for JSON storage
+fn serialize_lru_cache<S>(
+    cache: &LruCache<String, IndexedFileSymbols>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let map: HashMap<String, IndexedFileSymbols> = cache
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    map.serialize(serializer)
+}
+
+/// Deserialize from HashMap to LruCache
+fn deserialize_lru_cache<'de, D>(
+    deserializer: D,
+) -> std::result::Result<LruCache<String, IndexedFileSymbols>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let map: HashMap<String, IndexedFileSymbols> = HashMap::deserialize(deserializer)?;
+    let mut cache = LruCache::new(NonZeroUsize::new(MAX_WORKSPACE_INDEX_FILES).unwrap());
+    for (k, v) in map {
+        cache.put(k, v);
+    }
+    Ok(cache)
 }
 
 /// ─────────────────────────────────────────────────────────────────────────
@@ -191,7 +228,16 @@ impl TreeSitterBackend {
             .map(|path| path.to_string_lossy().into_owned())
             .collect::<HashSet<_>>();
         let original_len = index.files.len();
-        index.files.retain(|path, _| current_paths.contains(path));
+        // Remove entries for files no longer in current_paths
+        let keys_to_remove: Vec<String> = index
+            .files
+            .iter()
+            .map(|(k, _)| k.clone())
+            .filter(|path| !current_paths.contains(path))
+            .collect();
+        for key in keys_to_remove {
+            index.files.pop(&key);
+        }
         index_changed |= original_len != index.files.len();
 
         for file in files {
@@ -200,7 +246,7 @@ impl TreeSitterBackend {
             let metadata = match std::fs::metadata(&file) {
                 Ok(metadata) => metadata,
                 Err(_) => {
-                    index_changed |= index.files.remove(&canonical_path_str).is_some();
+                    index_changed |= index.files.pop(&canonical_path_str).is_some();
                     continue;
                 }
             };
@@ -208,7 +254,7 @@ impl TreeSitterBackend {
 
             let is_stale = index
                 .files
-                .get(&canonical_path_str)
+                .peek(&canonical_path_str)
                 .is_none_or(|entry| entry.fingerprint != fingerprint);
             if !is_stale {
                 continue;
@@ -225,7 +271,7 @@ impl TreeSitterBackend {
                     // Classify the change relative to the prior fingerprint
                     let prior_sig_fp = index
                         .files
-                        .get(&canonical_path_str)
+                        .peek(&canonical_path_str)
                         .and_then(|e| e.sig_fingerprint.as_ref());
                     let change_class = classify_change(prior_sig_fp, &new_sig_fp);
                     tracing::debug!(
@@ -233,7 +279,10 @@ impl TreeSitterBackend {
                         canonical_path_str
                     );
 
-                    index.files.insert(
+                    // LruCache automatically evicts LRU entries when capacity is reached.
+                    // If the path was already in the cache, put() updates LRU order.
+                    // If new, and at capacity, the oldest unused entry is evicted.
+                    index.files.put(
                         canonical_path_str,
                         IndexedFileSymbols {
                             fingerprint,
@@ -244,7 +293,7 @@ impl TreeSitterBackend {
                     index_changed = true;
                 }
                 Err(_) => {
-                    index_changed |= index.files.remove(&canonical_path_str).is_some();
+                    index_changed |= index.files.pop(&canonical_path_str).is_some();
                 }
             }
         }
@@ -264,7 +313,7 @@ impl TreeSitterBackend {
         let mut all_symbols = Vec::new();
         let mut remaining = MAX_WORKSPACE_SYMBOLS;
 
-        for indexed in index.files.values() {
+        for (_key, indexed) in index.files.iter() {
             if remaining == 0 {
                 tracing::debug!(
                     "rhizome: workspace symbol search truncated at {MAX_WORKSPACE_SYMBOLS}"
@@ -1459,7 +1508,7 @@ export function Component() {
             .into_owned();
         let cached = persisted
             .files
-            .get(&canonical_path)
+            .peek(&canonical_path)
             .expect("Persisted index should contain the source file");
         assert!(
             cached
