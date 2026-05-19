@@ -1,8 +1,8 @@
+use anyhow::Result;
+use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
-use anyhow::Result;
 use tokio::net::UnixListener;
-use serde_json::json;
 
 use crate::tools::ToolDispatcher;
 
@@ -33,7 +33,8 @@ pub async fn run_socket_server(project_root: PathBuf, unified: bool) -> Result<(
         && let Ok(pid) = i32::try_from(pid_i64)
     {
         let rc = unsafe { libc::kill(pid, 0) };
-        let alive = rc == 0 || (rc == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM));
+        let alive = rc == 0
+            || (rc == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM));
         if alive {
             eprintln!("rhizome socket server is already running (PID {pid})");
             return Ok(());
@@ -51,11 +52,14 @@ pub async fn run_socket_server(project_root: PathBuf, unified: bool) -> Result<(
         "endpoint": sock_path.to_string_lossy(),
         "pid": std::process::id()
     });
-    std::fs::write(&endpoint_path, serde_json::to_string_pretty(&endpoint_json)?)?;
+    std::fs::write(
+        &endpoint_path,
+        serde_json::to_string_pretty(&endpoint_json)?,
+    )?;
 
     let _guard = SocketServerGuard {
         sock_path: sock_path.clone(),
-        endpoint_path: endpoint_path.clone()
+        endpoint_path: endpoint_path.clone(),
     };
 
     tracing::info!("rhizome socket server listening at {}", sock_path.display());
@@ -75,7 +79,9 @@ pub async fn run_socket_server(project_root: PathBuf, unified: bool) -> Result<(
         let dispatcher_clone = Arc::clone(&dispatcher);
 
         tokio::spawn(async move {
-            if let Err(e) = crate::server::run_mcp_over_stream(reader, writer, &dispatcher_clone, unified).await {
+            if let Err(e) =
+                crate::server::run_mcp_over_stream(reader, writer, &dispatcher_clone, unified).await
+            {
                 tracing::warn!("socket connection ended: {e}");
             }
         });

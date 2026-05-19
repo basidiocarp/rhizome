@@ -36,7 +36,11 @@ const MAX_PARSE_CACHE_ENTRIES: usize = 20;
 fn shared_cache() -> &'static ParseCache {
     // Lazy-initialized static cache - created once per process lifetime
     static CACHE: std::sync::OnceLock<ParseCache> = std::sync::OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(MAX_PARSE_CACHE_ENTRIES).unwrap())))
+    CACHE.get_or_init(|| {
+        Mutex::new(LruCache::new(
+            NonZeroUsize::new(MAX_PARSE_CACHE_ENTRIES).unwrap(),
+        ))
+    })
 }
 
 fn workspace_cache() -> &'static WorkspaceCache {
@@ -86,10 +90,8 @@ fn serialize_lru_cache<S>(
 where
     S: serde::Serializer,
 {
-    let map: HashMap<String, IndexedFileSymbols> = cache
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
+    let map: HashMap<String, IndexedFileSymbols> =
+        cache.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     map.serialize(serializer)
 }
 
@@ -364,8 +366,9 @@ impl TreeSitterBackend {
         let tmp_path = path.with_extension("tmp");
         std::fs::write(&tmp_path, &json)
             .map_err(|e| RhizomeError::Other(format!("Failed to write temp index file: {e}")))?;
-        std::fs::rename(&tmp_path, &path)
-            .map_err(|e| RhizomeError::Other(format!("Failed to rename index file into place: {e}")))?;
+        std::fs::rename(&tmp_path, &path).map_err(|e| {
+            RhizomeError::Other(format!("Failed to rename index file into place: {e}"))
+        })?;
         Ok(())
     }
 }

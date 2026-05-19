@@ -26,8 +26,7 @@ pub fn go_to_definition(
         return Ok(tool_response("No symbol found at the given position"));
     }
 
-    let source = std::fs::read_to_string(&path)
-        .map_err(|e| anyhow!(e))?;
+    let source = std::fs::read_to_string(&path).map_err(|e| anyhow!(e))?;
 
     let lines: Vec<&str> = source.lines().collect();
     let line_idx = line as usize;

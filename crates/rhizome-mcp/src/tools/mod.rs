@@ -330,7 +330,8 @@ impl ToolDispatcher {
                 // Check for a registered plugin before falling to heuristic structural analysis.
                 let plugin_id = file_ext.and_then(|ext| {
                     self.selector
-                        .lock().unwrap()
+                        .lock()
+                        .unwrap()
                         .plugin_registry()
                         .find_for_extension(ext)
                         .map(|p| p.id().to_string())
@@ -347,7 +348,11 @@ impl ToolDispatcher {
             ActiveBackend::TreeSitter => match ts_fn(args) {
                 Ok(value) => Ok(value),
                 Err(error) => {
-                    let fallback = self.selector.lock().unwrap().outline_fallback(&lang, file_ext);
+                    let fallback = self
+                        .selector
+                        .lock()
+                        .unwrap()
+                        .outline_fallback(&lang, file_ext);
                     tracing::debug!(
                         "rhizome: tree-sitter failed, falling back to {fallback:?}: {error}"
                     );
@@ -427,7 +432,12 @@ impl ToolDispatcher {
 
         match ts_fn(args) {
             Ok(value) => Ok(value),
-            Err(error) => match self.selector.lock().unwrap().outline_fallback(&lang, file_ext) {
+            Err(error) => match self
+                .selector
+                .lock()
+                .unwrap()
+                .outline_fallback(&lang, file_ext)
+            {
                 ResolvedBackend::Lsp => self.try_lsp_or_error(args, lsp_fn, error),
                 _ => Err(error),
             },

@@ -330,7 +330,10 @@ where
             Ok(Ok(n)) => n,
             Ok(Err(e)) => return Err(e.into()),
             Err(_) => {
-                info!("rhizome: idle timeout ({} secs) — exiting", idle_timeout.as_secs());
+                info!(
+                    "rhizome: idle timeout ({} secs) — exiting",
+                    idle_timeout.as_secs()
+                );
                 break;
             }
         };
@@ -529,7 +532,8 @@ fn handle_tools_call_impl(
     let tool_context = match request_id_from_value(request_id) {
         Some(request_id) => base_context.with_request_id(request_id),
         None => base_context,
-    }.with_tool(effective_name.clone());
+    }
+    .with_tool(effective_name.clone());
     let _tool_span = tool_span(&effective_name, &tool_context).entered();
 
     match dispatcher.call_tool(&effective_name, arguments) {

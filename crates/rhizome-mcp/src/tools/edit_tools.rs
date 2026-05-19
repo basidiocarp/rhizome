@@ -233,7 +233,11 @@ fn read_lines_and_eol(path: &Path) -> Result<(Vec<String>, &'static str)> {
     // Detect the dominant line ending from the raw file content so we can
     // preserve it when writing back.  Any CRLF in the file is sufficient to
     // treat the whole file as CRLF-terminated.
-    let eol: &'static str = if content.contains("\r\n") { "\r\n" } else { "\n" };
+    let eol: &'static str = if content.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let lines = content.lines().map(String::from).collect();
     Ok((lines, eol))
 }

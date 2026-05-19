@@ -113,9 +113,12 @@ fn resolve_export_root(args: &Value, project_root: &Path) -> Result<std::path::P
     let canonical_resolved = resolved
         .canonicalize()
         .with_context(|| format!("cannot canonicalize export path: {}", resolved.display()))?;
-    let canonical_root = project_root
-        .canonicalize()
-        .with_context(|| format!("cannot canonicalize project root: {}", project_root.display()))?;
+    let canonical_root = project_root.canonicalize().with_context(|| {
+        format!(
+            "cannot canonicalize project root: {}",
+            project_root.display()
+        )
+    })?;
     if !canonical_resolved.starts_with(&canonical_root) {
         anyhow::bail!(
             "Export path {} is outside the project root {}",
