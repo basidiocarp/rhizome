@@ -3,7 +3,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 pub async fn run_proxy() -> Result<()> {
-    let data_dir = spore::paths::data_dir("basidiocarp/rhizome");
+    let data_dir = spore::paths::data_dir("basidiocarp/rhizome")?;
     let endpoint_path = data_dir.join("rhizome.endpoint.json");
 
     if !endpoint_path.exists() {

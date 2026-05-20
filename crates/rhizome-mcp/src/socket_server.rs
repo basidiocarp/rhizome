@@ -19,7 +19,7 @@ impl Drop for SocketServerGuard {
 }
 
 pub async fn run_socket_server(project_root: PathBuf, unified: bool) -> Result<()> {
-    let data_dir = spore::paths::data_dir("basidiocarp/rhizome");
+    let data_dir = spore::paths::data_dir("basidiocarp/rhizome")?;
     std::fs::create_dir_all(&data_dir)?;
 
     let sock_path = data_dir.join("rhizome.sock");

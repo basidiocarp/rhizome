@@ -1203,7 +1203,7 @@ raise SystemExit(1)
     fn probe_error_text_from_response_accepts_top_level_jsonrpc_error() {
         let response = Response {
             jsonrpc: "2.0".to_string(),
-            id: 1,
+            id: spore::jsonrpc::RequestId::Number(1),
             result: None,
             error: Some(spore::jsonrpc::RpcError {
                 code: -32602,

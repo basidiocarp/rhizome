@@ -904,6 +904,7 @@ async fn cmd_serve(project: Option<PathBuf>, expanded: bool) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     spore::logging::init_app("rhizome", tracing::Level::WARN);
+    spore::logging::install_panic_hook("rhizome");
 
     let cli = Cli::parse();
     let span_context = command_span_context(&cli.command);

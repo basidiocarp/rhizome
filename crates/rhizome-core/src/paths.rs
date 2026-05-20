@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 pub fn global_config_path() -> PathBuf {
-    spore::paths::config_path("rhizome")
+    spore::paths::config_path("rhizome").unwrap_or_else(|_| PathBuf::from("."))
 }
 
 pub fn project_config_path(project_root: &Path) -> PathBuf {
@@ -14,7 +14,9 @@ pub fn project_state_dir(project_root: &Path) -> PathBuf {
 }
 
 pub fn managed_bin_dir() -> PathBuf {
-    spore::paths::data_dir("rhizome").join("bin")
+    spore::paths::data_dir("rhizome")
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("bin")
 }
 
 pub fn managed_node_bin_dir(bin_dir: &Path) -> PathBuf {
