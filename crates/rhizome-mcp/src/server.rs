@@ -339,6 +339,7 @@ where
         };
 
         if n == 0 {
+            info!("rhizome: MCP transport closed — stdin EOF");
             break;
         }
 
