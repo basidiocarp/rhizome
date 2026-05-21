@@ -128,7 +128,7 @@ jobs:
 
       - name: Upload macOS diagnostics
         if: failure() && (startsWith(matrix.target, 'x86_64-apple') || startsWith(matrix.target, 'aarch64-apple'))
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: rhizome-${{ matrix.target }}-diagnostics
           path: |
@@ -150,7 +150,7 @@ jobs:
         shell: bash
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: rhizome-${{ matrix.target }}
           path: rhizome-${{ matrix.target }}.${{ matrix.archive }}
@@ -188,13 +188,13 @@ jobs:
         run: cargo generate-rpm -p crates/rhizome-cli
 
       - name: Upload DEB
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: rhizome-deb
           path: target/debian/*.deb
 
       - name: Upload RPM
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: rhizome-rpm
           path: target/generate-rpm/*.rpm
