@@ -96,7 +96,7 @@ impl RhizomeConfig {
 
     /// Check if auto-export is enabled
     pub fn auto_export(&self) -> bool {
-        self.export.auto_export.unwrap_or(true)
+        self.export.auto_export.unwrap_or(false)
     }
 
     /// Get the effective LanguageServerConfig for a language,
