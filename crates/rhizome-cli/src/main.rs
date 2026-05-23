@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use rhizome_core::{
-    CodeIntelligence, HeuristicBackend, HeuristicRegion, Language, Symbol, SymbolKind,
+    CodeIntelligence, HeuristicBackend, HeuristicRegion, Language, Position, Symbol, SymbolKind,
 };
 use rhizome_mcp::McpServer;
 use rhizome_treesitter::TreeSitterBackend;
@@ -172,6 +172,29 @@ enum Commands {
         #[command(subcommand)]
         action: PluginAction,
     },
+    /// Search for symbols matching a name pattern across the project
+    Search {
+        /// Pattern to match symbol names (case-insensitive substring)
+        pattern: String,
+        /// Directory to search (defaults to current directory)
+        #[arg(long, short)]
+        path: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Find all references to the symbol at a file position
+    Refs {
+        /// Path to the source file
+        file: PathBuf,
+        /// Line number (0-based)
+        line: u32,
+        /// Column number (0-based)
+        col: u32,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -231,6 +254,8 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Plugin { action } => match action {
             PluginAction::List => "plugin_list",
         },
+        Commands::Search { .. } => "search",
+        Commands::Refs { .. } => "refs",
     }
 }
 
@@ -257,10 +282,13 @@ fn command_span_context(command: &Commands) -> SpanContext {
                 Some(detect_project_root(project.clone()))
             }
         },
-        Commands::Symbols { file } | Commands::Structure { file } => file
+        Commands::Symbols { file }
+        | Commands::Structure { file }
+        | Commands::Refs { file, .. } => file
             .parent()
             .map(|path| path.to_path_buf())
             .or_else(|| std::env::current_dir().ok()),
+        Commands::Search { path, .. } => path.clone().or_else(|| std::env::current_dir().ok()),
         Commands::Init { .. }
         | Commands::SelfUpdate { .. }
         | Commands::Doctor { .. }
@@ -437,6 +465,89 @@ fn cmd_structure(file: &Path) -> Result<()> {
                 .with_context(|| format!("Failed to get structure from {}", file.display()))?;
             print_heuristic_notice(file);
             print_heuristic_regions(&regions, true);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_search(pattern: &str, path: Option<PathBuf>, json: bool) -> Result<()> {
+    let root = path.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let backend = TreeSitterBackend::new();
+    let syms = backend
+        .search_symbols(pattern, &root)
+        .with_context(|| format!("symbol search failed for pattern '{pattern}'"))?;
+
+    if json {
+        let out: Vec<_> = syms
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "file": s.location.file_path,
+                    "line": s.location.line_start,
+                    "col": s.location.column_start,
+                    "kind": symbol_kind_label(&s.kind),
+                    "name": s.name,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else {
+        for s in &syms {
+            println!(
+                "{}:{}:{} {} {}",
+                s.location.file_path,
+                s.location.line_start,
+                s.location.column_start,
+                symbol_kind_label(&s.kind),
+                s.name
+            );
+        }
+    }
+    Ok(())
+}
+
+fn cmd_refs(file: &Path, line: u32, col: u32, json: bool) -> Result<()> {
+    let backend = TreeSitterBackend::new();
+    let position = Position { line, column: col };
+    let refs = match backend.find_references(file, &position) {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(e).with_context(|| {
+                format!(
+                    "find_references failed for {}:{}:{}",
+                    file.display(),
+                    line,
+                    col
+                )
+            });
+        }
+    };
+
+    if refs.is_empty() {
+        eprintln!(
+            "No references found (tree-sitter backend; run `rhizome lsp install <lang>` for cross-file results)"
+        );
+        if json {
+            println!("[]");
+        }
+        return Ok(());
+    }
+
+    if json {
+        let out: Vec<_> = refs
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "file": r.file_path,
+                    "line": r.line_start,
+                    "col": r.column_start,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else {
+        for r in &refs {
+            println!("{}:{}:{}", r.file_path, r.line_start, r.column_start);
         }
     }
     Ok(())
@@ -939,6 +1050,8 @@ async fn main() -> Result<()> {
         Commands::Plugin { action } => match action {
             PluginAction::List => cmd_plugin_list(),
         },
+        Commands::Search { pattern, path, json } => cmd_search(&pattern, path, json),
+        Commands::Refs { file, line, col, json } => cmd_refs(&file, line, col, json),
     }
 }
 
