@@ -271,6 +271,9 @@ pub fn search_symbols(
 
     let symbols = backend.search_symbols(pattern, &search_path)?;
 
+    // Use >= not == because collect_matching_symbols can add a batch that overshoots the cap.
+    let truncated = symbols.len() >= rhizome_treesitter::MAX_WORKSPACE_SYMBOLS;
+
     let formatted: Vec<Value> = symbols
         .iter()
         .map(|s| {
@@ -284,7 +287,12 @@ pub fn search_symbols(
         })
         .collect();
 
-    let text = serde_json::to_string_pretty(&formatted)?;
+    let response = json!({
+        "truncated": truncated,
+        "symbols": formatted,
+    });
+
+    let text = serde_json::to_string_pretty(&response)?;
     Ok(tool_response(&text))
 }
 

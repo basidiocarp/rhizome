@@ -29,7 +29,7 @@ use crate::symbols::extract_symbols;
 type ParseCache = Mutex<LruCache<(PathBuf, SystemTime), (tree_sitter::Tree, Vec<u8>, Language)>>;
 type WorkspaceCache = Mutex<LruCache<PathBuf, WorkspaceSymbolIndex>>;
 const WORKSPACE_INDEX_SCHEMA_VERSION: u32 = 2;
-const MAX_WORKSPACE_SYMBOLS: usize = 5000;
+pub const MAX_WORKSPACE_SYMBOLS: usize = 5000;
 const MAX_WORKSPACE_INDEX_FILES: usize = 2000;
 const MAX_PARSE_CACHE_ENTRIES: usize = 20;
 
