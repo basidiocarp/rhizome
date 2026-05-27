@@ -41,8 +41,13 @@ pub fn find_references(
     let path = resolve_project_path(file, project_root)?;
     let pos = Position { line, column };
     let locations = backend.find_references(&path, &pos)?;
+    let scope = if backend.capabilities().cross_file_references {
+        "project"
+    } else {
+        "file"
+    };
 
-    let formatted: Vec<Value> = locations
+    let references: Vec<Value> = locations
         .iter()
         .map(|loc| {
             json!({
@@ -55,7 +60,10 @@ pub fn find_references(
         })
         .collect();
 
-    let text = serde_json::to_string_pretty(&formatted)?;
+    let text = serde_json::to_string_pretty(&json!({
+        "scope": scope,
+        "references": references,
+    }))?;
     Ok(tool_response(&text))
 }
 

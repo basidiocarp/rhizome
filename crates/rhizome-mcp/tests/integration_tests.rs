@@ -289,7 +289,15 @@ fn test_find_references() {
         .expect("find_references should succeed");
 
     let text = extract_text(&result);
-    // Should find multiple references to Config
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text).expect("find_references should return valid JSON");
+    let scope = parsed.get("scope").expect("response must have scope field");
+    assert!(
+        scope == "project" || scope == "file",
+        "scope must be 'project' or 'file': {text}"
+    );
+    let refs = parsed.get("references").expect("response must have references field");
+    assert!(refs.is_array(), "references must be an array: {text}");
     assert!(
         text.contains("line_start"),
         "Should return reference locations: {text}"
