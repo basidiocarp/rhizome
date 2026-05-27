@@ -377,6 +377,14 @@ impl LspInstaller {
         _language: &Language,
         binary_name: &str,
     ) -> Result<Option<PathBuf>> {
+        // Reject any path separator or traversal component. contains("..") is intentionally
+        // broad — real binary names never contain ".." in any position.
+        if binary_name.contains('/') || binary_name.contains('\\') || binary_name.contains("..") {
+            return Err(RhizomeError::Config(format!(
+                "binary_name must be a plain filename with no path separators: {binary_name:?}"
+            )));
+        }
+
         // Check if already available
         if let Some(path) = self.find_binary(binary_name) {
             return Ok(Some(path));

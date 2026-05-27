@@ -899,6 +899,22 @@ pub fn move_symbol(
         }
     };
 
+    // Revalidate target before writing — abort if it changed since the backup was taken.
+    match std::fs::read_to_string(&target_path) {
+        Ok(current) if current != target_backup => {
+            return Ok(tool_error(&format!(
+                "target file changed since operation was planned — re-run the operation: {}",
+                target_path.display()
+            )));
+        }
+        Err(e) => {
+            return Ok(tool_error(&format!(
+                "failed to revalidate target file before write: {e}"
+            )));
+        }
+        Ok(_) => {}
+    }
+
     let (inserted_at_line, lines_inserted) = match insert_lines_relative_to_symbol(
         backend,
         &target_path,
@@ -934,6 +950,25 @@ pub fn move_symbol(
             )));
         }
     };
+
+    // Revalidate source before deleting — abort if it changed since the backup was taken.
+    // If the source changed, roll back the target write we just completed.
+    match std::fs::read_to_string(&source_path) {
+        Ok(current) if current != source_backup => {
+            let _ = atomic_write(&target_path, target_backup.as_bytes());
+            return Ok(tool_error(&format!(
+                "source file changed since operation was planned — re-run the operation (target restored): {}",
+                source_path.display()
+            )));
+        }
+        Err(e) => {
+            let _ = atomic_write(&target_path, target_backup.as_bytes());
+            return Ok(tool_error(&format!(
+                "failed to revalidate source file before write (target restored): {e}"
+            )));
+        }
+        Ok(_) => {}
+    }
 
     let (lines_before, lines_after) = match delete_symbol_lines(&source_path, line_start, line_end)
     {

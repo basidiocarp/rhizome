@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::Language;
 use crate::symbol::{Symbol, SymbolKind};
 
 pub const WEIGHT_CONTAINS: f32 = 1.0;
@@ -35,43 +36,13 @@ pub struct CodeGraph {
 }
 
 fn language_from_extension(path: &Path) -> String {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("rs") => "rust".into(),
-        Some("py" | "pyi") => "python".into(),
-        Some("js" | "jsx" | "mjs" | "cjs") => "javascript".into(),
-        Some("ts" | "tsx" | "mts" | "cts") => "typescript".into(),
-        Some("go") => "go".into(),
-        Some("java") => "java".into(),
-        Some("c" | "h") => "c".into(),
-        Some("cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh") => "cpp".into(),
-        Some("rb" | "rake" | "gemspec" | "ru") => "ruby".into(),
-        Some("ex" | "exs") => "elixir".into(),
-        Some("zig" | "zon") => "zig".into(),
-        Some("cs") => "csharp".into(),
-        Some("fs" | "fsi" | "fsx") => "fsharp".into(),
-        Some("swift") => "swift".into(),
-        Some("php") => "php".into(),
-        Some("hs" | "lhs") => "haskell".into(),
-        Some("sh" | "bash" | "zsh") => "bash".into(),
-        Some("tf" | "tfvars") => "terraform".into(),
-        Some("kt" | "kts") => "kotlin".into(),
-        Some("dart") => "dart".into(),
-        Some("lua") => "lua".into(),
-        Some("clj" | "cljs" | "cljc") => "clojure".into(),
-        Some("ml" | "mli") => "ocaml".into(),
-        Some("jl") => "julia".into(),
-        Some("nix") => "nix".into(),
-        Some("gleam") => "gleam".into(),
-        Some("vue") => "vue".into(),
-        Some("svelte") => "svelte".into(),
-        Some("astro") => "astro".into(),
-        Some("prisma") => "prisma".into(),
-        Some("typ" | "typc") => "typst".into(),
-        Some("yaml" | "yml") => "yaml".into(),
-        // Use the full file path as fallback to prevent node collision
-        // when multiple files share the same unrecognized extension.
-        _ => path.to_string_lossy().into_owned(),
-    }
+    // Use the full file path as fallback to prevent node collision
+    // when multiple files share the same unrecognized extension.
+    path.extension()
+        .and_then(|e| e.to_str())
+        .and_then(Language::from_extension)
+        .map(|l| l.lsp_language_id())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
 /// Generate a unique, stable node identifier for a symbol.

@@ -90,7 +90,12 @@ pub fn export_graph(
     let _subprocess_span = subprocess_span("hyphae serve", &span_context).entered();
     let mut client = McpClient::spawn(Tool::Hyphae, &["serve"])
         .map_err(|e| RhizomeError::Other(format!("Failed to spawn hyphae serve: {}", e)))?
-        .with_timeout(Duration::from_secs(10));
+        .with_timeout(Duration::from_secs(
+            std::env::var("RHIZOME_HYPHAE_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+        ));
 
     let result = client
         .call_tool(
@@ -298,5 +303,30 @@ mod tests {
         let text = r#"{"memoir":"code:myapp","concepts_created":3,"links_created":4}"#;
         let err = parse_export_result(text).unwrap_err();
         assert!(err.to_string().contains("structured JSON"));
+    }
+
+    // Requires the septa sibling repo at ../../../septa/ relative to this crate.
+    // Run manually with: cargo test -- --ignored code_graph_schema_version
+    #[test]
+    #[ignore]
+    fn code_graph_schema_version_matches_septa_fixture() {
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../septa/code-graph-v1.schema.json");
+        let content = std::fs::read_to_string(&fixture_path).unwrap_or_else(|e| {
+            panic!(
+                "septa/code-graph-v1.schema.json not found at {}: {e}",
+                fixture_path.display()
+            )
+        });
+        let schema: serde_json::Value =
+            serde_json::from_str(&content).expect("septa fixture should be valid JSON");
+        let fixture_version = schema["properties"]["schema_version"]["const"]
+            .as_str()
+            .expect("septa fixture must have properties.schema_version.const");
+        assert_eq!(
+            fixture_version,
+            CODE_GRAPH_SCHEMA_VERSION,
+            "CODE_GRAPH_SCHEMA_VERSION ({CODE_GRAPH_SCHEMA_VERSION}) does not match septa fixture ({fixture_version}); update one to match the other"
+        );
     }
 }
