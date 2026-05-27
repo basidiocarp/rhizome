@@ -127,14 +127,14 @@ impl BackendSelector {
                 }
             }
             BackendRequirement::RequiresLsp => {
-                let bin_dir = self.bin_dir.clone();
+                let download_enabled = !self.lsp_disabled;
                 let probe = self.probe_language(language);
                 if probe.available {
                     ResolvedBackend::Lsp
                 } else {
                     ResolvedBackend::LspUnavailable {
                         binary: probe.binary.clone(),
-                        hint: lsp_unavailable_hint(&probe.binary, &bin_dir),
+                        hint: lsp_unavailable_hint(&probe.binary, download_enabled),
                     }
                 }
             }
@@ -302,11 +302,20 @@ fn find_binary_in_path(name: &str, bin_dir: &Path) -> Option<PathBuf> {
     which::which_in(name, Some(augmented), ".").ok()
 }
 
-fn lsp_unavailable_hint(binary: &str, _bin_dir: &Path) -> String {
-    format!(
-        "{binary} not found. \
-         Unset RHIZOME_DISABLE_LSP_DOWNLOAD to enable automatic server download."
-    )
+fn lsp_unavailable_hint(binary: &str, download_enabled: bool) -> String {
+    if download_enabled {
+        format!(
+            "{binary} not found. \
+             Auto-install was attempted but the server is still missing. \
+             Run `rhizome lsp install <language>` or install {binary} manually."
+        )
+    } else {
+        format!(
+            "{binary} not found. \
+             Auto-install is disabled (RHIZOME_DISABLE_LSP_DOWNLOAD=1 or config). \
+             Unset it to enable automatic installation, or install {binary} manually."
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
