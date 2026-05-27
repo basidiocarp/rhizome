@@ -296,7 +296,9 @@ fn test_find_references() {
         scope == "project" || scope == "file",
         "scope must be 'project' or 'file': {text}"
     );
-    let refs = parsed.get("references").expect("response must have references field");
+    let refs = parsed
+        .get("references")
+        .expect("response must have references field");
     assert!(refs.is_array(), "references must be an array: {text}");
     assert!(
         text.contains("line_start"),

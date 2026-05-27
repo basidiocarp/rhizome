@@ -324,8 +324,7 @@ mod tests {
             .as_str()
             .expect("septa fixture must have properties.schema_version.const");
         assert_eq!(
-            fixture_version,
-            CODE_GRAPH_SCHEMA_VERSION,
+            fixture_version, CODE_GRAPH_SCHEMA_VERSION,
             "CODE_GRAPH_SCHEMA_VERSION ({CODE_GRAPH_SCHEMA_VERSION}) does not match septa fixture ({fixture_version}); update one to match the other"
         );
     }

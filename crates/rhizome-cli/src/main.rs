@@ -282,12 +282,11 @@ fn command_span_context(command: &Commands) -> SpanContext {
                 Some(detect_project_root(project.clone()))
             }
         },
-        Commands::Symbols { file }
-        | Commands::Structure { file }
-        | Commands::Refs { file, .. } => file
-            .parent()
-            .map(|path| path.to_path_buf())
-            .or_else(|| std::env::current_dir().ok()),
+        Commands::Symbols { file } | Commands::Structure { file } | Commands::Refs { file, .. } => {
+            file.parent()
+                .map(|path| path.to_path_buf())
+                .or_else(|| std::env::current_dir().ok())
+        }
         Commands::Search { path, .. } => path.clone().or_else(|| std::env::current_dir().ok()),
         Commands::Init { .. }
         | Commands::SelfUpdate { .. }
@@ -471,7 +470,8 @@ fn cmd_structure(file: &Path) -> Result<()> {
 }
 
 fn cmd_search(pattern: &str, path: Option<PathBuf>, json: bool) -> Result<()> {
-    let root = path.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let root =
+        path.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let backend = TreeSitterBackend::new();
     let syms = backend
         .search_symbols(pattern, &root)
@@ -1050,8 +1050,17 @@ async fn main() -> Result<()> {
         Commands::Plugin { action } => match action {
             PluginAction::List => cmd_plugin_list(),
         },
-        Commands::Search { pattern, path, json } => cmd_search(&pattern, path, json),
-        Commands::Refs { file, line, col, json } => cmd_refs(&file, line, col, json),
+        Commands::Search {
+            pattern,
+            path,
+            json,
+        } => cmd_search(&pattern, path, json),
+        Commands::Refs {
+            file,
+            line,
+            col,
+            json,
+        } => cmd_refs(&file, line, col, json),
     }
 }
 
