@@ -316,13 +316,19 @@ where
 {
     let mut line = String::new();
 
-    let idle_timeout = Duration::from_secs(
-        std::env::var("RHIZOME_IDLE_TIMEOUT_SECS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .filter(|&v| v > 0)
-            .unwrap_or(600),
-    );
+    // RHIZOME_IDLE_TIMEOUT_SECS controls how long the server waits for a
+    // request before exiting. Default is 14400s (4 hours), covering a full
+    // work session without leaking indefinitely. Set to 0 to disable.
+    let idle_timeout_secs = std::env::var("RHIZOME_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(14400);
+    // 0 means no timeout; map to a duration large enough to never fire.
+    let idle_timeout = Duration::from_secs(if idle_timeout_secs == 0 {
+        u64::MAX / 2
+    } else {
+        idle_timeout_secs
+    });
 
     loop {
         line.clear();
@@ -332,7 +338,7 @@ where
             Err(_) => {
                 info!(
                     "rhizome: idle timeout ({} secs) — exiting",
-                    idle_timeout.as_secs()
+                    idle_timeout_secs
                 );
                 break;
             }
