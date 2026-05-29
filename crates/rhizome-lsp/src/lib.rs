@@ -57,10 +57,21 @@ pub struct CompletionItemJson {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CallHierarchyItemJson {
     pub name: String,
-    pub kind: String,
+    /// Raw LSP SymbolKind integer for lossless round-tripping.
+    pub kind: i32,
+    /// Human-readable kind label for display.
+    pub kind_label: String,
     pub file: String,
     pub line: u32,
     pub column: u32,
+    /// Full declaration range start (line).
+    pub range_start_line: u32,
+    /// Full declaration range start (column).
+    pub range_start_column: u32,
+    /// Full declaration range end (line).
+    pub range_end_line: u32,
+    /// Full declaration range end (column).
+    pub range_end_column: u32,
     /// Raw LSP item preserved for round-tripping to incoming/outgoing calls.
     pub data: Option<serde_json::Value>,
 }
@@ -778,12 +789,22 @@ fn doc_to_string(doc: lsp_types::Documentation) -> String {
 }
 
 fn lsp_call_hierarchy_item_to_json(item: &lsp_types::CallHierarchyItem) -> CallHierarchyItemJson {
+    let kind = serde_json::to_value(item.kind)
+        .ok()
+        .and_then(|v| v.as_i64())
+        .and_then(|v| i32::try_from(v).ok())
+        .unwrap_or(12); // SymbolKind::FUNCTION
     CallHierarchyItemJson {
         name: item.name.clone(),
-        kind: format!("{:?}", item.kind),
+        kind,
+        kind_label: format!("{:?}", item.kind),
         file: item.uri.to_string(),
         line: item.selection_range.start.line,
         column: item.selection_range.start.character,
+        range_start_line: item.range.start.line,
+        range_start_column: item.range.start.character,
+        range_end_line: item.range.end.line,
+        range_end_column: item.range.end.character,
         data: item.data.clone(),
     }
 }
@@ -793,18 +814,35 @@ fn json_to_lsp_call_hierarchy_item(
 ) -> Result<lsp_types::CallHierarchyItem> {
     let uri = item.file.parse::<lsp_types::Uri>()
         .map_err(|_| RhizomeError::LspError(format!("Invalid file URI: {}", item.file)))?;
-    let pos = lsp_types::Position {
+    let selection_pos = lsp_types::Position {
         line: item.line,
         character: item.column,
     };
+    let range = lsp_types::Range {
+        start: lsp_types::Position {
+            line: item.range_start_line,
+            character: item.range_start_column,
+        },
+        end: lsp_types::Position {
+            line: item.range_end_line,
+            character: item.range_end_column,
+        },
+    };
+    let kind: lsp_types::SymbolKind =
+        serde_json::from_value(serde_json::json!(item.kind))
+            .unwrap_or(lsp_types::SymbolKind::FUNCTION);
+
     Ok(lsp_types::CallHierarchyItem {
         name: item.name.clone(),
-        kind: lsp_types::SymbolKind::FUNCTION,
+        kind,
         tags: None,
         detail: None,
         uri,
-        range: lsp_types::Range { start: pos, end: pos },
-        selection_range: lsp_types::Range { start: pos, end: pos },
+        range,
+        selection_range: lsp_types::Range {
+            start: selection_pos,
+            end: selection_pos,
+        },
         data: item.data.clone(),
     })
 }
@@ -966,5 +1004,52 @@ impl CodeIntelligence for LspBackend {
             type_info: true,
             diagnostics: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn call_hierarchy_item_round_trips_kind_and_range() {
+        let uri = "file:///src/lib.rs".parse::<lsp_types::Uri>().unwrap();
+        let item = lsp_types::CallHierarchyItem {
+            name: "my_method".to_string(),
+            kind: lsp_types::SymbolKind::METHOD,
+            tags: None,
+            detail: None,
+            uri,
+            range: lsp_types::Range {
+                start: lsp_types::Position { line: 10, character: 0 },
+                end: lsp_types::Position { line: 25, character: 1 },
+            },
+            selection_range: lsp_types::Range {
+                start: lsp_types::Position { line: 10, character: 4 },
+                end: lsp_types::Position { line: 10, character: 13 },
+            },
+            data: Some(serde_json::json!({"server_data": 42})),
+        };
+
+        let json = lsp_call_hierarchy_item_to_json(&item);
+
+        // Verify the kind serialized to the expected numeric value.
+        let expected_kind_int = serde_json::to_value(lsp_types::SymbolKind::METHOD)
+            .unwrap().as_i64().unwrap() as i32;
+        assert_eq!(json.kind, expected_kind_int);
+        assert_eq!(json.range_start_line, 10);
+        assert_eq!(json.range_start_column, 0);
+        assert_eq!(json.range_end_line, 25);
+        assert_eq!(json.range_end_column, 1);
+        assert_eq!(json.line, 10);
+        assert_eq!(json.column, 4);
+
+        let restored = json_to_lsp_call_hierarchy_item(&json).unwrap();
+        assert_eq!(restored.kind, lsp_types::SymbolKind::METHOD);
+        assert_eq!(restored.range.start.line, 10);
+        assert_eq!(restored.range.start.character, 0);
+        assert_eq!(restored.range.end.line, 25);
+        assert_eq!(restored.range.end.character, 1);
+        assert_eq!(restored.data, Some(serde_json::json!({"server_data": 42})));
     }
 }
