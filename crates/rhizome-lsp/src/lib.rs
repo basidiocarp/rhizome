@@ -430,11 +430,8 @@ impl LspBackend {
                 .await
                 .map_err(|e| RhizomeError::LspError(e.to_string()))?;
             Ok(help.map(|h| {
-                let signatures: Vec<String> = h
-                    .signatures
-                    .iter()
-                    .map(|sig| sig.label.clone())
-                    .collect();
+                let signatures: Vec<String> =
+                    h.signatures.iter().map(|sig| sig.label.clone()).collect();
                 serde_json::json!({
                     "signatures": signatures,
                     "active_signature": h.active_signature,
@@ -812,7 +809,9 @@ fn lsp_call_hierarchy_item_to_json(item: &lsp_types::CallHierarchyItem) -> CallH
 fn json_to_lsp_call_hierarchy_item(
     item: &CallHierarchyItemJson,
 ) -> Result<lsp_types::CallHierarchyItem> {
-    let uri = item.file.parse::<lsp_types::Uri>()
+    let uri = item
+        .file
+        .parse::<lsp_types::Uri>()
         .map_err(|_| RhizomeError::LspError(format!("Invalid file URI: {}", item.file)))?;
     let selection_pos = lsp_types::Position {
         line: item.line,
@@ -828,9 +827,8 @@ fn json_to_lsp_call_hierarchy_item(
             character: item.range_end_column,
         },
     };
-    let kind: lsp_types::SymbolKind =
-        serde_json::from_value(serde_json::json!(item.kind))
-            .unwrap_or(lsp_types::SymbolKind::FUNCTION);
+    let kind: lsp_types::SymbolKind = serde_json::from_value(serde_json::json!(item.kind))
+        .unwrap_or(lsp_types::SymbolKind::FUNCTION);
 
     Ok(lsp_types::CallHierarchyItem {
         name: item.name.clone(),
@@ -1021,12 +1019,24 @@ mod tests {
             detail: None,
             uri,
             range: lsp_types::Range {
-                start: lsp_types::Position { line: 10, character: 0 },
-                end: lsp_types::Position { line: 25, character: 1 },
+                start: lsp_types::Position {
+                    line: 10,
+                    character: 0,
+                },
+                end: lsp_types::Position {
+                    line: 25,
+                    character: 1,
+                },
             },
             selection_range: lsp_types::Range {
-                start: lsp_types::Position { line: 10, character: 4 },
-                end: lsp_types::Position { line: 10, character: 13 },
+                start: lsp_types::Position {
+                    line: 10,
+                    character: 4,
+                },
+                end: lsp_types::Position {
+                    line: 10,
+                    character: 13,
+                },
             },
             data: Some(serde_json::json!({"server_data": 42})),
         };
@@ -1035,7 +1045,9 @@ mod tests {
 
         // Verify the kind serialized to the expected numeric value.
         let expected_kind_int = serde_json::to_value(lsp_types::SymbolKind::METHOD)
-            .unwrap().as_i64().unwrap() as i32;
+            .unwrap()
+            .as_i64()
+            .unwrap() as i32;
         assert_eq!(json.kind, expected_kind_int);
         assert_eq!(json.range_start_line, 10);
         assert_eq!(json.range_start_column, 0);

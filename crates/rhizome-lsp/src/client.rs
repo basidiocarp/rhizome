@@ -148,17 +148,15 @@ impl LspClient {
                         ..Default::default()
                     }),
                     code_action: Some(lsp_types::CodeActionClientCapabilities {
-                        code_action_literal_support: Some(
-                            lsp_types::CodeActionLiteralSupport {
-                                code_action_kind: lsp_types::CodeActionKindLiteralSupport {
-                                    value_set: vec![
-                                        lsp_types::CodeActionKind::QUICKFIX.as_str().to_string(),
-                                        lsp_types::CodeActionKind::REFACTOR.as_str().to_string(),
-                                        lsp_types::CodeActionKind::SOURCE.as_str().to_string(),
-                                    ],
-                                },
+                        code_action_literal_support: Some(lsp_types::CodeActionLiteralSupport {
+                            code_action_kind: lsp_types::CodeActionKindLiteralSupport {
+                                value_set: vec![
+                                    lsp_types::CodeActionKind::QUICKFIX.as_str().to_string(),
+                                    lsp_types::CodeActionKind::REFACTOR.as_str().to_string(),
+                                    lsp_types::CodeActionKind::SOURCE.as_str().to_string(),
+                                ],
                             },
-                        ),
+                        }),
                         ..Default::default()
                     }),
                     ..Default::default()

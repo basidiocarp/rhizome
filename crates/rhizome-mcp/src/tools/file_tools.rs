@@ -367,17 +367,19 @@ pub fn get_hover(
         .get("line")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
-    let column = args
-        .get("column")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let column =
+        args.get("column")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
 
     let path_buf = resolve_path(file, project_root)?;
     let position = Position { line, column };
 
     match lsp.hover_with_root(&path_buf, &position, project_root)? {
         Some(text) => Ok(tool_response(&text)),
-        None => Ok(tool_response("No hover information available at this position.")),
+        None => Ok(tool_response(
+            "No hover information available at this position.",
+        )),
     }
 }
 
@@ -394,10 +396,10 @@ pub fn go_to_implementation(
         .get("line")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
-    let column = args
-        .get("column")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let column =
+        args.get("column")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
     let path_buf = resolve_path(file, project_root)?;
     let position = Position { line, column };
     let locs = lsp.go_to_implementation_with_root(&path_buf, &position, project_root)?;
@@ -430,10 +432,10 @@ pub fn go_to_type_definition(
         .get("line")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
-    let column = args
-        .get("column")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let column =
+        args.get("column")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
     let path_buf = resolve_path(file, project_root)?;
     let position = Position { line, column };
     let locs = lsp.go_to_type_definition_with_root(&path_buf, &position, project_root)?;
@@ -466,10 +468,10 @@ pub fn get_completions(
         .get("line")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
-    let column = args
-        .get("column")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let column =
+        args.get("column")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
     let trigger_character = args
         .get("trigger_character")
         .and_then(|v| v.as_str())
@@ -494,10 +496,10 @@ pub fn get_signature_help(
         .get("line")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
-    let column = args
-        .get("column")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let column =
+        args.get("column")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
     let path_buf = resolve_path(file, project_root)?;
     let position = Position { line, column };
     match lsp.signature_help_with_root(&path_buf, &position, project_root)? {
@@ -505,7 +507,9 @@ pub fn get_signature_help(
             let text = serde_json::to_string_pretty(&help)?;
             Ok(tool_response(&text))
         }
-        None => Ok(tool_response("No signature help available at this position.")),
+        None => Ok(tool_response(
+            "No signature help available at this position.",
+        )),
     }
 }
 
@@ -522,10 +526,10 @@ pub fn prepare_call_hierarchy(
         .get("line")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
-    let column = args
-        .get("column")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let column =
+        args.get("column")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
     let path_buf = resolve_path(file, project_root)?;
     let position = Position { line, column };
     let items = lsp.prepare_call_hierarchy_with_root(&path_buf, &position, project_root)?;
@@ -575,22 +579,31 @@ pub fn get_code_actions(
     let start_line = args
         .get("start_line")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: start_line"))? as u32;
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: start_line"))?
+        as u32;
     let start_column = args
         .get("start_column")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: start_column"))? as u32;
-    let end_line = args
-        .get("end_line")
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: end_line"))? as u32;
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: start_column"))?
+        as u32;
+    let end_line =
+        args.get("end_line")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: end_line"))? as u32;
     let end_column = args
         .get("end_column")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: end_column"))? as u32;
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: end_column"))?
+        as u32;
     let path_buf = resolve_path(file, project_root)?;
-    let start = Position { line: start_line, column: start_column };
-    let end = Position { line: end_line, column: end_column };
+    let start = Position {
+        line: start_line,
+        column: start_column,
+    };
+    let end = Position {
+        line: end_line,
+        column: end_column,
+    };
     let actions = lsp.code_actions_with_root(&path_buf, &start, &end, project_root)?;
     let text = serde_json::to_string_pretty(&actions)?;
     Ok(tool_response(&text))
@@ -598,9 +611,16 @@ pub fn get_code_actions(
 
 fn lsp_required_error(tool_name: &str) -> Value {
     let suggestion = match tool_name {
-        "rename_symbol" | "get_hover" | "go_to_implementation" | "go_to_type_definition"
-        | "get_completions" | "get_signature_help" | "prepare_call_hierarchy"
-        | "get_incoming_calls" | "get_outgoing_calls" | "get_code_actions" => {
+        "rename_symbol"
+        | "get_hover"
+        | "go_to_implementation"
+        | "go_to_type_definition"
+        | "get_completions"
+        | "get_signature_help"
+        | "prepare_call_hierarchy"
+        | "get_incoming_calls"
+        | "get_outgoing_calls"
+        | "get_code_actions" => {
             "LSP required for this operation. \
              Install rust-analyzer for Rust or pyright for Python support."
         }

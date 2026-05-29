@@ -225,9 +225,8 @@ impl ToolDispatcher {
             "rename_symbol" => self.dispatch_lsp_required(name, &args, |lsp, a| {
                 file_tools::rename_symbol(Some(lsp), a, &root)
             }),
-            "get_hover" => self.dispatch_lsp_required(name, &args, |lsp, a| {
-                file_tools::get_hover(lsp, a, &root)
-            }),
+            "get_hover" => self
+                .dispatch_lsp_required(name, &args, |lsp, a| file_tools::get_hover(lsp, a, &root)),
             "go_to_implementation" => self.dispatch_lsp_required(name, &args, |lsp, a| {
                 file_tools::go_to_implementation(lsp, a, &root)
             }),
