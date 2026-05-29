@@ -392,6 +392,179 @@ impl LspClient {
             .await
     }
 
+    pub async fn go_to_implementation(
+        &self,
+        file: &Path,
+        position: lsp_types::Position,
+    ) -> Result<Option<Vec<lsp_types::Location>>> {
+        let uri = path_to_lsp_uri(file)?;
+        let params = lsp_types::request::GotoImplementationParams {
+            text_document_position_params: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                position,
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        let result = self
+            .send_request::<lsp_types::request::GotoImplementation>(params)
+            .await?;
+        Ok(match result {
+            Some(lsp_types::GotoDefinitionResponse::Scalar(loc)) => Some(vec![loc]),
+            Some(lsp_types::GotoDefinitionResponse::Array(locs)) => Some(locs),
+            Some(lsp_types::GotoDefinitionResponse::Link(links)) => Some(
+                links
+                    .into_iter()
+                    .map(|l| lsp_types::Location {
+                        uri: l.target_uri,
+                        range: l.target_range,
+                    })
+                    .collect(),
+            ),
+            None => None,
+        })
+    }
+
+    pub async fn go_to_type_definition(
+        &self,
+        file: &Path,
+        position: lsp_types::Position,
+    ) -> Result<Option<Vec<lsp_types::Location>>> {
+        let uri = path_to_lsp_uri(file)?;
+        let params = lsp_types::request::GotoTypeDefinitionParams {
+            text_document_position_params: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                position,
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        let result = self
+            .send_request::<lsp_types::request::GotoTypeDefinition>(params)
+            .await?;
+        Ok(match result {
+            Some(lsp_types::GotoDefinitionResponse::Scalar(loc)) => Some(vec![loc]),
+            Some(lsp_types::GotoDefinitionResponse::Array(locs)) => Some(locs),
+            Some(lsp_types::GotoDefinitionResponse::Link(links)) => Some(
+                links
+                    .into_iter()
+                    .map(|l| lsp_types::Location {
+                        uri: l.target_uri,
+                        range: l.target_range,
+                    })
+                    .collect(),
+            ),
+            None => None,
+        })
+    }
+
+    pub async fn completion(
+        &self,
+        file: &Path,
+        position: lsp_types::Position,
+        trigger_character: Option<char>,
+    ) -> Result<Option<lsp_types::CompletionResponse>> {
+        let uri = path_to_lsp_uri(file)?;
+        let trigger_kind = if trigger_character.is_some() {
+            lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER
+        } else {
+            lsp_types::CompletionTriggerKind::INVOKED
+        };
+        let params = lsp_types::CompletionParams {
+            text_document_position: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                position,
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: Some(lsp_types::CompletionContext {
+                trigger_kind,
+                trigger_character: trigger_character.map(|c| c.to_string()),
+            }),
+        };
+        self.send_request::<lsp_types::request::Completion>(params)
+            .await
+    }
+
+    pub async fn signature_help(
+        &self,
+        file: &Path,
+        position: lsp_types::Position,
+    ) -> Result<Option<lsp_types::SignatureHelp>> {
+        let uri = path_to_lsp_uri(file)?;
+        let params = lsp_types::SignatureHelpParams {
+            text_document_position_params: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                position,
+            },
+            work_done_progress_params: Default::default(),
+            context: None,
+        };
+        self.send_request::<lsp_types::request::SignatureHelpRequest>(params)
+            .await
+    }
+
+    pub async fn prepare_call_hierarchy(
+        &self,
+        file: &Path,
+        position: lsp_types::Position,
+    ) -> Result<Option<Vec<lsp_types::CallHierarchyItem>>> {
+        let uri = path_to_lsp_uri(file)?;
+        let params = lsp_types::CallHierarchyPrepareParams {
+            text_document_position_params: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                position,
+            },
+            work_done_progress_params: Default::default(),
+        };
+        self.send_request::<lsp_types::request::CallHierarchyPrepare>(params)
+            .await
+    }
+
+    pub async fn incoming_calls(
+        &self,
+        item: lsp_types::CallHierarchyItem,
+    ) -> Result<Option<Vec<lsp_types::CallHierarchyIncomingCall>>> {
+        let params = lsp_types::CallHierarchyIncomingCallsParams {
+            item,
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        self.send_request::<lsp_types::request::CallHierarchyIncomingCalls>(params)
+            .await
+    }
+
+    pub async fn outgoing_calls(
+        &self,
+        item: lsp_types::CallHierarchyItem,
+    ) -> Result<Option<Vec<lsp_types::CallHierarchyOutgoingCall>>> {
+        let params = lsp_types::CallHierarchyOutgoingCallsParams {
+            item,
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        self.send_request::<lsp_types::request::CallHierarchyOutgoingCalls>(params)
+            .await
+    }
+
+    pub async fn code_actions(
+        &self,
+        file: &Path,
+        range: lsp_types::Range,
+        context: lsp_types::CodeActionContext,
+    ) -> Result<Option<Vec<lsp_types::CodeActionOrCommand>>> {
+        let uri = path_to_lsp_uri(file)?;
+        let params = lsp_types::CodeActionParams {
+            text_document: lsp_types::TextDocumentIdentifier { uri },
+            range,
+            context,
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        self.send_request::<lsp_types::request::CodeActionRequest>(params)
+            .await
+    }
+
     /// Request a rename at a position.
     pub async fn rename(
         &self,

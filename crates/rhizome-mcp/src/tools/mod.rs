@@ -228,6 +228,30 @@ impl ToolDispatcher {
             "get_hover" => self.dispatch_lsp_required(name, &args, |lsp, a| {
                 file_tools::get_hover(lsp, a, &root)
             }),
+            "go_to_implementation" => self.dispatch_lsp_required(name, &args, |lsp, a| {
+                file_tools::go_to_implementation(lsp, a, &root)
+            }),
+            "go_to_type_definition" => self.dispatch_lsp_required(name, &args, |lsp, a| {
+                file_tools::go_to_type_definition(lsp, a, &root)
+            }),
+            "get_completions" => self.dispatch_lsp_required(name, &args, |lsp, a| {
+                file_tools::get_completions(lsp, a, &root)
+            }),
+            "get_signature_help" => self.dispatch_lsp_required(name, &args, |lsp, a| {
+                file_tools::get_signature_help(lsp, a, &root)
+            }),
+            "prepare_call_hierarchy" => self.dispatch_lsp_required(name, &args, |lsp, a| {
+                file_tools::prepare_call_hierarchy(lsp, a, &root)
+            }),
+            "get_incoming_calls" => self.dispatch_lsp_required(name, &args, |lsp, a| {
+                file_tools::get_incoming_calls(lsp, a, &root)
+            }),
+            "get_outgoing_calls" => self.dispatch_lsp_required(name, &args, |lsp, a| {
+                file_tools::get_outgoing_calls(lsp, a, &root)
+            }),
+            "get_code_actions" => self.dispatch_lsp_required(name, &args, |lsp, a| {
+                file_tools::get_code_actions(lsp, a, &root)
+            }),
 
             // ── Edit tools ─────────────────────────────────────────────
             "replace_symbol_body" => {

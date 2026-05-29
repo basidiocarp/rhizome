@@ -44,6 +44,47 @@ pub struct LspBackend {
     opened_uris: Arc<std::sync::Mutex<OpenedUrisMap>>,
 }
 
+/// A single completion item returned by the LSP server.
+#[derive(serde::Serialize)]
+pub struct CompletionItemJson {
+    pub label: String,
+    pub kind: Option<String>,
+    pub detail: Option<String>,
+    pub documentation: Option<String>,
+}
+
+/// A call hierarchy item with enough data to pass back to incoming/outgoing calls.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CallHierarchyItemJson {
+    pub name: String,
+    pub kind: String,
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    /// Raw LSP item preserved for round-tripping to incoming/outgoing calls.
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+pub struct IncomingCallJson {
+    pub caller: CallHierarchyItemJson,
+    pub ranges: Vec<(u32, u32)>,
+}
+
+#[derive(serde::Serialize)]
+pub struct OutgoingCallJson {
+    pub callee: CallHierarchyItemJson,
+    pub ranges: Vec<(u32, u32)>,
+}
+
+/// A code action returned by the LSP server.
+#[derive(serde::Serialize)]
+pub struct CodeActionJson {
+    pub title: String,
+    pub kind: Option<String>,
+    pub is_preferred: Option<bool>,
+}
+
 impl LspBackend {
     pub fn new(workspace_root: PathBuf, handle: tokio::runtime::Handle) -> Self {
         Self {
@@ -242,6 +283,312 @@ impl LspBackend {
         })
     }
 
+    /// Get implementation locations for a symbol using a specific workspace root.
+    pub fn go_to_implementation_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        workspace_root: &Path,
+    ) -> Result<Vec<Location>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let lsp_pos = lsp_types::Position {
+            line: position.line,
+            character: position.column,
+        };
+        self.run_blocking(async {
+            let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let locs = client
+                .go_to_implementation(&file, lsp_pos)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            Ok(locs
+                .unwrap_or_default()
+                .iter()
+                .map(lsp_location_to_location)
+                .collect())
+        })
+    }
+
+    /// Get type definition locations for a symbol using a specific workspace root.
+    pub fn go_to_type_definition_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        workspace_root: &Path,
+    ) -> Result<Vec<Location>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let lsp_pos = lsp_types::Position {
+            line: position.line,
+            character: position.column,
+        };
+        self.run_blocking(async {
+            let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let locs = client
+                .go_to_type_definition(&file, lsp_pos)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            Ok(locs
+                .unwrap_or_default()
+                .iter()
+                .map(lsp_location_to_location)
+                .collect())
+        })
+    }
+
+    /// Get completion items at a position using a specific workspace root.
+    pub fn completion_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        trigger_character: Option<char>,
+        workspace_root: &Path,
+    ) -> Result<Vec<CompletionItemJson>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let lsp_pos = lsp_types::Position {
+            line: position.line,
+            character: position.column,
+        };
+        self.run_blocking(async {
+            let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let response = client
+                .completion(&file, lsp_pos, trigger_character)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let items: Vec<lsp_types::CompletionItem> = match response {
+                Some(lsp_types::CompletionResponse::Array(items)) => items,
+                Some(lsp_types::CompletionResponse::List(list)) => list.items,
+                None => vec![],
+            };
+            Ok(items
+                .into_iter()
+                .take(50)
+                .map(|item| CompletionItemJson {
+                    label: item.label,
+                    kind: item.kind.map(completion_kind_to_string),
+                    detail: item.detail,
+                    documentation: item.documentation.map(doc_to_string),
+                })
+                .collect())
+        })
+    }
+
+    /// Get signature help at a position using a specific workspace root.
+    pub fn signature_help_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        workspace_root: &Path,
+    ) -> Result<Option<serde_json::Value>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let lsp_pos = lsp_types::Position {
+            line: position.line,
+            character: position.column,
+        };
+        self.run_blocking(async {
+            let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let help = client
+                .signature_help(&file, lsp_pos)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            Ok(help.map(|h| {
+                let signatures: Vec<String> = h
+                    .signatures
+                    .iter()
+                    .map(|sig| sig.label.clone())
+                    .collect();
+                serde_json::json!({
+                    "signatures": signatures,
+                    "active_signature": h.active_signature,
+                    "active_parameter": h.active_parameter,
+                })
+            }))
+        })
+    }
+
+    /// Prepare call hierarchy items at a position using a specific workspace root.
+    pub fn prepare_call_hierarchy_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        workspace_root: &Path,
+    ) -> Result<Vec<CallHierarchyItemJson>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let lsp_pos = lsp_types::Position {
+            line: position.line,
+            character: position.column,
+        };
+        self.run_blocking(async {
+            let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let items = client
+                .prepare_call_hierarchy(&file, lsp_pos)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            Ok(items
+                .unwrap_or_default()
+                .iter()
+                .map(lsp_call_hierarchy_item_to_json)
+                .collect())
+        })
+    }
+
+    /// Get incoming callers for a call hierarchy item.
+    pub fn incoming_calls_with_root(
+        &self,
+        item_json: &CallHierarchyItemJson,
+        workspace_root: &Path,
+    ) -> Result<Vec<IncomingCallJson>> {
+        let root = workspace_root.to_path_buf();
+        let lsp_item = json_to_lsp_call_hierarchy_item(item_json)?;
+        self.run_blocking(async {
+            let mut mgr = self.manager.lock().await;
+            // Use a heuristic language for the manager lookup based on file extension
+            let file = std::path::PathBuf::from(&item_json.file.replace("file://", ""));
+            let lang = detect_language(&file).unwrap_or(Language::Rust);
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let calls = client
+                .incoming_calls(lsp_item)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            Ok(calls
+                .unwrap_or_default()
+                .into_iter()
+                .map(|c| IncomingCallJson {
+                    caller: lsp_call_hierarchy_item_to_json(&c.from),
+                    ranges: c
+                        .from_ranges
+                        .iter()
+                        .map(|r| (r.start.line, r.start.character))
+                        .collect(),
+                })
+                .collect())
+        })
+    }
+
+    /// Get outgoing callees for a call hierarchy item.
+    pub fn outgoing_calls_with_root(
+        &self,
+        item_json: &CallHierarchyItemJson,
+        workspace_root: &Path,
+    ) -> Result<Vec<OutgoingCallJson>> {
+        let root = workspace_root.to_path_buf();
+        let lsp_item = json_to_lsp_call_hierarchy_item(item_json)?;
+        self.run_blocking(async {
+            let mut mgr = self.manager.lock().await;
+            let file = std::path::PathBuf::from(&item_json.file.replace("file://", ""));
+            let lang = detect_language(&file).unwrap_or(Language::Rust);
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let calls = client
+                .outgoing_calls(lsp_item)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            Ok(calls
+                .unwrap_or_default()
+                .into_iter()
+                .map(|c| OutgoingCallJson {
+                    callee: lsp_call_hierarchy_item_to_json(&c.to),
+                    ranges: c
+                        .from_ranges
+                        .iter()
+                        .map(|r| (r.start.line, r.start.character))
+                        .collect(),
+                })
+                .collect())
+        })
+    }
+
+    /// Get code actions for a range using a specific workspace root.
+    pub fn code_actions_with_root(
+        &self,
+        file: &Path,
+        start: &Position,
+        end: &Position,
+        workspace_root: &Path,
+    ) -> Result<Vec<CodeActionJson>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let range = lsp_types::Range {
+            start: lsp_types::Position {
+                line: start.line,
+                character: start.column,
+            },
+            end: lsp_types::Position {
+                line: end.line,
+                character: end.column,
+            },
+        };
+        let context = lsp_types::CodeActionContext {
+            diagnostics: vec![],
+            only: None,
+            trigger_kind: None,
+        };
+        self.run_blocking(async {
+            let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let actions = client
+                .code_actions(&file, range, context)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            Ok(actions
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|a| match a {
+                    lsp_types::CodeActionOrCommand::CodeAction(action) => Some(CodeActionJson {
+                        title: action.title,
+                        kind: action.kind.map(|k| k.as_str().to_string()),
+                        is_preferred: action.is_preferred,
+                    }),
+                    lsp_types::CodeActionOrCommand::Command(_) => None,
+                })
+                .collect())
+        })
+    }
+
     /// Get diagnostics using a specific workspace root.
     pub fn get_diagnostics_with_root(
         &self,
@@ -389,6 +736,77 @@ fn detect_language(file: &Path) -> Result<Language> {
         RhizomeError::ParseError(format!("Cannot detect language for: {}", file.display()))
     })?;
     Language::from_extension(ext).ok_or_else(|| RhizomeError::UnsupportedLanguage(ext.to_string()))
+}
+
+fn completion_kind_to_string(kind: lsp_types::CompletionItemKind) -> String {
+    match kind {
+        lsp_types::CompletionItemKind::TEXT => "Text",
+        lsp_types::CompletionItemKind::METHOD => "Method",
+        lsp_types::CompletionItemKind::FUNCTION => "Function",
+        lsp_types::CompletionItemKind::CONSTRUCTOR => "Constructor",
+        lsp_types::CompletionItemKind::FIELD => "Field",
+        lsp_types::CompletionItemKind::VARIABLE => "Variable",
+        lsp_types::CompletionItemKind::CLASS => "Class",
+        lsp_types::CompletionItemKind::INTERFACE => "Interface",
+        lsp_types::CompletionItemKind::MODULE => "Module",
+        lsp_types::CompletionItemKind::PROPERTY => "Property",
+        lsp_types::CompletionItemKind::UNIT => "Unit",
+        lsp_types::CompletionItemKind::VALUE => "Value",
+        lsp_types::CompletionItemKind::ENUM => "Enum",
+        lsp_types::CompletionItemKind::KEYWORD => "Keyword",
+        lsp_types::CompletionItemKind::SNIPPET => "Snippet",
+        lsp_types::CompletionItemKind::COLOR => "Color",
+        lsp_types::CompletionItemKind::FILE => "File",
+        lsp_types::CompletionItemKind::REFERENCE => "Reference",
+        lsp_types::CompletionItemKind::FOLDER => "Folder",
+        lsp_types::CompletionItemKind::ENUM_MEMBER => "EnumMember",
+        lsp_types::CompletionItemKind::CONSTANT => "Constant",
+        lsp_types::CompletionItemKind::STRUCT => "Struct",
+        lsp_types::CompletionItemKind::EVENT => "Event",
+        lsp_types::CompletionItemKind::OPERATOR => "Operator",
+        lsp_types::CompletionItemKind::TYPE_PARAMETER => "TypeParameter",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+fn doc_to_string(doc: lsp_types::Documentation) -> String {
+    match doc {
+        lsp_types::Documentation::String(s) => s,
+        lsp_types::Documentation::MarkupContent(m) => m.value,
+    }
+}
+
+fn lsp_call_hierarchy_item_to_json(item: &lsp_types::CallHierarchyItem) -> CallHierarchyItemJson {
+    CallHierarchyItemJson {
+        name: item.name.clone(),
+        kind: format!("{:?}", item.kind),
+        file: item.uri.to_string(),
+        line: item.selection_range.start.line,
+        column: item.selection_range.start.character,
+        data: item.data.clone(),
+    }
+}
+
+fn json_to_lsp_call_hierarchy_item(
+    item: &CallHierarchyItemJson,
+) -> Result<lsp_types::CallHierarchyItem> {
+    let uri = item.file.parse::<lsp_types::Uri>()
+        .map_err(|_| RhizomeError::LspError(format!("Invalid file URI: {}", item.file)))?;
+    let pos = lsp_types::Position {
+        line: item.line,
+        character: item.column,
+    };
+    Ok(lsp_types::CallHierarchyItem {
+        name: item.name.clone(),
+        kind: lsp_types::SymbolKind::FUNCTION,
+        tags: None,
+        detail: None,
+        uri,
+        range: lsp_types::Range { start: pos, end: pos },
+        selection_range: lsp_types::Range { start: pos, end: pos },
+        data: item.data.clone(),
+    })
 }
 
 impl CodeIntelligence for LspBackend {

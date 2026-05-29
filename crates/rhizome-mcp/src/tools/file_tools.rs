@@ -72,6 +72,167 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 idempotent_hint: true,
             },
         },
+        ToolSchema {
+            name: "go_to_implementation".into(),
+            title: Some("Go To Implementation".to_string()),
+            description: "Find implementations of an interface or abstract method (requires LSP)".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "line": { "type": "number", "description": "Line number (0-based)" },
+                    "column": { "type": "number", "description": "Column number (0-based)" }
+                },
+                "required": ["file", "line", "column"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
+        ToolSchema {
+            name: "go_to_type_definition".into(),
+            title: Some("Go To Type Definition".to_string()),
+            description: "Jump to the type definition of a symbol (requires LSP)".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "line": { "type": "number", "description": "Line number (0-based)" },
+                    "column": { "type": "number", "description": "Column number (0-based)" }
+                },
+                "required": ["file", "line", "column"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
+        ToolSchema {
+            name: "get_completions".into(),
+            title: Some("Get Completions".to_string()),
+            description: "Get completion items at a position (requires LSP). Returns at most 50 items.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "line": { "type": "number", "description": "Line number (0-based)" },
+                    "column": { "type": "number", "description": "Column number (0-based)" },
+                    "trigger_character": {
+                        "type": "string",
+                        "description": "Single character that triggered completion (e.g. '.', '::')",
+                        "maxLength": 1
+                    }
+                },
+                "required": ["file", "line", "column"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
+        ToolSchema {
+            name: "get_signature_help".into(),
+            title: Some("Get Signature Help".to_string()),
+            description: "Get parameter information for a function call at a position (requires LSP)".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "line": { "type": "number", "description": "Line number (0-based)" },
+                    "column": { "type": "number", "description": "Column number (0-based)" }
+                },
+                "required": ["file", "line", "column"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
+        ToolSchema {
+            name: "prepare_call_hierarchy".into(),
+            title: Some("Prepare Call Hierarchy".to_string()),
+            description: "Prepare call hierarchy items at a position. Use the returned items with get_incoming_calls or get_outgoing_calls (requires LSP).".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "line": { "type": "number", "description": "Line number (0-based)" },
+                    "column": { "type": "number", "description": "Column number (0-based)" }
+                },
+                "required": ["file", "line", "column"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
+        ToolSchema {
+            name: "get_incoming_calls".into(),
+            title: Some("Get Incoming Calls".to_string()),
+            description: "Get callers of a function from a call hierarchy item (requires LSP).".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "item": {
+                        "type": "object",
+                        "description": "A CallHierarchyItem returned by prepare_call_hierarchy"
+                    }
+                },
+                "required": ["item"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
+        ToolSchema {
+            name: "get_outgoing_calls".into(),
+            title: Some("Get Outgoing Calls".to_string()),
+            description: "Get functions called by a function from a call hierarchy item (requires LSP).".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "item": {
+                        "type": "object",
+                        "description": "A CallHierarchyItem returned by prepare_call_hierarchy"
+                    }
+                },
+                "required": ["item"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
+        ToolSchema {
+            name: "get_code_actions".into(),
+            title: Some("Get Code Actions".to_string()),
+            description: "Get available code actions (quick fixes, refactors) for a range (requires LSP). Filters to CodeAction objects only.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "start_line": { "type": "number", "description": "Start line (0-based)" },
+                    "start_column": { "type": "number", "description": "Start column (0-based)" },
+                    "end_line": { "type": "number", "description": "End line (0-based)" },
+                    "end_column": { "type": "number", "description": "End column (0-based)" }
+                },
+                "required": ["file", "start_line", "start_column", "end_line", "end_column"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
     ]
 }
 
@@ -220,9 +381,226 @@ pub fn get_hover(
     }
 }
 
+pub fn go_to_implementation(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = args
+        .get("file")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
+    let line = args
+        .get("line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
+    let column = args
+        .get("column")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let path_buf = resolve_path(file, project_root)?;
+    let position = Position { line, column };
+    let locs = lsp.go_to_implementation_with_root(&path_buf, &position, project_root)?;
+    let formatted: Vec<Value> = locs
+        .iter()
+        .map(|l| {
+            json!({
+                "file": l.file_path,
+                "line_start": l.line_start,
+                "line_end": l.line_end,
+                "column_start": l.column_start,
+                "column_end": l.column_end,
+            })
+        })
+        .collect();
+    let text = serde_json::to_string_pretty(&formatted)?;
+    Ok(tool_response(&text))
+}
+
+pub fn go_to_type_definition(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = args
+        .get("file")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
+    let line = args
+        .get("line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
+    let column = args
+        .get("column")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let path_buf = resolve_path(file, project_root)?;
+    let position = Position { line, column };
+    let locs = lsp.go_to_type_definition_with_root(&path_buf, &position, project_root)?;
+    let formatted: Vec<Value> = locs
+        .iter()
+        .map(|l| {
+            json!({
+                "file": l.file_path,
+                "line_start": l.line_start,
+                "line_end": l.line_end,
+                "column_start": l.column_start,
+                "column_end": l.column_end,
+            })
+        })
+        .collect();
+    let text = serde_json::to_string_pretty(&formatted)?;
+    Ok(tool_response(&text))
+}
+
+pub fn get_completions(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = args
+        .get("file")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
+    let line = args
+        .get("line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
+    let column = args
+        .get("column")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let trigger_character = args
+        .get("trigger_character")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.chars().next());
+    let path_buf = resolve_path(file, project_root)?;
+    let position = Position { line, column };
+    let items = lsp.completion_with_root(&path_buf, &position, trigger_character, project_root)?;
+    let text = serde_json::to_string_pretty(&items)?;
+    Ok(tool_response(&text))
+}
+
+pub fn get_signature_help(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = args
+        .get("file")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
+    let line = args
+        .get("line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
+    let column = args
+        .get("column")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let path_buf = resolve_path(file, project_root)?;
+    let position = Position { line, column };
+    match lsp.signature_help_with_root(&path_buf, &position, project_root)? {
+        Some(help) => {
+            let text = serde_json::to_string_pretty(&help)?;
+            Ok(tool_response(&text))
+        }
+        None => Ok(tool_response("No signature help available at this position.")),
+    }
+}
+
+pub fn prepare_call_hierarchy(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = args
+        .get("file")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
+    let line = args
+        .get("line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
+    let column = args
+        .get("column")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+    let path_buf = resolve_path(file, project_root)?;
+    let position = Position { line, column };
+    let items = lsp.prepare_call_hierarchy_with_root(&path_buf, &position, project_root)?;
+    let text = serde_json::to_string_pretty(&items)?;
+    Ok(tool_response(&text))
+}
+
+pub fn get_incoming_calls(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let item: rhizome_lsp::CallHierarchyItemJson = serde_json::from_value(
+        args.get("item")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: item"))?,
+    )?;
+    let calls = lsp.incoming_calls_with_root(&item, project_root)?;
+    let text = serde_json::to_string_pretty(&calls)?;
+    Ok(tool_response(&text))
+}
+
+pub fn get_outgoing_calls(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let item: rhizome_lsp::CallHierarchyItemJson = serde_json::from_value(
+        args.get("item")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: item"))?,
+    )?;
+    let calls = lsp.outgoing_calls_with_root(&item, project_root)?;
+    let text = serde_json::to_string_pretty(&calls)?;
+    Ok(tool_response(&text))
+}
+
+pub fn get_code_actions(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = args
+        .get("file")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
+    let start_line = args
+        .get("start_line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: start_line"))? as u32;
+    let start_column = args
+        .get("start_column")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: start_column"))? as u32;
+    let end_line = args
+        .get("end_line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: end_line"))? as u32;
+    let end_column = args
+        .get("end_column")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: end_column"))? as u32;
+    let path_buf = resolve_path(file, project_root)?;
+    let start = Position { line: start_line, column: start_column };
+    let end = Position { line: end_line, column: end_column };
+    let actions = lsp.code_actions_with_root(&path_buf, &start, &end, project_root)?;
+    let text = serde_json::to_string_pretty(&actions)?;
+    Ok(tool_response(&text))
+}
+
 fn lsp_required_error(tool_name: &str) -> Value {
     let suggestion = match tool_name {
-        "rename_symbol" | "get_hover" => {
+        "rename_symbol" | "get_hover" | "go_to_implementation" | "go_to_type_definition"
+        | "get_completions" | "get_signature_help" | "prepare_call_hierarchy"
+        | "get_incoming_calls" | "get_outgoing_calls" | "get_code_actions" => {
             "LSP required for this operation. \
              Install rust-analyzer for Rust or pyright for Python support."
         }
