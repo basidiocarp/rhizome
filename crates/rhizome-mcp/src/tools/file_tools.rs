@@ -53,6 +53,25 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 idempotent_hint: true,
             },
         },
+        ToolSchema {
+            name: "get_hover".into(),
+            title: Some("Get Hover".to_string()),
+            description: "Get hover documentation for a symbol at a position (requires LSP)".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the source file" },
+                    "line": { "type": "number", "description": "Line number (0-based)" },
+                    "column": { "type": "number", "description": "Column number (0-based)" }
+                },
+                "required": ["file", "line", "column"]
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
     ]
 }
 
@@ -174,9 +193,36 @@ pub fn get_diagnostics(
     Ok(tool_response(&text))
 }
 
+pub fn get_hover(
+    lsp: &rhizome_lsp::LspBackend,
+    args: &Value,
+    project_root: &Path,
+) -> Result<Value> {
+    let file = args
+        .get("file")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: file"))?;
+    let line = args
+        .get("line")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: line"))? as u32;
+    let column = args
+        .get("column")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| anyhow::anyhow!("Missing required parameter: column"))? as u32;
+
+    let path_buf = resolve_path(file, project_root)?;
+    let position = Position { line, column };
+
+    match lsp.hover_with_root(&path_buf, &position, project_root)? {
+        Some(text) => Ok(tool_response(&text)),
+        None => Ok(tool_response("No hover information available at this position.")),
+    }
+}
+
 fn lsp_required_error(tool_name: &str) -> Value {
     let suggestion = match tool_name {
-        "rename_symbol" => {
+        "rename_symbol" | "get_hover" => {
             "LSP required for this operation. \
              Install rust-analyzer for Rust or pyright for Python support."
         }

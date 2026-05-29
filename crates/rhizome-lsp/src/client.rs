@@ -140,6 +140,27 @@ impl LspClient {
                         hierarchical_document_symbol_support: Some(true),
                         ..Default::default()
                     }),
+                    hover: Some(lsp_types::HoverClientCapabilities {
+                        content_format: Some(vec![
+                            lsp_types::MarkupKind::PlainText,
+                            lsp_types::MarkupKind::Markdown,
+                        ]),
+                        ..Default::default()
+                    }),
+                    code_action: Some(lsp_types::CodeActionClientCapabilities {
+                        code_action_literal_support: Some(
+                            lsp_types::CodeActionLiteralSupport {
+                                code_action_kind: lsp_types::CodeActionKindLiteralSupport {
+                                    value_set: vec![
+                                        lsp_types::CodeActionKind::QUICKFIX.as_str().to_string(),
+                                        lsp_types::CodeActionKind::REFACTOR.as_str().to_string(),
+                                        lsp_types::CodeActionKind::SOURCE.as_str().to_string(),
+                                    ],
+                                },
+                            },
+                        ),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -170,54 +191,72 @@ impl LspClient {
         &self,
         params: R::Params,
     ) -> Result<R::Result> {
-        if let Some(message) = self
-            .reader_error
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
-        {
-            anyhow::bail!("{message}");
-        }
+        let params_json = serde_json::to_value(&params)?;
+        self.send_request_with_json::<R>(&params_json).await
+    }
 
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let (tx, rx) = oneshot::channel();
-
-        self.pending_requests
-            .lock()
-            .map_err(|_| anyhow::anyhow!("request table poisoned"))?
-            .insert(id, tx);
-
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": R::METHOD,
-            "params": serde_json::to_value(params)?,
-        });
-
-        if let Err(e) = self.send_message(&request).await {
-            self.pending_requests
+    async fn send_request_with_json<R: lsp_types::request::Request>(
+        &self,
+        params_json: &Value,
+    ) -> Result<R::Result> {
+        // -32802 = ServerCancelled: retry at most once (server busy during indexing).
+        let mut retries_remaining: u8 = 1;
+        loop {
+            if let Some(message) = self
+                .reader_error
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .remove(&id);
-            return Err(e);
+                .clone()
+            {
+                anyhow::bail!("{message}");
+            }
+
+            let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+            let (tx, rx) = oneshot::channel();
+
+            self.pending_requests
+                .lock()
+                .map_err(|_| anyhow::anyhow!("request table poisoned"))?
+                .insert(id, tx);
+
+            let request = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": R::METHOD,
+                "params": params_json,
+            });
+
+            if let Err(e) = self.send_message(&request).await {
+                self.pending_requests
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&id);
+                return Err(e);
+            }
+
+            let response = tokio::time::timeout(Duration::from_secs(10), rx)
+                .await
+                .with_context(|| format!("LSP request '{}' timed out", R::METHOD))?
+                .with_context(|| format!("LSP reader dropped for '{}'", R::METHOD))?;
+
+            if let Some(error) = response.get("error") {
+                let code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+                let msg = error
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown error");
+                if code == -32802 && retries_remaining > 0 {
+                    retries_remaining -= 1;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+                anyhow::bail!("LSP error for '{}': {}", R::METHOD, msg);
+            }
+
+            let result = response.get("result").cloned().unwrap_or(Value::Null);
+            return serde_json::from_value(result)
+                .with_context(|| format!("Failed to deserialize '{}' response", R::METHOD));
         }
-
-        let response = tokio::time::timeout(Duration::from_secs(10), rx)
-            .await
-            .with_context(|| format!("LSP request '{}' timed out", R::METHOD))?
-            .with_context(|| format!("LSP reader dropped for '{}'", R::METHOD))?;
-
-        if let Some(error) = response.get("error") {
-            let msg = error
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("unknown error");
-            anyhow::bail!("LSP error for '{}': {}", R::METHOD, msg);
-        }
-
-        let result = response.get("result").cloned().unwrap_or(Value::Null);
-        serde_json::from_value(result)
-            .with_context(|| format!("Failed to deserialize '{}' response", R::METHOD))
     }
 
     /// Send a typed LSP notification (no response expected).

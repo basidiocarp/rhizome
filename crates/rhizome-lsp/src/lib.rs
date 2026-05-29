@@ -213,6 +213,35 @@ impl LspBackend {
         })
     }
 
+    /// Get hover documentation for a symbol using a specific workspace root.
+    pub fn hover_with_root(
+        &self,
+        file: &Path,
+        position: &Position,
+        workspace_root: &Path,
+    ) -> Result<Option<String>> {
+        let file = file.to_path_buf();
+        let root = workspace_root.to_path_buf();
+        let lsp_pos = lsp_types::Position {
+            line: position.line,
+            character: position.column,
+        };
+        self.run_blocking(async {
+            let lang = detect_language(&file)?;
+            self.ensure_did_open(&file, &lang, &root).await?;
+            let mut mgr = self.manager.lock().await;
+            let client = mgr
+                .get_client(&lang, &root)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            let hover = client
+                .hover(&file, lsp_pos)
+                .await
+                .map_err(|e| RhizomeError::LspError(e.to_string()))?;
+            Ok(hover.map(|h| extract_hover_text(&h)))
+        })
+    }
+
     /// Get diagnostics using a specific workspace root.
     pub fn get_diagnostics_with_root(
         &self,
@@ -331,6 +360,27 @@ impl LspBackend {
 
             summarize_workspace_edit(&edit).map_err(|e| RhizomeError::LspError(e.to_string()))
         })
+    }
+}
+
+fn extract_hover_text(hover: &lsp_types::Hover) -> String {
+    match &hover.contents {
+        lsp_types::HoverContents::Scalar(markup) => markup_to_string(markup),
+        lsp_types::HoverContents::Array(markups) => markups
+            .iter()
+            .map(markup_to_string)
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+        lsp_types::HoverContents::Markup(markup) => markup.value.clone(),
+    }
+}
+
+fn markup_to_string(markup: &lsp_types::MarkedString) -> String {
+    match markup {
+        lsp_types::MarkedString::String(s) => s.clone(),
+        lsp_types::MarkedString::LanguageString(ls) => {
+            format!("```{}\n{}\n```", ls.language, ls.value)
+        }
     }
 }
 
