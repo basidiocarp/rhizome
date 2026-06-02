@@ -186,7 +186,7 @@ fn collect_export(
 
         match backend.get_symbols(file_path) {
             Ok(symbols) => {
-                let graph = build_graph(project_name, &symbols, file_path);
+                let graph = build_graph(project_name, &symbols, file_path, project_root);
                 graphs.push(graph);
                 processed_paths.push(file_path.to_path_buf());
                 files_processed += 1;

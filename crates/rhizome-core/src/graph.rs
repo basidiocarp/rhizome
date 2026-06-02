@@ -35,6 +35,30 @@ pub struct CodeGraph {
     pub edges: Vec<ConceptEdge>,
 }
 
+/// Sanitize an absolute file path before storing it in the code graph.
+/// Three-case logic:
+/// 1. Absolute path inside project_root → relative path (strip project_root prefix)
+/// 2. Absolute path outside project_root → basename only
+/// 3. Relative path → returned unchanged
+fn sanitize_file_path(file_path: &Path, project_root: &Path) -> String {
+    // Case 3: If path is relative, return it unchanged
+    if !file_path.is_absolute() {
+        return file_path.to_string_lossy().into_owned();
+    }
+
+    // Case 1: If path is absolute and inside project_root, strip the prefix
+    if let Ok(relative) = file_path.strip_prefix(project_root) {
+        return relative.to_string_lossy().into_owned();
+    }
+
+    // Case 2: If path is absolute but outside project_root, return basename only
+    // If file_name() is None, fall back to the whole path string
+    file_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| file_path.to_string_lossy().into_owned())
+}
+
 fn language_from_extension(path: &Path) -> String {
     // Use the full file path as fallback to prevent node collision
     // when multiple files share the same unrecognized extension.
@@ -156,20 +180,25 @@ fn process_symbols(
     }
 }
 
-pub fn build_graph(project: &str, symbols: &[Symbol], file_path: &Path) -> CodeGraph {
-    let language = language_from_extension(file_path);
-    let file_path_str = file_path.to_string_lossy();
+pub fn build_graph(
+    project: &str,
+    symbols: &[Symbol],
+    file_path: &Path,
+    project_root: &Path,
+) -> CodeGraph {
+    let file_path_str = sanitize_file_path(file_path, project_root);
+    let language = language_from_extension(Path::new(&file_path_str));
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
     // Add a synthetic file-level node to anchor imports edges
     let mut file_metadata = HashMap::new();
-    file_metadata.insert("file_path".into(), json!(file_path_str.to_string()));
+    file_metadata.insert("file_path".into(), json!(file_path_str.clone()));
     file_metadata.insert("language".into(), json!(language.clone()));
 
     nodes.push(ConceptNode {
-        name: file_path_str.to_string(),
+        name: file_path_str.clone(),
         labels: vec!["file".into()],
         description: String::new(),
         metadata: file_metadata,
@@ -270,7 +299,12 @@ mod tests {
             make_symbol("Server", SymbolKind::Struct),
         ];
 
-        let graph = build_graph("myproject", &symbols, Path::new("src/server.rs"));
+        let graph = build_graph(
+            "myproject",
+            &symbols,
+            Path::new("src/server.rs"),
+            Path::new(""),
+        );
 
         assert_eq!(graph.project, "myproject");
         assert_eq!(graph.nodes.len(), 3); // file-level node + 2 symbols
@@ -295,7 +329,7 @@ mod tests {
             make_symbol("field", SymbolKind::Field),
         ];
 
-        let graph = build_graph("test", &symbols, Path::new("src/lib.rs"));
+        let graph = build_graph("test", &symbols, Path::new("src/lib.rs"), Path::new(""));
 
         // File-level node is at index 0, symbols start at index 1
         assert_eq!(graph.nodes[1].labels, vec!["function"]);
@@ -316,7 +350,7 @@ mod tests {
     #[test]
     fn test_metadata() {
         let symbols = vec![make_symbol("foo", SymbolKind::Function)];
-        let graph = build_graph("proj", &symbols, Path::new("src/server.rs"));
+        let graph = build_graph("proj", &symbols, Path::new("src/server.rs"), Path::new(""));
 
         // File-level node is at index 0, function symbol is at index 1
         let node = &graph.nodes[1];
@@ -334,7 +368,7 @@ mod tests {
         let mut sym = make_symbol("serve", SymbolKind::Function);
         sym.signature = Some("pub fn serve()".into());
 
-        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
+        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"), Path::new(""));
         // File-level node is at index 0, function symbol is at index 1
         assert!(graph.nodes[1].labels.contains(&"public".to_string()));
     }
@@ -344,7 +378,7 @@ mod tests {
         let mut sym = make_symbol("fetch", SymbolKind::Function);
         sym.signature = Some("pub async fn fetch()".into());
 
-        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
+        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"), Path::new(""));
         // File-level node is at index 0, function symbol is at index 1
         assert!(graph.nodes[1].labels.contains(&"async".to_string()));
         assert!(graph.nodes[1].labels.contains(&"public".to_string()));
@@ -356,7 +390,7 @@ mod tests {
         sym.signature = Some("fn foo()".into());
         sym.doc_comment = Some("Does foo things".into());
 
-        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
+        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"), Path::new(""));
         // File-level node is at index 0, function symbol is at index 1
         assert_eq!(graph.nodes[1].description, "fn foo()\n\nDoes foo things");
     }
@@ -366,7 +400,7 @@ mod tests {
         let mut sym = make_symbol("foo", SymbolKind::Function);
         sym.signature = Some("fn foo()".into());
 
-        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
+        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"), Path::new(""));
         // File-level node is at index 0, function symbol is at index 1
         assert_eq!(graph.nodes[1].description, "fn foo()");
     }
@@ -376,7 +410,7 @@ mod tests {
         let mut sym = make_symbol("foo", SymbolKind::Function);
         sym.doc_comment = Some("Does foo things".into());
 
-        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
+        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"), Path::new(""));
         // File-level node is at index 0, function symbol is at index 1
         assert_eq!(graph.nodes[1].description, "Does foo things");
     }
@@ -384,7 +418,7 @@ mod tests {
     #[test]
     fn test_description_neither() {
         let sym = make_symbol("foo", SymbolKind::Function);
-        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"));
+        let graph = build_graph("proj", &[sym], Path::new("src/lib.rs"), Path::new(""));
         // File-level node is at index 0, function symbol is at index 1
         assert_eq!(graph.nodes[1].description, "");
     }
@@ -392,7 +426,7 @@ mod tests {
     #[test]
     fn test_import_edge_creation() {
         let symbols = vec![make_symbol("serde", SymbolKind::Import)];
-        let graph = build_graph("proj", &symbols, Path::new("src/server.rs"));
+        let graph = build_graph("proj", &symbols, Path::new("src/server.rs"), Path::new(""));
 
         assert_eq!(graph.edges.len(), 1);
         assert_eq!(graph.edges[0].source, "src/server.rs");
@@ -407,7 +441,7 @@ mod tests {
         let mut parent = make_symbol("MyStruct", SymbolKind::Struct);
         parent.children = vec![child];
 
-        let graph = build_graph("proj", &[parent], Path::new("src/lib.rs"));
+        let graph = build_graph("proj", &[parent], Path::new("src/lib.rs"), Path::new(""));
 
         // File-level node + parent + child = 3 nodes
         assert_eq!(graph.nodes.len(), 3);
@@ -524,19 +558,19 @@ mod tests {
     fn test_language_detection() {
         let symbols = vec![make_symbol("foo", SymbolKind::Function)];
 
-        let g = build_graph("p", &symbols, Path::new("src/app.py"));
+        let g = build_graph("p", &symbols, Path::new("src/app.py"), Path::new(""));
         assert_eq!(
             g.nodes[0].metadata.get("language").unwrap(),
             &json!("python")
         );
 
-        let g = build_graph("p", &symbols, Path::new("src/app.ts"));
+        let g = build_graph("p", &symbols, Path::new("src/app.ts"), Path::new(""));
         assert_eq!(
             g.nodes[0].metadata.get("language").unwrap(),
             &json!("typescript")
         );
 
-        let g = build_graph("p", &symbols, Path::new("src/app.go"));
+        let g = build_graph("p", &symbols, Path::new("src/app.go"), Path::new(""));
         assert_eq!(g.nodes[0].metadata.get("language").unwrap(), &json!("go"));
     }
 
@@ -547,8 +581,18 @@ mod tests {
         let symbols_file1 = vec![make_symbol("new", SymbolKind::Function)];
         let symbols_file2 = vec![make_symbol("new", SymbolKind::Function)];
 
-        let graph1 = build_graph("proj", &symbols_file1, Path::new("src/file1.rs"));
-        let graph2 = build_graph("proj", &symbols_file2, Path::new("src/file2.rs"));
+        let graph1 = build_graph(
+            "proj",
+            &symbols_file1,
+            Path::new("src/file1.rs"),
+            Path::new(""),
+        );
+        let graph2 = build_graph(
+            "proj",
+            &symbols_file2,
+            Path::new("src/file2.rs"),
+            Path::new(""),
+        );
 
         let merged = merge_graphs(vec![graph1, graph2]);
 
@@ -602,6 +646,7 @@ mod tests {
             "proj",
             &[sym_publish, sym_pub_key, sym_public_api],
             Path::new("src/lib.rs"),
+            Path::new(""),
         );
 
         // File-level node is at index 0, function symbols start at index 1
@@ -637,6 +682,7 @@ mod tests {
             "proj",
             &[sym_pub_fn, sym_pub_crate_fn],
             Path::new("src/lib.rs"),
+            Path::new(""),
         );
 
         let pub_fn_node = &graph.nodes[1];
@@ -719,5 +765,73 @@ mod tests {
 
         let skeleton = skeletonize(graph);
         assert_eq!(skeleton.nodes[0].description, "fn demo()");
+    }
+
+    #[test]
+    fn test_sanitize_file_path_absolute_inside_root() {
+        // Case 1: Absolute path inside project_root → relative (no leading root)
+        let file_path = Path::new("/home/user/projects/myapp/src/main.rs");
+        let project_root = Path::new("/home/user/projects/myapp");
+        let sanitized = sanitize_file_path(file_path, project_root);
+        assert_eq!(sanitized, "src/main.rs");
+        assert!(!sanitized.contains("/home"));
+    }
+
+    #[test]
+    fn test_sanitize_file_path_absolute_outside_root() {
+        // Case 2: Absolute path outside project_root → basename only
+        let file_path = Path::new("/usr/lib/libstdc++.so.6");
+        let project_root = Path::new("/home/user/projects/myapp");
+        let sanitized = sanitize_file_path(file_path, project_root);
+        assert_eq!(sanitized, "libstdc++.so.6");
+    }
+
+    #[test]
+    fn test_sanitize_file_path_relative_unchanged() {
+        // Case 3: Relative path → returned unchanged
+        let file_path = Path::new("src/main.rs");
+        let project_root = Path::new("/home/user/projects/myapp");
+        let sanitized = sanitize_file_path(file_path, project_root);
+        assert_eq!(sanitized, "src/main.rs");
+    }
+
+    #[test]
+    fn test_build_graph_absolute_path_not_leaked() {
+        // Regression test: build_graph with absolute file_path should NOT leak the absolute root
+        let symbols = vec![make_symbol("foo", SymbolKind::Function)];
+        let file_path = Path::new("/Users/john/workspace/project/src/lib.rs");
+        let project_root = Path::new("/Users/john/workspace/project");
+
+        let graph = build_graph("proj", &symbols, file_path, project_root);
+
+        // File node name (first node) should be sanitized, not absolute
+        let file_node = &graph.nodes[0];
+        assert_eq!(file_node.name, "src/lib.rs");
+        assert!(!file_node.name.contains("/Users"));
+        assert!(!file_node.name.contains("/workspace"));
+
+        // No node name, edge source, or file_path metadata may carry the
+        // absolute developer path — process_symbols writes all of these from
+        // the same sanitized string, so prove every write site is clean.
+        for node in &graph.nodes {
+            assert!(
+                !node.name.contains("/Users") && !node.name.contains("/workspace"),
+                "node name leaked an absolute path: {}",
+                node.name
+            );
+            if let Some(serde_json::Value::String(fp)) = node.metadata.get("file_path") {
+                assert!(
+                    !fp.contains("/Users") && !fp.contains("/workspace"),
+                    "metadata[file_path] leaked an absolute path: {fp}"
+                );
+            }
+        }
+        for edge in &graph.edges {
+            assert!(
+                !edge.source.contains("/Users") && !edge.source.contains("/workspace"),
+                "edge source leaked an absolute path: {}",
+                edge.source
+            );
+        }
     }
 }
