@@ -233,6 +233,29 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 idempotent_hint: true,
             },
         },
+        ToolSchema {
+            name: "lsp_restart".into(),
+            title: Some("Restart LSP Clients".to_string()),
+            description: "Restart one or all LSP server clients (requires LSP)".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "language": {
+                        "type": "string",
+                        "description": "Optional: language identifier or file extension (e.g., 'rust', 'rs', 'typescript', 'ts')"
+                    },
+                    "root": {
+                        "type": "string",
+                        "description": "Optional: workspace root path for the client to restart. If language is given, restarts that language for this root; otherwise uses default root"
+                    }
+                }
+            }),
+            annotations: ToolAnnotations {
+                read_only_hint: false,
+                destructive_hint: false,
+                idempotent_hint: true,
+            },
+        },
     ]
 }
 

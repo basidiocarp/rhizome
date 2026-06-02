@@ -13,6 +13,7 @@ use rhizome_core::{
 };
 
 use rhizome_core::RhizomeError;
+use serde_json::Value;
 
 use crate::convert::{
     lsp_diagnostic_to_diagnostic, lsp_location_to_location, lsp_symbol_info_to_symbol,
@@ -189,6 +190,100 @@ impl LspBackend {
                 Err(RhizomeError::LspError(format!("didOpen failed: {}", e)))
             }
         }
+    }
+
+    /// Force-restart one or all LSP server clients.
+    ///
+    /// Takes an optional JSON object with `language` (string) and `root` (string) fields.
+    /// When both are absent, restarts all clients.
+    /// When a language is provided, restarts that language's client for the given root
+    /// (or default root if `root` is not provided).
+    pub fn restart_client(&self, args: &Value) -> anyhow::Result<Value> {
+        let language_str = args.get("language").and_then(|v| v.as_str());
+
+        let root = args
+            .get("root")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.default_root.clone());
+
+        // Resolve the optional language. Absent language => restart all clients.
+        // A *present but unrecognized* language is a hard error: silently falling
+        // back to None would restart every client, the opposite of the caller's
+        // intent on a typo or unsupported language.
+        let target = match language_str {
+            None => None,
+            Some(lang_str) => {
+                let lang = Language::from_extension(lang_str)
+                    .or_else(|| Language::from_name(lang_str))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Unrecognized language '{lang_str}'. \
+                             Pass a known language name (e.g. 'rust', 'typescript') \
+                             or file extension (e.g. 'rs', 'ts'), or omit `language` to restart all clients."
+                        )
+                    })?;
+                Some((lang, root.clone()))
+            }
+        };
+
+        let result = self.run_blocking(async {
+            let mut mgr = self.manager.lock().await;
+            let results = mgr.restart_client(target).await;
+
+            // A restarted client is a fresh process with no documents open. Drop the
+            // stale opened_uris tracking for every restarted key (success or failure —
+            // the old client was force-dropped either way) so the next request re-sends
+            // didOpen instead of short-circuiting against a server that never received it.
+            {
+                let mut tracker = self
+                    .opened_uris
+                    .lock()
+                    .map_err(|_| RhizomeError::LspError("opened_uris lock poisoned".to_string()))?;
+                for (key, _) in &results {
+                    tracker.remove(&(key.0.to_string(), key.1.clone()));
+                }
+            }
+
+            // Build response with success and failure summaries
+            let mut restarted = Vec::new();
+            let mut failed = Vec::new();
+
+            for (key, result) in results {
+                let key_str = format!("{:?} at {}", key.0, key.1.display());
+                match result {
+                    Ok(()) => restarted.push(key_str),
+                    Err(e) => failed.push(format!("{}: {}", key_str, e)),
+                }
+            }
+
+            let response_msg = if failed.is_empty() {
+                format!(
+                    "Restarted {} LSP client(s): {}",
+                    restarted.len(),
+                    restarted.join(", ")
+                )
+            } else {
+                format!(
+                    "Restarted {} LSP client(s): {}\nFailed to restart: {}",
+                    restarted.len(),
+                    if restarted.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        restarted.join(", ")
+                    },
+                    failed.join("; ")
+                )
+            };
+
+            Ok(serde_json::json!({
+                "restarted": restarted,
+                "failed": failed,
+                "message": response_msg
+            }))
+        });
+
+        result.map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     /// Shut down all managed language servers.

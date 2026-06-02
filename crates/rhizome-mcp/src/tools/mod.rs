@@ -251,6 +251,22 @@ impl ToolDispatcher {
             "get_code_actions" => self.dispatch_lsp_required(name, &args, |lsp, a| {
                 file_tools::get_code_actions(lsp, a, &root)
             }),
+            "lsp_restart" => {
+                // Restart is a manager-level lifecycle operation, not a language-scoped
+                // query, so it does not route through the per-language backend selector
+                // (which would resolve a language-less "restart all" call to TreeSitter and
+                // reject it). Dispatch directly to the LSP backend; restart_client itself
+                // returns per-key results when a respawn fails.
+                self.ensure_lsp();
+                let lsp = self.lsp.lock().unwrap();
+                match lsp.as_ref() {
+                    Some(backend) => backend.restart_client(&args),
+                    None => Ok(tool_error(
+                        "lsp_restart requires an LSP backend, but initialization failed. \
+                         Run `rhizome status` to check server availability.",
+                    )),
+                }
+            }
 
             // ── Edit tools ─────────────────────────────────────────────
             "replace_symbol_body" => {

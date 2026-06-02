@@ -22,12 +22,13 @@ fn make_dispatcher() -> ToolDispatcher {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_list_tools_returns_50_tools() {
+fn test_list_tools_returns_51_tools() {
     let dispatcher = make_dispatcher();
     let tools = dispatcher.list_tools();
-    assert_eq!(tools.len(), 50, "Expected 50 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 51, "Expected 51 tools, got {}", tools.len());
 
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+    assert!(names.contains(&"lsp_restart"));
     assert!(names.contains(&"get_symbols"));
     assert!(names.contains(&"get_structure"));
     assert!(names.contains(&"get_definition"));
@@ -428,6 +429,26 @@ fn test_missing_required_param() {
     assert!(
         result.is_err(),
         "Should return error for missing required param"
+    );
+}
+
+#[test]
+fn test_lsp_restart_reaches_backend_not_language_selector() {
+    // Regression guard: lsp_restart is a manager-level lifecycle operation, not a
+    // language-scoped query. It must NOT route through the per-language backend
+    // selector — that path resolves a language-less call to TreeSitter and returns
+    // "requires an LSP server", which would make the tool dead on every invocation.
+    // This test has no tokio runtime, so the backend cannot initialize and the call
+    // surfaces the direct-dispatch "initialization failed" tool_error instead; the
+    // key assertion is that it is NOT the language-selector rejection.
+    let dispatcher = make_dispatcher();
+    let result = dispatcher
+        .call_tool("lsp_restart", json!({}))
+        .expect("lsp_restart should return a tool result, not a hard error");
+    let text = result["content"][0]["text"].as_str().unwrap_or_default();
+    assert!(
+        !text.contains("requires an LSP server"),
+        "lsp_restart must not route through the language selector (dead-dispatch); got: {text}"
     );
 }
 
@@ -1131,7 +1152,7 @@ fn test_unified_mode_tools_list_returns_one_tool() {
 }
 
 #[test]
-fn test_expanded_mode_tools_list_returns_50_tools() {
+fn test_expanded_mode_tools_list_returns_51_tools() {
     let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let server = rhizome_mcp::McpServer::new(project_root, false);
 
@@ -1150,8 +1171,8 @@ fn test_expanded_mode_tools_list_returns_50_tools() {
         .expect("Should have tools array");
     assert_eq!(
         tools.len(),
-        50,
-        "Expanded mode should return 50 tools, got {}",
+        51,
+        "Expanded mode should return 51 tools, got {}",
         tools.len()
     );
 }

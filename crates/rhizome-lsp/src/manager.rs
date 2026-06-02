@@ -104,6 +104,51 @@ impl LanguageServerManager {
         Ok(client)
     }
 
+    /// Force-restart one or all LSP clients.
+    ///
+    /// When `target` is `Some((language, workspace_root))`, restarts only that client.
+    /// When `target` is `None`, restarts all clients currently in the manager.
+    ///
+    /// This differs from `get_client` — it does not check if the client is alive.
+    /// It force-drops the existing client (killing hung-but-alive processes) and
+    /// respawns it via the normal `get_client` path.
+    ///
+    /// Returns a `Vec` of `(key, result)` tuples — one per restarted client.
+    /// A failure in one client does not abort the restart of others.
+    pub async fn restart_client(
+        &mut self,
+        target: Option<(Language, std::path::PathBuf)>,
+    ) -> Vec<(ClientKey, Result<()>)> {
+        let keys_to_restart = match target {
+            Some(key) => vec![key],
+            None => self.clients.keys().cloned().collect(),
+        };
+
+        let mut results = Vec::new();
+
+        for key in keys_to_restart {
+            let result = async {
+                // Force-drop the existing client if present
+                if self.clients.remove(&key).is_some() {
+                    tracing::info!(
+                        "Force-dropping existing LSP client for {:?} at {}",
+                        key.0,
+                        key.1.display()
+                    );
+                }
+
+                // Respawn via the normal get_client path
+                let _client = self.get_client(&key.0, &key.1).await?;
+                Ok(())
+            }
+            .await;
+
+            results.push((key, result));
+        }
+
+        results
+    }
+
     /// Shut down all active language server clients.
     pub async fn shutdown_all(&mut self) -> Result<()> {
         let keys: Vec<ClientKey> = self.clients.keys().cloned().collect();
@@ -120,5 +165,42 @@ impl LanguageServerManager {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that restart_client returns results for each targeted key.
+    /// When target is None, the restart list should be empty (no clients to restart).
+    /// When target is Some(key), it should attempt to restart that key.
+    #[tokio::test]
+    async fn restart_client_returns_result_per_key() {
+        let mut manager = LanguageServerManager::new();
+
+        // With no clients, restart of None should return empty results.
+        let results = manager.restart_client(None).await;
+        assert!(
+            results.is_empty(),
+            "restart_client with no clients should return empty results"
+        );
+
+        // With no clients, restart of a specific key should attempt to spawn
+        // and return a result for that key (which will likely fail since the
+        // language server may not be available).
+        let target_key = (Language::Rust, std::path::PathBuf::from("/tmp"));
+        let results = manager.restart_client(Some(target_key.clone())).await;
+        assert_eq!(
+            results.len(),
+            1,
+            "restart_client with a specific target should return one result"
+        );
+        assert_eq!(
+            results[0].0, target_key,
+            "result key should match the target"
+        );
+        // The result may be Ok or Err depending on whether rust-analyzer is installed.
+        // We just verify it returns a result, not a panic.
     }
 }
