@@ -337,7 +337,38 @@ impl ToolDispatcher {
                 let lsp = self.lsp.lock().unwrap();
                 match lsp.as_ref() {
                     Some(backend) => lsp_fn(backend, args),
-                    None => ts_fn(args),
+                    None => {
+                        // LSP was the resolved backend but initialization failed
+                        // (e.g. no tokio runtime — see `ensure_lsp`, which warns once
+                        // about the root cause). We still serve the request from
+                        // tree-sitter so the tool degrades gracefully, but a cross-file
+                        // tool (find_references, analyze_impact, …) silently returning a
+                        // single-file result is otherwise invisible. Warn once per
+                        // distinct tool — so each affected tool is named exactly once —
+                        // then drop to debug for repeat calls to avoid log spam.
+                        use std::collections::HashSet;
+                        use std::sync::{Mutex, OnceLock};
+                        static WARNED_TOOLS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+                        let first_downgrade = WARNED_TOOLS
+                            .get_or_init(|| Mutex::new(HashSet::new()))
+                            .lock()
+                            .unwrap()
+                            .insert(tool_name.to_string());
+                        if first_downgrade {
+                            tracing::warn!(
+                                tool = tool_name,
+                                "LSP-preferred tool fell back to tree-sitter (LSP \
+                                 unavailable); cross-file results may be reported as \
+                                 single-file"
+                            );
+                        } else {
+                            tracing::debug!(
+                                tool = tool_name,
+                                "LSP-preferred tool fell back to tree-sitter (LSP unavailable)"
+                            );
+                        }
+                        ts_fn(args)
+                    }
                 }
             }
             _ => ts_fn(args),

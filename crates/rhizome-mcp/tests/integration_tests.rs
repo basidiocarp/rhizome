@@ -340,6 +340,12 @@ fn test_analyze_impact() {
             && text.contains("\"exact_scope_matches\""),
         "Should expose scope-aware symbol identity in impact output: {text}"
     );
+    // This assertion holds only because the test runs as a sync `#[test]` with no
+    // tokio runtime: `ensure_lsp()` finds no `Handle`, returns without initializing,
+    // and `dispatch_auto` takes its `None` fallback arm to tree-sitter (single-file).
+    // Converting this to `#[tokio::test]` would let `analyze_impact` resolve to LSP on
+    // machines where rust-analyzer is installed, making
+    // `risk_scope`/`cross_file_references` LSP-availability-dependent and flaky in CI.
     assert!(
         text.contains("\"risk_scope\": \"file\"")
             && text.contains("\"confidence\": \"heuristic\"")
