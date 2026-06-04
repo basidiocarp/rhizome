@@ -97,7 +97,7 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 "type": "object",
                 "properties": {
                     "pattern": { "type": "string", "description": "Pattern to match symbol names (case-insensitive)" },
-                    "path": { "type": "string", "description": "Optional directory to search in (defaults to project root)" }
+                    "path": { "type": "string", "description": "Optional directory to search in (defaults to project root). Pass an explicit nested-repo path (e.g. a subproject dir) to reach symbols the root index skips — the workspace index respects the root .gitignore, which prunes nested repos." }
                 },
                 "required": ["pattern"]
             }),

@@ -44,7 +44,8 @@ fn tool_requirement_stays_centralized_for_the_current_dispatch_surface() {
         );
     }
 
-    for tool in ["find_references", "get_diagnostics"] {
+    // PrefersLsp tools: prefer the LSP backend for cross-file accuracy, but keep a tree-sitter fallback.
+    for tool in ["find_references", "get_diagnostics", "analyze_impact"] {
         assert_eq!(
             tool_requirement(tool),
             BackendRequirement::PrefersLsp,

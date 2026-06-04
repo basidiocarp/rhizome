@@ -211,7 +211,7 @@ impl BackendSelector {
 pub fn tool_requirement(tool_name: &str) -> BackendRequirement {
     match tool_name {
         "rename_symbol" => BackendRequirement::RequiresLsp,
-        "get_diagnostics" | "find_references" => BackendRequirement::PrefersLsp,
+        "get_diagnostics" | "find_references" | "analyze_impact" => BackendRequirement::PrefersLsp,
         _ => BackendRequirement::TreeSitter,
     }
 }
@@ -386,6 +386,10 @@ mod tests {
         );
         assert_eq!(
             tool_requirement("find_references"),
+            BackendRequirement::PrefersLsp
+        );
+        assert_eq!(
+            tool_requirement("analyze_impact"),
             BackendRequirement::PrefersLsp
         );
     }
