@@ -41,22 +41,30 @@ pub struct CodeGraph {
 /// 2. Absolute path outside project_root → basename only
 /// 3. Relative path → returned unchanged
 fn sanitize_file_path(file_path: &Path, project_root: &Path) -> String {
-    // Case 3: If path is relative, return it unchanged
-    if !file_path.is_absolute() {
-        return file_path.to_string_lossy().into_owned();
+    // Treat a path with a root component as absolute. We use has_root() rather
+    // than is_absolute() so Unix-style rooted paths ("/home/...") are handled
+    // consistently on Windows, where is_absolute() additionally requires a drive
+    // prefix and would otherwise misclassify such paths as relative.
+    let looks_absolute = file_path.has_root() || file_path.is_absolute();
+
+    // Case 3: If path is relative, return it unchanged (separators normalized).
+    if !looks_absolute {
+        return file_path.to_string_lossy().replace('\\', "/");
     }
 
-    // Case 1: If path is absolute and inside project_root, strip the prefix
+    // Case 1: If path is absolute and inside project_root, strip the prefix.
+    // Normalize separators to '/' so exported code-graph paths are portable
+    // across platforms (on Windows, to_string_lossy yields '\\'-joined paths).
     if let Ok(relative) = file_path.strip_prefix(project_root) {
-        return relative.to_string_lossy().into_owned();
+        return relative.to_string_lossy().replace('\\', "/");
     }
 
-    // Case 2: If path is absolute but outside project_root, return basename only
-    // If file_name() is None, fall back to the whole path string
+    // Case 2: If path is absolute but outside project_root, return basename only.
+    // If file_name() is None, fall back to the whole path string.
     file_path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| file_path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| file_path.to_string_lossy().replace('\\', "/"))
 }
 
 fn language_from_extension(path: &Path) -> String {
