@@ -212,6 +212,9 @@ pub fn tool_requirement(tool_name: &str) -> BackendRequirement {
     match tool_name {
         "rename_symbol" => BackendRequirement::RequiresLsp,
         "get_diagnostics" | "find_references" | "analyze_impact" => BackendRequirement::PrefersLsp,
+        // Name-match dependent search + hardcoded-empty transitive: LSP adds no accuracy.
+        // Cross-file transitive support is a separate follow-up (rewrite to find_references).
+        "rhizome_simulate_change" => BackendRequirement::TreeSitter,
         _ => BackendRequirement::TreeSitter,
     }
 }
@@ -391,6 +394,10 @@ mod tests {
         assert_eq!(
             tool_requirement("analyze_impact"),
             BackendRequirement::PrefersLsp
+        );
+        assert_eq!(
+            tool_requirement("rhizome_simulate_change"),
+            BackendRequirement::TreeSitter
         );
     }
 

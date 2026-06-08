@@ -36,6 +36,7 @@ fn tool_requirement_stays_centralized_for_the_current_dispatch_surface() {
         "move_symbol",
         "export_to_hyphae",
         "rhizome_onboard",
+        "rhizome_simulate_change",
     ] {
         assert_eq!(
             tool_requirement(tool),
