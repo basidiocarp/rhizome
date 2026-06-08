@@ -526,6 +526,121 @@ fn test_search_symbols() {
 }
 
 // ---------------------------------------------------------------------------
+// search_symbols kind filter
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_search_symbols_kind_filter() {
+    let dispatcher = make_dispatcher();
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .to_string_lossy()
+        .to_string();
+
+    // "process" is a top-level Function in both sample.rs and sample.py, so the
+    // kind=function filter is guaranteed to return at least one result.
+    let result = dispatcher
+        .call_tool(
+            "search_symbols",
+            json!({ "pattern": "process", "path": fixtures_dir, "kind": "function" }),
+        )
+        .expect("search_symbols with kind filter should succeed");
+
+    let text = extract_text(&result);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text).expect("response should be valid JSON");
+    let symbols = parsed["symbols"]
+        .as_array()
+        .expect("symbols should be an array");
+
+    assert!(
+        !symbols.is_empty(),
+        "Expected at least one function symbol from the kind filter, got zero — \
+         a silently-empty filter would pass this test vacuously: {text}"
+    );
+
+    // Every returned symbol must have kind == "Function" (the Debug repr).
+    for sym in symbols {
+        let kind = sym["kind"]
+            .as_str()
+            .expect("kind field should be a string")
+            .to_lowercase();
+        assert_eq!(
+            kind, "function",
+            "Expected kind=function but got kind={kind} for symbol {:?}",
+            sym["name"]
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// search_symbols limit
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_search_symbols_limit() {
+    let dispatcher = make_dispatcher();
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .to_string_lossy()
+        .to_string();
+
+    // "process" appears as a top-level Function in both sample.rs and sample.py,
+    // guaranteeing >1 symbol in the full result set so limit=1 must truncate.
+    let pattern = "process";
+
+    // First: confirm the full result set exceeds 1 so limit=1 is meaningful.
+    let full_result = dispatcher
+        .call_tool(
+            "search_symbols",
+            json!({ "pattern": pattern, "path": fixtures_dir }),
+        )
+        .expect("search_symbols without limit should succeed");
+    let full_text = extract_text(&full_result);
+    let full_parsed: serde_json::Value =
+        serde_json::from_str(&full_text).expect("full response should be valid JSON");
+    let full_count = full_parsed["symbols"]
+        .as_array()
+        .expect("symbols should be an array")
+        .len();
+    assert!(
+        full_count > 1,
+        "Precondition failed: pattern '{pattern}' must yield >1 symbols in fixtures \
+         for the limit test to be meaningful, got {full_count}"
+    );
+
+    // Now: apply limit=1 and assert both the count cap and truncated=true.
+    let limit: u64 = 1;
+    let result = dispatcher
+        .call_tool(
+            "search_symbols",
+            json!({ "pattern": pattern, "path": fixtures_dir, "limit": limit }),
+        )
+        .expect("search_symbols with limit should succeed");
+
+    let text = extract_text(&result);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text).expect("response should be valid JSON");
+    let symbols = parsed["symbols"]
+        .as_array()
+        .expect("symbols should be an array");
+
+    assert_eq!(
+        symbols.len(),
+        limit as usize,
+        "Expected exactly {limit} symbol(s) with limit applied, got {}",
+        symbols.len()
+    );
+    assert_eq!(
+        parsed["truncated"].as_bool(),
+        Some(true),
+        "Expected truncated=true when limit truncated the result set: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

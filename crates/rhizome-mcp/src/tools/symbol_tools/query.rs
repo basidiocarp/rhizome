@@ -254,6 +254,23 @@ fn read_symbol_body(file: &Path, sym: &Symbol, full: bool) -> Result<String> {
     }
 }
 
+const VALID_KINDS: &[&str] = &[
+    "function",
+    "method",
+    "class",
+    "struct",
+    "enum",
+    "interface",
+    "trait",
+    "type",
+    "constant",
+    "variable",
+    "module",
+    "import",
+    "property",
+    "field",
+];
+
 /// Search for symbols matching a pattern across a project.
 
 pub fn search_symbols(
@@ -269,12 +286,59 @@ pub fn search_symbols(
         .transpose()?
         .unwrap_or_else(|| project_root.to_path_buf());
 
-    let symbols = backend.search_symbols(pattern, &search_path)?;
+    // Validate kind filter before doing any work.
+    let kind_filter = args.get("kind").and_then(|v| v.as_str()).map(|k| {
+        let lower = k.to_lowercase();
+        if VALID_KINDS.contains(&lower.as_str()) {
+            Ok(lower)
+        } else {
+            Err(anyhow::anyhow!(
+                "Unrecognized kind '{}'. Valid values: {}",
+                k,
+                VALID_KINDS.join(", ")
+            ))
+        }
+    });
+    let kind_filter: Option<String> = match kind_filter {
+        Some(Ok(k)) => Some(k),
+        Some(Err(e)) => return Err(e),
+        None => None,
+    };
 
-    // Use >= not == because collect_matching_symbols can add a batch that overshoots the cap.
-    let truncated = symbols.len() >= rhizome_treesitter::MAX_WORKSPACE_SYMBOLS;
+    let limit: Option<usize> = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
 
-    let formatted: Vec<Value> = symbols
+    let backend_symbols = backend.search_symbols(pattern, &search_path)?;
+
+    // Capture whether the backend cap fired BEFORE applying any local filters.
+    // >= not ==: collect_matching_symbols pushes a whole symbol subtree per call and the
+    // cap is only checked between top-level symbols, so a final batch can overshoot MAX.
+    let backend_truncated = backend_symbols.len() >= rhizome_treesitter::MAX_WORKSPACE_SYMBOLS;
+
+    // Apply kind filter.
+    let filtered: Vec<_> = backend_symbols
+        .iter()
+        .filter(|s| {
+            if let Some(ref kind) = kind_filter {
+                format!("{:?}", s.kind).to_lowercase() == *kind
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    // Apply limit, tracking whether it truncated.
+    let limit_truncated = limit.map(|lim| filtered.len() > lim).unwrap_or(false);
+    let symbols_out: Vec<_> = match limit {
+        Some(lim) => filtered.into_iter().take(lim).collect(),
+        None => filtered.into_iter().collect(),
+    };
+
+    let truncated = backend_truncated || limit_truncated;
+
+    let formatted: Vec<Value> = symbols_out
         .iter()
         .map(|s| {
             json!({

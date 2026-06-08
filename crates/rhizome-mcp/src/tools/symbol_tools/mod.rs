@@ -97,7 +97,9 @@ pub fn tool_schemas() -> Vec<ToolSchema> {
                 "type": "object",
                 "properties": {
                     "pattern": { "type": "string", "description": "Pattern to match symbol names (case-insensitive)" },
-                    "path": { "type": "string", "description": "Optional directory to search in (defaults to project root). Pass an explicit nested-repo path (e.g. a subproject dir) to reach symbols the root index skips — the workspace index respects the root .gitignore, which prunes nested repos." }
+                    "path": { "type": "string", "description": "Optional file or directory to search in (defaults to project root). Pass an explicit nested-repo path (e.g. a subproject dir) to reach symbols the root index skips — the workspace index respects the root .gitignore, which prunes nested repos." },
+                    "kind": { "type": "string", "description": "Optional symbol kind filter (case-insensitive). One of: function, method, class, struct, enum, interface, trait, type, constant, variable, module, import, property, field. Unrecognized values return an error." },
+                    "limit": { "type": "integer", "description": "Optional maximum number of symbols to return. When omitted, only the backend MAX_WORKSPACE_SYMBOLS ceiling applies. When provided and the result set would exceed this value, the response sets truncated: true." }
                 },
                 "required": ["pattern"]
             }),
