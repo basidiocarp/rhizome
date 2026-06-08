@@ -161,6 +161,14 @@ impl LspClient {
                     }),
                     ..Default::default()
                 }),
+                general: Some(lsp_types::GeneralClientCapabilities {
+                    // Rhizome's position math (edit.rs::utf16_column_to_offset) interprets
+                    // LSP character offsets as UTF-16 code units. Declare UTF-16 explicitly so
+                    // the negotiated encoding matches that assumption. UTF-8 is deliberately
+                    // NOT declared: honoring it would require converting column offsets first.
+                    position_encodings: Some(vec![lsp_types::PositionEncodingKind::UTF16]),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             workspace_folders: Some(vec![lsp_types::WorkspaceFolder {
