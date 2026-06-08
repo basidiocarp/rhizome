@@ -419,7 +419,7 @@ impl ToolDispatcher {
                 heuristic_fn(args)
             }
             ActiveBackend::Parserless => parserless_fn(args),
-            ActiveBackend::Lsp => self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn),
+            ActiveBackend::Lsp => self.try_lsp_or_heuristic(tool_name, args, lsp_fn, heuristic_fn),
             ActiveBackend::TreeSitter => match ts_fn(args) {
                 Ok(value) => Ok(value),
                 Err(error) => {
@@ -433,7 +433,7 @@ impl ToolDispatcher {
                     );
                     match fallback {
                         ResolvedBackend::Lsp => {
-                            self.try_lsp_or_heuristic(args, lsp_fn, heuristic_fn)
+                            self.try_lsp_or_heuristic(tool_name, args, lsp_fn, heuristic_fn)
                         }
                         ResolvedBackend::Heuristic => heuristic_fn(args),
                         ResolvedBackend::Parserless => parserless_fn(args),
@@ -592,19 +592,61 @@ impl ToolDispatcher {
         }
     }
 
-    fn try_lsp_or_heuristic<G, I>(&self, args: &Value, lsp_fn: G, heuristic_fn: I) -> Result<Value>
+    fn try_lsp_or_heuristic<G, I>(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        lsp_fn: G,
+        heuristic_fn: I,
+    ) -> Result<Value>
     where
         G: FnOnce(&rhizome_lsp::LspBackend, &Value) -> Result<Value>,
         I: FnOnce(&Value) -> Result<Value>,
     {
+        use std::collections::HashSet;
+        use std::sync::{Mutex, OnceLock};
+
+        // Warn once per (tool, cause) when an LSP-preferred outline tool degrades to
+        // the heuristic backend. The two causes — LSP unavailable vs LSP call errored —
+        // share one set but use disjoint composite keys, so neither suppresses the other.
+        // Poison-tolerant: a warn-once set must never panic a tool call on lock poisoning.
+        static WARNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        let first_degrade = |key: String| {
+            WARNED
+                .get_or_init(|| Mutex::new(HashSet::new()))
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .insert(key)
+        };
+
         self.ensure_lsp();
         let lsp = self.lsp.lock().unwrap();
         match lsp.as_ref() {
             Some(backend) => match lsp_fn(backend, args) {
                 Ok(value) => Ok(value),
-                Err(_) => heuristic_fn(args),
+                Err(error) => {
+                    if first_degrade(format!("{tool_name}:error")) {
+                        tracing::warn!(tool = tool_name, error = %error, "LSP call failed, fell back to heuristic backend; results may be degraded");
+                    } else {
+                        tracing::debug!(tool = tool_name, error = %error, "LSP call failed, fell back to heuristic backend");
+                    }
+                    heuristic_fn(args)
+                }
             },
-            None => heuristic_fn(args),
+            None => {
+                if first_degrade(format!("{tool_name}:unavailable")) {
+                    tracing::warn!(
+                        tool = tool_name,
+                        "LSP unavailable, fell back to heuristic backend; results may be degraded"
+                    );
+                } else {
+                    tracing::debug!(
+                        tool = tool_name,
+                        "LSP unavailable, fell back to heuristic backend"
+                    );
+                }
+                heuristic_fn(args)
+            }
         }
     }
 
