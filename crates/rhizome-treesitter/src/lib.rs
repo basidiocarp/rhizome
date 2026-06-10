@@ -181,28 +181,74 @@ impl TreeSitterBackend {
     }
 
     fn supported_source_files(project_root: &Path) -> Vec<PathBuf> {
-        let walker = WalkBuilder::new(project_root)
+        let include_nested = rhizome_core::RhizomeConfig::load(project_root)
+            .map(|c| c.index_nested_repos())
+            .unwrap_or(false);
+        Self::supported_source_files_inner(project_root, include_nested)
+    }
+
+    fn supported_source_files_inner(
+        project_root: &Path,
+        include_nested_repos: bool,
+    ) -> Vec<PathBuf> {
+        let mut seen: HashSet<PathBuf> = HashSet::new();
+        let mut files = Vec::new();
+
+        // Root walk — identical to the original behavior.
+        let root_walker = WalkBuilder::new(project_root)
             .hidden(true)
             .git_ignore(true)
             .build();
-
-        let mut files = Vec::new();
-        for entry in walker {
+        for entry in root_walker {
             let entry = match entry {
                 Ok(e) => e,
                 Err(_) => continue,
             };
-
             let path = entry.path();
             if !path.is_file() {
                 continue;
             }
-
             if Self::detect_language(path).is_err() {
                 continue;
             }
+            let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+            if seen.insert(canonical) {
+                files.push(path.to_path_buf());
+            }
+        }
 
-            files.push(path.to_path_buf());
+        if include_nested_repos {
+            for repo_root in discover_nested_repos(project_root) {
+                // .parents(false) prevents the nested walk from reading ancestor
+                // .gitignore files (including the root one that prunes this repo).
+                let nested_walker = WalkBuilder::new(&repo_root)
+                    .hidden(true)
+                    .git_ignore(true)
+                    .parents(false)
+                    .build();
+                for entry in nested_walker {
+                    let entry = match entry {
+                        Ok(e) => e,
+                        Err(_) => continue,
+                    };
+                    let path = entry.path();
+                    if !path.is_file() {
+                        continue;
+                    }
+                    if Self::detect_language(path).is_err() {
+                        continue;
+                    }
+                    let canonical =
+                        std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                    if seen.insert(canonical) {
+                        files.push(path.to_path_buf());
+                    }
+                }
+            }
+            // Sort only when combining multiple roots so the merged result is
+            // deterministic. Flag-off returns files in raw walk order, matching
+            // the original single-root behavior.
+            files.sort();
         }
 
         files
@@ -440,6 +486,38 @@ fn compute_fingerprint(
         exports,
         imports,
     }
+}
+
+/// Discover immediate child directories of `project_root` that contain a `.git`
+/// entry (either a directory for regular repos or a file for worktrees/submodules).
+/// Returns paths sorted for determinism. Depth-1 only.
+///
+/// Symlinked child directories are intentionally not discovered. A symlink could
+/// resolve to a path outside `project_root`, pulling an arbitrary external tree
+/// into the index and breaking the invariant that indexing is bounded by the
+/// project root. Re-evaluate this restriction if a real layout genuinely requires
+/// symlinked nested repos.
+fn discover_nested_repos(project_root: &Path) -> Vec<PathBuf> {
+    let entries = match std::fs::read_dir(project_root) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut repos: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            // Only consider directories at depth 1.
+            entry.file_type().map(|t| t.is_dir()).unwrap_or(false)
+        })
+        .filter(|entry| {
+            // A .git entry (file or dir) marks this as a git repo root.
+            entry.path().join(".git").exists()
+        })
+        .map(|entry| entry.path())
+        .collect();
+
+    repos.sort();
+    repos
 }
 
 #[cfg(test)]
@@ -1561,5 +1639,231 @@ export function Component() {
             "Mismatched snapshot schema should not be trusted"
         );
         clear_workspace_cache();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Nested-repo indexing tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Build a test layout:
+    ///   root/
+    ///     .git/          ← makes root a real git repo so root .gitignore is honored
+    ///     .gitignore     ← "/nested/" entry
+    ///     src/root.rs
+    ///     nested/
+    ///       .git/        ← makes nested a git repo
+    ///       src/nested.rs
+    ///       (optionally: .gitignore, target/gen.rs)
+    fn build_nested_fixture(
+        root: &Path,
+        root_gitignore_content: &str,
+        nested_gitignore_content: Option<&str>,
+        extra_nested_files: &[(&str, &str)],
+    ) {
+        // Root git marker so ignore crate treats root .gitignore as repo-level.
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(root.join(".gitignore"), root_gitignore_content).unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/root.rs"), "fn root_fn() {}").unwrap();
+
+        // Nested repo.
+        std::fs::create_dir_all(root.join("nested/.git")).unwrap();
+        std::fs::create_dir_all(root.join("nested/src")).unwrap();
+        std::fs::write(root.join("nested/src/nested.rs"), "fn nested_fn() {}").unwrap();
+
+        if let Some(content) = nested_gitignore_content {
+            std::fs::write(root.join("nested/.gitignore"), content).unwrap();
+        }
+        for (rel_path, content) in extra_nested_files {
+            let full = root.join("nested").join(rel_path);
+            if let Some(parent) = full.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&full, content).unwrap();
+        }
+    }
+
+    fn canonical_paths(paths: &[PathBuf]) -> HashSet<PathBuf> {
+        paths
+            .iter()
+            .map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn test_nested_repos_flag_off_does_not_include_nested_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        build_nested_fixture(dir.path(), "/nested/\n", None, &[]);
+
+        let files = TreeSitterBackend::supported_source_files_inner(dir.path(), false);
+        let canonical = canonical_paths(&files);
+
+        let nested_rs = std::fs::canonicalize(dir.path().join("nested/src/nested.rs"))
+            .unwrap_or_else(|_| dir.path().join("nested/src/nested.rs"));
+        assert!(
+            !canonical.contains(&nested_rs),
+            "flag=false: nested file should not be indexed. Got: {canonical:?}"
+        );
+
+        let root_rs = std::fs::canonicalize(dir.path().join("src/root.rs"))
+            .unwrap_or_else(|_| dir.path().join("src/root.rs"));
+        assert!(
+            canonical.contains(&root_rs),
+            "flag=false: root file should still be indexed"
+        );
+    }
+
+    #[test]
+    fn test_nested_repos_flag_on_reaches_nested_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        build_nested_fixture(dir.path(), "/nested/\n", None, &[]);
+
+        let files = TreeSitterBackend::supported_source_files_inner(dir.path(), true);
+        let canonical = canonical_paths(&files);
+
+        let nested_rs = std::fs::canonicalize(dir.path().join("nested/src/nested.rs"))
+            .unwrap_or_else(|_| dir.path().join("nested/src/nested.rs"));
+        assert!(
+            canonical.contains(&nested_rs),
+            "flag=true: nested file should be indexed. Got: {canonical:?}"
+        );
+    }
+
+    #[test]
+    fn test_nested_repos_flag_on_respects_nested_own_gitignore() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        build_nested_fixture(
+            dir.path(),
+            "/nested/\n",
+            Some("target/\n"),
+            &[("target/gen.rs", "fn generated() {}")],
+        );
+
+        let files = TreeSitterBackend::supported_source_files_inner(dir.path(), true);
+        let canonical = canonical_paths(&files);
+
+        let gen_rs = std::fs::canonicalize(dir.path().join("nested/target/gen.rs"))
+            .unwrap_or_else(|_| dir.path().join("nested/target/gen.rs"));
+        assert!(
+            !canonical.contains(&gen_rs),
+            "flag=true: artifact file pruned by nested .gitignore must not be indexed. Got: {canonical:?}"
+        );
+
+        // The non-ignored nested file should still be included.
+        let nested_rs = std::fs::canonicalize(dir.path().join("nested/src/nested.rs"))
+            .unwrap_or_else(|_| dir.path().join("nested/src/nested.rs"));
+        assert!(
+            canonical.contains(&nested_rs),
+            "flag=true: non-artifact nested file must still be indexed"
+        );
+    }
+
+    #[test]
+    fn test_nested_repos_no_double_count_when_not_gitignored_at_root() {
+        // A nested repo NOT listed in root .gitignore — reachable by both walks.
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Root .gitignore intentionally does NOT list /nested/.
+        build_nested_fixture(dir.path(), "# no nested exclusion\n", None, &[]);
+
+        let files = TreeSitterBackend::supported_source_files_inner(dir.path(), true);
+        let canonical_vec: Vec<PathBuf> = files
+            .iter()
+            .map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()))
+            .collect();
+
+        let nested_rs = std::fs::canonicalize(dir.path().join("nested/src/nested.rs"))
+            .unwrap_or_else(|_| dir.path().join("nested/src/nested.rs"));
+
+        let count = canonical_vec.iter().filter(|p| *p == &nested_rs).count();
+        assert_eq!(
+            count, 1,
+            "nested file must appear exactly once even when reachable by both walks"
+        );
+    }
+
+    #[test]
+    fn test_discover_nested_repos_finds_git_children() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // repo_a/.git (dir), repo_b/.git (dir), plain_dir (no .git)
+        std::fs::create_dir_all(dir.path().join("repo_a/.git")).unwrap();
+        std::fs::create_dir_all(dir.path().join("repo_b/.git")).unwrap();
+        std::fs::create_dir_all(dir.path().join("plain_dir")).unwrap();
+        // deep nesting — should NOT be discovered (depth-1 only)
+        std::fs::create_dir_all(dir.path().join("plain_dir/sub_repo/.git")).unwrap();
+
+        let found = discover_nested_repos(dir.path());
+        let names: Vec<&str> = found
+            .iter()
+            .filter_map(|p| p.file_name())
+            .filter_map(|n| n.to_str())
+            .collect();
+
+        assert!(names.contains(&"repo_a"), "Should find repo_a: {names:?}");
+        assert!(names.contains(&"repo_b"), "Should find repo_b: {names:?}");
+        assert!(
+            !names.contains(&"plain_dir"),
+            "Should not include plain_dir: {names:?}"
+        );
+        // sub_repo is inside plain_dir — depth > 1, must not appear directly
+        assert!(
+            !names.contains(&"sub_repo"),
+            "Should not traverse deeper than depth-1: {names:?}"
+        );
+    }
+
+    /// A child whose `.git` is a plain file (git worktree / submodule format) must
+    /// still be discovered. `.git` files contain a `gitdir:` pointer; their presence
+    /// is sufficient to identify the directory as a git repo root.
+    #[test]
+    fn test_discover_nested_repos_finds_git_file_repos() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Create a child where .git is a file, not a directory.
+        std::fs::create_dir_all(dir.path().join("worktree_child")).unwrap();
+        std::fs::write(
+            dir.path().join("worktree_child/.git"),
+            "gitdir: /elsewhere/.git/worktrees/child\n",
+        )
+        .unwrap();
+
+        let found = discover_nested_repos(dir.path());
+        let names: Vec<&str> = found
+            .iter()
+            .filter_map(|p| p.file_name())
+            .filter_map(|n| n.to_str())
+            .collect();
+
+        assert!(
+            names.contains(&"worktree_child"),
+            "Child with a .git FILE must be discovered: {names:?}"
+        );
+    }
+
+    /// Symlinked child directories are intentionally excluded from discovery to
+    /// prevent indexing paths outside the project root.
+    #[cfg(unix)]
+    #[test]
+    fn test_discover_nested_repos_excludes_symlinked_children() {
+        use std::os::unix::fs::symlink;
+
+        // Create a real repo in a separate temp dir, outside the project root.
+        let external_dir = tempfile::tempdir().expect("external tempdir");
+        std::fs::create_dir_all(external_dir.path().join(".git")).unwrap();
+
+        // Create the project root and symlink the external repo into it.
+        let root_dir = tempfile::tempdir().expect("root tempdir");
+        let link_path = root_dir.path().join("linked_repo");
+        symlink(external_dir.path(), &link_path).expect("symlink creation");
+
+        let found = discover_nested_repos(root_dir.path());
+        let names: Vec<&str> = found
+            .iter()
+            .filter_map(|p| p.file_name())
+            .filter_map(|n| n.to_str())
+            .collect();
+
+        assert!(
+            !names.contains(&"linked_repo"),
+            "Symlinked repo dirs must not be discovered (would escape project root): {names:?}"
+        );
     }
 }

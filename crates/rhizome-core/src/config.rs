@@ -37,6 +37,15 @@ pub struct LspConfig {
     pub bin_dir: Option<std::path::PathBuf>,
 }
 
+/// Workspace indexing configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct IndexConfig {
+    /// Index nested git repositories (directories with a .git entry that the
+    /// root .gitignore prunes). Default: false.
+    #[serde(default)]
+    pub nested_repos: Option<bool>,
+}
+
 /// Top-level configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RhizomeConfig {
@@ -49,6 +58,9 @@ pub struct RhizomeConfig {
     /// LSP settings
     #[serde(default)]
     pub lsp: LspConfig,
+    /// Workspace indexing settings
+    #[serde(default)]
+    pub index: IndexConfig,
 }
 
 impl RhizomeConfig {
@@ -91,12 +103,20 @@ impl RhizomeConfig {
                 auto_export: project.export.auto_export.or(global.export.auto_export),
             },
             lsp,
+            index: IndexConfig {
+                nested_repos: project.index.nested_repos.or(global.index.nested_repos),
+            },
         }
     }
 
     /// Check if auto-export is enabled
     pub fn auto_export(&self) -> bool {
         self.export.auto_export.unwrap_or(false)
+    }
+
+    /// Check if nested repo indexing is enabled
+    pub fn index_nested_repos(&self) -> bool {
+        self.index.nested_repos.unwrap_or(false)
     }
 
     /// Get the effective LanguageServerConfig for a language,
@@ -182,6 +202,11 @@ impl RhizomeConfig {
 # [languages.rust]
 # server_binary = "/path/to/custom/rust-analyzer"
 # server_args = ["--log-file", "/tmp/ra.log"]
+
+# To index nested git repositories (e.g. a meta-workspace whose root
+# .gitignore lists sibling repos):
+# [index]
+# nested_repos = true
 "#
         .to_string()
     }
@@ -333,6 +358,7 @@ mod tests {
                 disable_download: Some(true),
                 bin_dir: Some("/opt/global-bin".into()),
             },
+            index: IndexConfig::default(),
         };
 
         let project = RhizomeConfig {
@@ -350,6 +376,7 @@ mod tests {
                 disable_download: Some(false),
                 bin_dir: None,
             },
+            index: IndexConfig::default(),
         };
 
         let merged = RhizomeConfig::merge(global, project);
@@ -473,8 +500,14 @@ mod tests {
         let example = RhizomeConfig::example_config();
         let parsed: std::result::Result<RhizomeConfig, _> = toml::from_str(&example);
         assert!(parsed.is_ok(), "Example config should parse as valid TOML");
+        let config = parsed.unwrap();
         // All entries are commented out so languages should be empty
-        assert!(parsed.unwrap().languages.is_empty());
+        assert!(config.languages.is_empty());
+        // The [index] block is also commented out; nested repo indexing must default to false.
+        assert!(
+            !config.index_nested_repos(),
+            "Example config must default nested repo indexing to false"
+        );
     }
 
     #[test]
@@ -482,6 +515,55 @@ mod tests {
         let config = RhizomeConfig::load(Path::new("/nonexistent/path")).unwrap();
         // Should succeed with defaults (no project config found)
         assert!(config.languages.is_empty() || !config.languages.is_empty());
+    }
+
+    #[test]
+    fn test_index_nested_repos_default_false() {
+        // A config without [index] block should default to false.
+        let config = RhizomeConfig::default();
+        assert!(!config.index_nested_repos());
+    }
+
+    #[test]
+    fn test_index_nested_repos_parsed_true() {
+        let toml_str = r#"
+            [index]
+            nested_repos = true
+        "#;
+        let config: RhizomeConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.index_nested_repos());
+    }
+
+    #[test]
+    fn test_index_nested_repos_merge_project_overrides_global() {
+        let global = RhizomeConfig {
+            index: IndexConfig {
+                nested_repos: Some(false),
+            },
+            ..Default::default()
+        };
+        let project = RhizomeConfig {
+            index: IndexConfig {
+                nested_repos: Some(true),
+            },
+            ..Default::default()
+        };
+        let merged = RhizomeConfig::merge(global, project);
+        assert!(merged.index_nested_repos());
+    }
+
+    #[test]
+    fn test_index_nested_repos_merge_falls_back_to_global() {
+        let global = RhizomeConfig {
+            index: IndexConfig {
+                nested_repos: Some(true),
+            },
+            ..Default::default()
+        };
+        // Project omits [index] entirely.
+        let project = RhizomeConfig::default();
+        let merged = RhizomeConfig::merge(global, project);
+        assert!(merged.index_nested_repos());
     }
 
     #[test]
