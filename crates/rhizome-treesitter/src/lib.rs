@@ -48,6 +48,44 @@ fn workspace_cache() -> &'static WorkspaceCache {
     CACHE.get_or_init(|| Mutex::new(LruCache::new(std::num::NonZeroUsize::new(16).unwrap())))
 }
 
+/// Roots already warned about approaching the workspace-index file cap.
+/// Used to fire the near-cap warning at most once per (process, workspace-root)
+/// instead of on every `search_symbols` call.
+fn near_cap_warned_roots() -> &'static Mutex<HashSet<PathBuf>> {
+    static WARNED: std::sync::OnceLock<Mutex<HashSet<PathBuf>>> = std::sync::OnceLock::new();
+    WARNED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Number of discovered source files at which we warn the operator that the
+/// workspace index is approaching its cap. Past the cap the LRU silently evicts
+/// and re-parses on most searches, so we surface the condition while there is
+/// still headroom (90% of the cap → warns before total saturation). Integer
+/// arithmetic keeps the threshold exact and free of float-cast truncation.
+const WORKSPACE_INDEX_WARN_THRESHOLD: usize = MAX_WORKSPACE_INDEX_FILES * 9 / 10;
+
+/// Decide whether to emit the near-cap warning for `root`, given the count of
+/// discovered source files. Returns `true` at most once per (process, root):
+/// the first call at/above the threshold records the root and returns `true`;
+/// later calls for the same root return `false` so the warning does not repeat
+/// on every search. Below the threshold it always returns `false`.
+fn should_warn_near_cap(discovered: usize, root: &Path) -> bool {
+    should_warn_near_cap_in(discovered, root, near_cap_warned_roots())
+}
+
+/// Threshold + once-per-root dedup against an explicit warned-set, so tests can
+/// inject a local set instead of mutating the process-wide static.
+fn should_warn_near_cap_in(
+    discovered: usize,
+    root: &Path,
+    warned: &Mutex<HashSet<PathBuf>>,
+) -> bool {
+    if discovered < WORKSPACE_INDEX_WARN_THRESHOLD {
+        return false;
+    }
+    let mut warned = warned.lock().unwrap_or_else(|p| p.into_inner());
+    warned.insert(root.to_path_buf())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct WorkspaceSymbolIndex {
     #[serde(default = "workspace_index_schema_version")]
@@ -275,6 +313,20 @@ impl TreeSitterBackend {
             .map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.clone()))
             .map(|path| path.to_string_lossy().into_owned())
             .collect::<HashSet<_>>();
+
+        // Warn once per workspace when the discovered source-file count approaches
+        // the index cap. Past the cap the LruCache evicts and re-parses on most
+        // searches (silent thrash); this surfaces the condition with headroom left.
+        let discovered = current_paths.len();
+        if should_warn_near_cap(discovered, &canonical_root) {
+            tracing::warn!(
+                "rhizome: workspace index approaching cap: discovered={discovered}, \
+                 cap={MAX_WORKSPACE_INDEX_FILES}, root={}. Searches past the cap evict \
+                 and re-parse least-recently-used files on each call.",
+                canonical_root.display()
+            );
+        }
+
         let original_len = index.files.len();
         // Remove entries for files no longer in current_paths
         let keys_to_remove: Vec<String> = index
@@ -658,6 +710,29 @@ mod tests {
             .join("tests")
             .join("fixtures")
             .join(name)
+    }
+
+    #[test]
+    fn test_should_warn_near_cap_threshold_and_dedup() {
+        let threshold = WORKSPACE_INDEX_WARN_THRESHOLD;
+        // Inject a local warned-set so the test never depends on (or pollutes)
+        // the process-wide static, and is idempotent across reruns.
+        let warned = Mutex::new(HashSet::new());
+        let root_a = PathBuf::from("/test/near-cap/a");
+        let root_b = PathBuf::from("/test/near-cap/b");
+
+        // Below the threshold: never warns, regardless of repetition.
+        assert!(!should_warn_near_cap_in(threshold - 1, &root_a, &warned));
+        assert!(!should_warn_near_cap_in(threshold - 1, &root_a, &warned));
+
+        // At the threshold: warns exactly once for this root, then stays quiet.
+        assert!(should_warn_near_cap_in(threshold, &root_a, &warned));
+        assert!(!should_warn_near_cap_in(threshold, &root_a, &warned));
+        assert!(!should_warn_near_cap_in(threshold + 50, &root_a, &warned));
+
+        // A different root over the threshold still warns once on its own.
+        assert!(should_warn_near_cap_in(threshold + 1, &root_b, &warned));
+        assert!(!should_warn_near_cap_in(threshold + 1, &root_b, &warned));
     }
 
     #[test]
