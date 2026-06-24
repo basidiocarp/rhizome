@@ -7,6 +7,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rhizome_core::root_detector::detect_workspace_root;
 use rhizome_core::{
     BackendCapabilities, CodeIntelligence, Diagnostic, DiagnosticSeverity, Language, Location,
     Position, Result, Symbol, SymbolKind,
@@ -115,6 +116,18 @@ impl LspBackend {
             tokio::task::block_in_place(|| self.handle.block_on(future))
         } else {
             self.handle.block_on(future)
+        }
+    }
+
+    /// Resolve the per-file project root, bounded by `stop_at` as a ceiling.
+    ///
+    /// Used to give the LSP the nearest enclosing project root for a file rather
+    /// than the broad launch root, so nested projects (e.g. a TypeScript package
+    /// inside a Rust workspace) are indexed correctly.
+    fn resolve_root(&self, file: &Path, stop_at: &Path) -> PathBuf {
+        match detect_language(file) {
+            Ok(lang) => detect_workspace_root(file, &lang, stop_at),
+            Err(_) => stop_at.to_path_buf(),
         }
     }
 
@@ -303,7 +316,7 @@ impl LspBackend {
     /// Get symbols using a specific workspace root.
     pub fn get_symbols_with_root(&self, file: &Path, workspace_root: &Path) -> Result<Vec<Symbol>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         self.run_blocking(async {
             let lang = detect_language(&file)?;
             self.ensure_did_open(&file, &lang, &root).await?;
@@ -339,7 +352,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Vec<Location>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let lsp_pos = lsp_types::Position {
             line: position.line,
             character: position.column,
@@ -368,7 +381,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Option<String>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let lsp_pos = lsp_types::Position {
             line: position.line,
             character: position.column,
@@ -397,7 +410,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Vec<Location>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let lsp_pos = lsp_types::Position {
             line: position.line,
             character: position.column,
@@ -430,7 +443,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Vec<Location>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let lsp_pos = lsp_types::Position {
             line: position.line,
             character: position.column,
@@ -464,7 +477,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Vec<CompletionItemJson>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let lsp_pos = lsp_types::Position {
             line: position.line,
             character: position.column,
@@ -507,7 +520,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Option<serde_json::Value>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let lsp_pos = lsp_types::Position {
             line: position.line,
             character: position.column,
@@ -544,7 +557,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Vec<CallHierarchyItemJson>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let lsp_pos = lsp_types::Position {
             line: position.line,
             character: position.column,
@@ -575,7 +588,8 @@ impl LspBackend {
         item_json: &CallHierarchyItemJson,
         workspace_root: &Path,
     ) -> Result<Vec<IncomingCallJson>> {
-        let root = workspace_root.to_path_buf();
+        let probe = std::path::PathBuf::from(&item_json.file.replace("file://", ""));
+        let root = self.resolve_root(&probe, workspace_root);
         let lsp_item = json_to_lsp_call_hierarchy_item(item_json)?;
         self.run_blocking(async {
             let mut mgr = self.manager.lock().await;
@@ -611,7 +625,8 @@ impl LspBackend {
         item_json: &CallHierarchyItemJson,
         workspace_root: &Path,
     ) -> Result<Vec<OutgoingCallJson>> {
-        let root = workspace_root.to_path_buf();
+        let probe = std::path::PathBuf::from(&item_json.file.replace("file://", ""));
+        let root = self.resolve_root(&probe, workspace_root);
         let lsp_item = json_to_lsp_call_hierarchy_item(item_json)?;
         self.run_blocking(async {
             let mut mgr = self.manager.lock().await;
@@ -649,7 +664,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Vec<CodeActionJson>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let range = lsp_types::Range {
             start: lsp_types::Position {
                 line: start.line,
@@ -699,7 +714,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<Vec<Diagnostic>> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         self.run_blocking(async {
             let lang = detect_language(&file)?;
             self.ensure_did_open(&file, &lang, &root).await?;
@@ -742,7 +757,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<ApplyResult> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let new_name = new_name.to_string();
         let lsp_pos = lsp_types::Position {
             line: position.line,
@@ -782,7 +797,7 @@ impl LspBackend {
         workspace_root: &Path,
     ) -> Result<PreviewResult> {
         let file = file.to_path_buf();
-        let root = workspace_root.to_path_buf();
+        let root = self.resolve_root(&file, workspace_root);
         let new_name = new_name.to_string();
         let lsp_pos = lsp_types::Position {
             line: position.line,
@@ -1103,6 +1118,80 @@ impl CodeIntelligence for LspBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    /// Construct a minimal LspBackend for unit-testing `resolve_root`.
+    /// The runtime is created here and its handle passed in; the manager is never
+    /// exercised, so LSP server launch does not occur.
+    fn make_backend(default_root: PathBuf) -> (LspBackend, tokio::runtime::Runtime) {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let handle = rt.handle().clone();
+        let backend = LspBackend::new(default_root, handle);
+        (backend, rt)
+    }
+
+    // ─── resolve_root tests ───────────────────────────────────────────────────
+
+    /// A TypeScript file inside a nested project (`tsconfig.json` in a subdir)
+    /// should resolve to the nested dir, not the outer `stop_at`.
+    #[test]
+    fn resolve_root_nested_ts_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path(); // this is stop_at
+        let inner = outer.join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        // nested project marker
+        fs::write(inner.join("tsconfig.json"), "{}").unwrap();
+        let src = inner.join("foo.ts");
+        fs::write(&src, "export const x = 1;").unwrap();
+
+        let (backend, _rt) = make_backend(outer.to_path_buf());
+        let result = backend.resolve_root(&src, outer);
+        assert_eq!(
+            result, inner,
+            "nested tsconfig.json should yield the inner dir, got {result:?}"
+        );
+    }
+
+    /// A Rust file directly under `stop_at` (which holds `Cargo.toml`) should
+    /// return `stop_at` unchanged.
+    #[test]
+    fn resolve_root_flat_rust_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("Cargo.toml"), "[package]\nname = \"foo\"").unwrap();
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        let src = src_dir.join("lib.rs");
+        fs::write(&src, "").unwrap();
+
+        let (backend, _rt) = make_backend(root.to_path_buf());
+        let result = backend.resolve_root(&src, root);
+        assert_eq!(
+            result, root,
+            "flat project: resolve_root should return stop_at, got {result:?}"
+        );
+    }
+
+    /// A file with no recognisable extension triggers a `detect_language` error;
+    /// `resolve_root` must fall back to `stop_at` without panicking.
+    #[test]
+    fn resolve_root_unknown_language_falls_back_to_stop_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let subdir = root.join("data");
+        fs::create_dir_all(&subdir).unwrap();
+        // ".xyz" is not a known extension
+        let file = subdir.join("blob.xyz");
+        fs::write(&file, "").unwrap();
+
+        let (backend, _rt) = make_backend(root.to_path_buf());
+        let result = backend.resolve_root(&file, root);
+        assert_eq!(
+            result, root,
+            "unknown language should fall back to stop_at, got {result:?}"
+        );
+    }
 
     #[test]
     fn call_hierarchy_item_round_trips_kind_and_range() {
