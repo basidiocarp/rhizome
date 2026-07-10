@@ -826,6 +826,16 @@ impl LspBackend {
             summarize_workspace_edit(&edit).map_err(|e| RhizomeError::LspError(e.to_string()))
         })
     }
+
+    /// Select the root for search_symbols: prefer project_root if non-empty, fall back to default_root.
+    /// This is extracted as a separate method for testability.
+    fn select_search_root(&self, project_root: &Path) -> PathBuf {
+        if project_root.as_os_str().is_empty() {
+            self.default_root.clone()
+        } else {
+            project_root.to_path_buf()
+        }
+    }
 }
 
 fn extract_hover_text(hover: &lsp_types::Hover) -> String {
@@ -963,7 +973,7 @@ impl CodeIntelligence for LspBackend {
     fn get_definition(&self, file: &Path, name: &str) -> Result<Option<Symbol>> {
         let file = file.to_path_buf();
         let name = name.to_string();
-        let root = self.default_root.clone();
+        let root = self.resolve_root(&file, &self.default_root);
         self.run_blocking(async {
             let lang = detect_language(&file)?;
             let mut mgr = self.manager.lock().await;
@@ -1024,9 +1034,9 @@ impl CodeIntelligence for LspBackend {
         self.find_references_with_root(file, position, &self.default_root)
     }
 
-    fn search_symbols(&self, pattern: &str, _project_root: &Path) -> Result<Vec<Symbol>> {
+    fn search_symbols(&self, pattern: &str, project_root: &Path) -> Result<Vec<Symbol>> {
         let pattern = pattern.to_string();
-        let root = self.default_root.clone();
+        let root = self.select_search_root(project_root);
         self.run_blocking(async {
             let mut mgr = self.manager.lock().await;
             let languages: Vec<Language> = [
@@ -1190,6 +1200,40 @@ mod tests {
         assert_eq!(
             result, root,
             "unknown language should fall back to stop_at, got {result:?}"
+        );
+    }
+
+    // ─── select_search_root tests ─────────────────────────────────────────
+
+    /// search_symbols root selection: when project_root is non-empty, use it.
+    #[test]
+    fn select_search_root_honors_non_empty_project_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let default_root = dir.path().join("default");
+        let project_root = dir.path().join("project");
+        fs::create_dir_all(&default_root).unwrap();
+        fs::create_dir_all(&project_root).unwrap();
+
+        let (backend, _rt) = make_backend(default_root.clone());
+        let selected = backend.select_search_root(&project_root);
+        assert_eq!(
+            selected, project_root,
+            "select_search_root should prefer non-empty project_root"
+        );
+    }
+
+    /// search_symbols root selection: when project_root is empty, fall back to default_root.
+    #[test]
+    fn select_search_root_falls_back_to_default_on_empty_project_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let default_root = dir.path();
+        let empty_path = std::path::PathBuf::new();
+
+        let (backend, _rt) = make_backend(default_root.to_path_buf());
+        let selected = backend.select_search_root(&empty_path);
+        assert_eq!(
+            selected, default_root,
+            "select_search_root should fall back to default_root when project_root is empty"
         );
     }
 
