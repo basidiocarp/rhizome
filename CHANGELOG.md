@@ -4,6 +4,21 @@ All notable changes to Rhizome are documented in this file.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-07-10
+
+### Fixed
+
+- **Per-file root resolution**: `get_definition` and `search_symbols` now resolve
+  the workspace root per file instead of reusing the launch-time default root, so
+  symbols in a nested project below a broad launch root resolve against the
+  correct project boundary.
+
+### Security
+
+- **RUSTSEC-2026-0204** (crossbeam-epoch): bumped the transitive
+  `crossbeam-epoch` dependency to 0.9.20 to clear the invalid-pointer-dereference
+  advisory. Lockfile-only change; no API impact.
+
 ## [0.7.10] - 2026-04-14
 
 ### Added
