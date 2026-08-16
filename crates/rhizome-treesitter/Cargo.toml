@@ -70,7 +70,7 @@ tree-sitter-c = { version = "0.24", optional = true }
 tree-sitter-cpp = { version = "0.23", optional = true }
 tree-sitter-ruby = { version = "0.23", optional = true }
 tree-sitter-php = { version = "0.24", optional = true }
-tree-sitter-bash = { version = "0.23", optional = true }
+tree-sitter-bash = { version = "0.25", optional = true }
 tree-sitter-c-sharp = { version = "0.23", optional = true }
 tree-sitter-elixir = { version = "0.3", optional = true }
 # tree-sitter-kotlin uses old tree-sitter 0.20, incompatible with 0.26
